@@ -172,7 +172,10 @@ async def collect_now(
 ):
     """
     즉시 수집 실행 (Celery 없이 동기 실행).
-    collect_type: news | youtube | community | all
+    collect_type: news | youtube | community | trends | all
+
+    all: news + community + youtube + trends (각각의 수량 반환)
+         news에는 댓글 수집도 포함.
     """
     from app.collectors.instant import (
         collect_news_now, collect_youtube_now,
@@ -180,23 +183,93 @@ async def collect_now(
     )
 
     tid = user["tenant_id"]
+    results = []
 
     if collect_type == "all":
+        # Full collection: news+comments + community + youtube+shorts+comments
         result = await collect_all_now(db, tid, str(election_id))
         total = result["collected"]
         results = result.get("details", [result])
+
+        # Also collect trends
+        try:
+            from app.collectors.keyword_tracker import collect_and_store_trends
+            from app.elections.models import Election
+            from app.elections.korea_data import REGIONS
+
+            candidates_q = (await db.execute(
+                select(Candidate).where(
+                    Candidate.election_id == election_id,
+                    Candidate.tenant_id == tid,
+                    Candidate.enabled == True,
+                )
+            )).scalars().all()
+            election = (await db.execute(
+                select(Election).where(Election.id == election_id)
+            )).scalar_one_or_none()
+
+            cand_names = [c.name for c in candidates_q]
+            region_short = ""
+            etype = "superintendent"
+            if election:
+                region_short = REGIONS.get(election.region_sido, {}).get("short", "")
+                etype = election.election_type
+
+            trend_result = await collect_and_store_trends(
+                db, tid, str(election_id), cand_names, etype, region_short,
+            )
+            results.append({
+                "type": "trends",
+                "collected": trend_result.get("stored", 0),
+            })
+            total += trend_result.get("stored", 0)
+        except Exception as e:
+            results.append({"type": "trends", "collected": 0, "error": str(e)[:200]})
+
     else:
-        results = []
-        if collect_type in ("news",):
+        total = 0
+        if collect_type == "news":
             r = await collect_news_now(db, tid, str(election_id))
             results.append(r)
-        if collect_type in ("community",):
+            total += r.get("collected", 0)
+        elif collect_type == "community":
             r = await collect_community_now(db, tid, str(election_id))
             results.append(r)
-        if collect_type in ("youtube",):
+            total += r.get("collected", 0)
+        elif collect_type == "youtube":
             r = await collect_youtube_now(db, tid, str(election_id))
             results.append(r)
-        total = sum(r.get("collected", 0) for r in results)
+            total += r.get("collected", 0)
+        elif collect_type == "trends":
+            from app.collectors.keyword_tracker import collect_and_store_trends
+            from app.elections.models import Election
+            from app.elections.korea_data import REGIONS
+
+            candidates_q = (await db.execute(
+                select(Candidate).where(
+                    Candidate.election_id == election_id,
+                    Candidate.tenant_id == tid,
+                    Candidate.enabled == True,
+                )
+            )).scalars().all()
+            election = (await db.execute(
+                select(Election).where(Election.id == election_id)
+            )).scalar_one_or_none()
+
+            cand_names = [c.name for c in candidates_q]
+            region_short = ""
+            etype = "superintendent"
+            if election:
+                region_short = REGIONS.get(election.region_sido, {}).get("short", "")
+                etype = election.election_type
+
+            r = await collect_and_store_trends(
+                db, tid, str(election_id), cand_names, etype, region_short,
+            )
+            results.append({"type": "trends", "collected": r.get("stored", 0)})
+            total += r.get("stored", 0)
+        else:
+            raise HTTPException(status_code=400, detail=f"지원하지 않는 수집 타입: {collect_type}")
 
     # 텔레그램 자동 보고 (연결되어 있으면)
     if total > 0:
@@ -206,7 +279,18 @@ async def collect_now(
         except Exception as e:
             pass  # 텔레그램 미연결 시 무시
 
-    return {"message": f"수집 완료: {total}건", "results": results}
+    # 타입별 합산 결과
+    type_totals = {}
+    for r in results:
+        rtype = r.get("type", "unknown")
+        type_totals[rtype] = type_totals.get(rtype, 0) + r.get("collected", 0)
+
+    return {
+        "message": f"수집 완료: {total}건",
+        "total": total,
+        "by_type": type_totals,
+        "results": results,
+    }
 
 
 @router.get("/{election_id}/status")

@@ -1,6 +1,13 @@
 """
 ElectionPulse - Telegram Report Service
-스케줄 실행 결과를 텔레그램으로 자동 보고
+스케줄 실행 결과를 텔레그램으로 자동 보고.
+
+3가지 브리핑 형식:
+- morning: 오전 브리핑 (간결, 5개 섹션)
+- afternoon: 오후 브리핑 (오전 대비 변화)
+- daily: 일일 보고서 (종합 요약)
+
+모든 보고서에 실제 기사 URL 포함, 경쟁자 갭 하이라이트, 위기 경보 포함.
 """
 from datetime import datetime, timezone, date, timedelta
 from sqlalchemy import select, func
@@ -8,13 +15,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.elections.models import (
     Election, Candidate, NewsArticle, CommunityPost,
-    YouTubeVideo, SearchTrend, TelegramConfig,
+    YouTubeVideo, SearchTrend, TelegramConfig, Report,
 )
-from app.analysis.sentiment import SentimentAnalyzer, TrendDetector
 from app.telegram_service.bot import TelegramBot
 import structlog
 
 logger = structlog.get_logger()
+
+KST = timezone(timedelta(hours=9))
 
 
 async def send_collection_report(
@@ -30,7 +38,7 @@ async def send_collection_report(
         "trends": "검색 트렌드", "all": "전체",
     }
     label = type_labels.get(collect_type, collect_type)
-    now = datetime.now(timezone(timedelta(hours=9)))
+    now = datetime.now(KST)
 
     text = (
         f"📊 <b>[{label} 수집 완료]</b>\n"
@@ -41,27 +49,23 @@ async def send_collection_report(
     await _send_to_all_recipients(db, tenant_id, text, "news")
 
 
-async def send_briefing_report(
+async def generate_briefing_text(
     db: AsyncSession,
     tenant_id: str,
     election_id: str,
     briefing_type: str = "daily",
-):
+) -> str | None:
     """
-    브리핑 보고서 생성 + 텔레그램 발송.
+    브리핑 보고서 텍스트만 생성 (텔레그램 발송 없음).
     briefing_type: morning | afternoon | daily
+    Returns: 보고서 텍스트
     """
-    config = await _get_telegram_config(db, tenant_id)
-    if not config:
-        logger.warning("no_telegram_config", tenant_id=tenant_id)
-        return
-
     # 데이터 수집
     election = (await db.execute(
         select(Election).where(Election.id == election_id)
     )).scalar_one_or_none()
     if not election:
-        return
+        return None
 
     candidates = (await db.execute(
         select(Candidate).where(
@@ -73,43 +77,95 @@ async def send_briefing_report(
 
     our = next((c for c in candidates if c.is_our_candidate), None)
     today = date.today()
+    yesterday = today - timedelta(days=1)
     d_day = (election.election_date - today).days
-    now = datetime.now(timezone(timedelta(hours=9)))
+    now = datetime.now(KST)
 
-    # 제목
-    titles = {
-        "morning": f"☀️ [D-{d_day}] 오전 브리핑",
-        "afternoon": f"🌤 [D-{d_day}] 오후 브리핑",
-        "daily": f"🌙 [D-{d_day}] 일일 보고서",
-    }
-    title = titles.get(briefing_type, f"📋 [D-{d_day}] 브리핑")
+    # 브리핑 타입별 생성
+    if briefing_type == "morning":
+        report_text = await _build_morning_briefing(
+            db, tenant_id, election_id, election, candidates, our, d_day, now, today, yesterday,
+        )
+    elif briefing_type == "afternoon":
+        report_text = await _build_afternoon_briefing(
+            db, tenant_id, election_id, election, candidates, our, d_day, now, today,
+        )
+    else:
+        report_text = await _build_daily_report(
+            db, tenant_id, election_id, election, candidates, our, d_day, now, today, yesterday,
+        )
 
+    return report_text
+
+
+async def send_briefing_report(
+    db: AsyncSession,
+    tenant_id: str,
+    election_id: str,
+    briefing_type: str = "daily",
+) -> str | None:
+    """
+    브리핑 보고서 생성 + 텔레그램 발송.
+    briefing_type: morning | afternoon | daily
+    Returns: 보고서 텍스트
+    """
+    report_text = await generate_briefing_text(db, tenant_id, election_id, briefing_type)
+    if not report_text:
+        return None
+
+    # 텔레그램 발송
+    config = await _get_telegram_config(db, tenant_id)
+    if config:
+        sent = await _send_to_all_recipients(db, tenant_id, report_text, "briefing")
+        logger.info("briefing_sent", tenant_id=tenant_id, type=briefing_type, recipients=sent)
+
+    return report_text
+
+
+# ──────────────── MORNING BRIEFING ──────────────────────────────
+
+async def _build_morning_briefing(
+    db, tenant_id, election_id, election, candidates, our, d_day, now, today, yesterday,
+) -> str:
+    """
+    오전 브리핑: 간결한 5개 섹션.
+    1. 오늘의 핵심 수치
+    2. 주요 뉴스 헤드라인 + URL
+    3. 경쟁자 갭 분석
+    4. 위기/기회 경보
+    5. 오전 액션 아이템
+    """
     lines = [
-        f"<b>{title}</b>",
+        f"<b>☀️ [D-{d_day}] 오전 브리핑</b>",
         f"{today.isoformat()} {now.strftime('%H:%M')}",
         f"{'=' * 25}",
         "",
     ]
 
-    # ── 1. 후보별 뉴스 현황 ──
-    lines.append("<b>[1. 뉴스 현황]</b>")
+    # ── 1. 핵심 수치 ──
+    lines.append("<b>[1. 오늘의 핵심 수치]</b>")
+    cand_data = []
     for cand in candidates:
-        news_count = (await db.execute(
+        today_cnt = (await db.execute(
             select(func.count()).where(
                 NewsArticle.candidate_id == cand.id,
                 func.date(NewsArticle.collected_at) == today,
             )
         )).scalar() or 0
-
-        pos_count = (await db.execute(
+        yest_cnt = (await db.execute(
+            select(func.count()).where(
+                NewsArticle.candidate_id == cand.id,
+                func.date(NewsArticle.collected_at) == yesterday,
+            )
+        )).scalar() or 0
+        pos = (await db.execute(
             select(func.count()).where(
                 NewsArticle.candidate_id == cand.id,
                 func.date(NewsArticle.collected_at) == today,
                 NewsArticle.sentiment == "positive",
             )
         )).scalar() or 0
-
-        neg_count = (await db.execute(
+        neg = (await db.execute(
             select(func.count()).where(
                 NewsArticle.candidate_id == cand.id,
                 func.date(NewsArticle.collected_at) == today,
@@ -118,21 +174,27 @@ async def send_briefing_report(
         )).scalar() or 0
 
         marker = " ⭐" if cand.is_our_candidate else ""
+        change = today_cnt - yest_cnt
+        arrow = "↑" if change > 0 else ("↓" if change < 0 else "→")
         lines.append(
-            f"  {cand.name}{marker}: {news_count}건 "
-            f"(긍정 {pos_count} / 부정 {neg_count})"
+            f"  {cand.name}{marker}: {today_cnt}건({arrow}{abs(change)}) "
+            f"긍정{pos}/부정{neg}"
         )
-
+        cand_data.append({
+            "name": cand.name, "is_ours": cand.is_our_candidate,
+            "today": today_cnt, "yest": yest_cnt, "pos": pos, "neg": neg,
+            "id": cand.id,
+        })
     lines.append("")
 
-    # ── 2. 주요 뉴스 ──
+    # ── 2. 주요 뉴스 + URL ──
     lines.append("<b>[2. 주요 뉴스]</b>")
     recent_news = (await db.execute(
         select(NewsArticle, Candidate.name)
         .join(Candidate, NewsArticle.candidate_id == Candidate.id)
         .where(
             NewsArticle.tenant_id == tenant_id,
-            func.date(NewsArticle.collected_at) == today,
+            NewsArticle.election_id == election_id,
         )
         .order_by(NewsArticle.collected_at.desc())
         .limit(5)
@@ -140,21 +202,230 @@ async def send_briefing_report(
 
     for news, cand_name in recent_news:
         emoji = {"positive": "🟢", "negative": "🔴", "neutral": "⚪"}.get(news.sentiment, "⚪")
-        lines.append(f"  {emoji} [{cand_name}] {news.title[:50]}")
-
+        lines.append(f"  {emoji} [{cand_name}] {news.title[:60]}")
+        if news.url:
+            lines.append(f"  {news.url}")
+    if not recent_news:
+        lines.append("  수집된 뉴스 없음")
     lines.append("")
 
-    # ── 3. 불편한 진실 (객관성 원칙) ──
+    # ── 3. 경쟁자 갭 분석 ──
+    lines.append("<b>[3. 경쟁자 갭]</b>")
+    our_data = next((d for d in cand_data if d["is_ours"]), None)
+    if our_data:
+        max_news = max((d["today"] for d in cand_data), default=0)
+        if max_news > 0:
+            ratio = our_data["today"] / max_news * 100
+            leader = max(cand_data, key=lambda x: x["today"])
+            if ratio < 100 and leader["name"] != our_data["name"]:
+                lines.append(
+                    f"  ⚠️ 뉴스 노출: {our_data['name']} {our_data['today']}건 "
+                    f"vs {leader['name']} {leader['today']}건 ({ratio:.0f}%)"
+                )
+            else:
+                lines.append(f"  ✅ {our_data['name']} 뉴스 노출 선두 ({our_data['today']}건)")
+
+        # 부정 뉴스 비교
+        for d in cand_data:
+            if d["is_ours"] and d["neg"] > 0:
+                lines.append(f"  🔴 {d['name']} 부정 뉴스 {d['neg']}건 — 주의 필요")
+    else:
+        lines.append("  우리 후보 미지정")
+    lines.append("")
+
+    # ── 4. 위기/기회 경보 ──
+    lines.append("<b>[4. 위기/기회]</b>")
+    neg_news = (await db.execute(
+        select(NewsArticle, Candidate.name)
+        .join(Candidate, NewsArticle.candidate_id == Candidate.id)
+        .where(
+            NewsArticle.tenant_id == tenant_id,
+            NewsArticle.election_id == election_id,
+            NewsArticle.sentiment == "negative",
+            func.date(NewsArticle.collected_at) == today,
+        )
+        .order_by(NewsArticle.collected_at.desc())
+        .limit(3)
+    )).all()
+
+    if neg_news:
+        for n, cname in neg_news:
+            lines.append(f"  🚨 [{cname}] {n.title[:50]}")
+            if n.url:
+                lines.append(f"  {n.url}")
+    else:
+        lines.append("  특이사항 없음")
+    lines.append("")
+
+    # ── 5. 오전 액션 ──
+    lines.append("<b>[5. 오전 액션]</b>")
+    if our_data and our_data["today"] == 0:
+        lines.append("  → 뉴스 노출 전무 — 보도자료 배포 시급")
+    elif our_data and our_data["neg"] > our_data["pos"]:
+        lines.append("  → 부정 뉴스 우세 — 해명/반박 자료 준비")
+    else:
+        lines.append("  → 현재 추세 유지, 이슈 선점 기회 모색")
+
+    lines.append("")
+    lines.append(f"{'=' * 25}")
+    lines.append("ElectionPulse | 객관적 데이터 기반 분석")
+
+    return "\n".join(lines)
+
+
+# ──────────────── AFTERNOON BRIEFING ────────────────────────────
+
+async def _build_afternoon_briefing(
+    db, tenant_id, election_id, election, candidates, our, d_day, now, today,
+) -> str:
+    """
+    오후 브리핑: 오전 대비 변화 포커스.
+    1. 수집 현황 (오전 → 현재)
+    2. 감성 비교
+    3. 신규 뉴스 하이라이트
+    4. 부정 뉴스 경보
+    5. 핫이슈 / 트렌드
+    6. 약점 체크
+    7. 전략 방향
+    """
+    # 오전 cutoff: 오늘 12:00 KST
+    morning_cutoff = datetime.combine(today, datetime.min.time().replace(hour=3))  # UTC 03:00 = KST 12:00
+    morning_cutoff = morning_cutoff.replace(tzinfo=timezone.utc)
+
+    lines = [
+        f"<b>🌤 [D-{d_day}] 오후 브리핑</b>",
+        f"{today.isoformat()} {now.strftime('%H:%M')}",
+        f"{'=' * 25}",
+        "",
+    ]
+
+    # ── 1. 수집 현황 ──
+    lines.append("<b>[1. 수집 현황]</b>")
+    for cand in candidates:
+        total_today = (await db.execute(
+            select(func.count()).where(
+                NewsArticle.candidate_id == cand.id,
+                func.date(NewsArticle.collected_at) == today,
+            )
+        )).scalar() or 0
+
+        community_cnt = (await db.execute(
+            select(func.count()).where(
+                CommunityPost.candidate_id == cand.id,
+                func.date(CommunityPost.collected_at) == today,
+            )
+        )).scalar() or 0
+
+        yt_cnt = (await db.execute(
+            select(func.count()).where(
+                YouTubeVideo.candidate_id == cand.id,
+                func.date(YouTubeVideo.collected_at) == today,
+            )
+        )).scalar() or 0
+
+        marker = " ⭐" if cand.is_our_candidate else ""
+        lines.append(
+            f"  {cand.name}{marker}: 뉴스{total_today} 커뮤{community_cnt} 유튜브{yt_cnt}"
+        )
+    lines.append("")
+
+    # ── 2. 감성 비교 ──
+    lines.append("<b>[2. 감성 비교]</b>")
+    for cand in candidates:
+        pos = (await db.execute(
+            select(func.count()).where(
+                NewsArticle.candidate_id == cand.id,
+                func.date(NewsArticle.collected_at) == today,
+                NewsArticle.sentiment == "positive",
+            )
+        )).scalar() or 0
+        neg = (await db.execute(
+            select(func.count()).where(
+                NewsArticle.candidate_id == cand.id,
+                func.date(NewsArticle.collected_at) == today,
+                NewsArticle.sentiment == "negative",
+            )
+        )).scalar() or 0
+        total = pos + neg
+        ratio = (pos / total * 100) if total > 0 else 0
+        bar = "🟢" if ratio > 60 else ("🔴" if ratio < 40 else "⚪")
+        marker = " ⭐" if cand.is_our_candidate else ""
+        lines.append(f"  {bar} {cand.name}{marker}: 긍정{pos}/부정{neg} ({ratio:.0f}%)")
+    lines.append("")
+
+    # ── 3. 오후 신규 뉴스 ──
+    lines.append("<b>[3. 오후 신규 뉴스]</b>")
+    afternoon_news = (await db.execute(
+        select(NewsArticle, Candidate.name)
+        .join(Candidate, NewsArticle.candidate_id == Candidate.id)
+        .where(
+            NewsArticle.tenant_id == tenant_id,
+            NewsArticle.election_id == election_id,
+            NewsArticle.collected_at >= morning_cutoff,
+        )
+        .order_by(NewsArticle.collected_at.desc())
+        .limit(5)
+    )).all()
+
+    for news, cname in afternoon_news:
+        emoji = {"positive": "🟢", "negative": "🔴", "neutral": "⚪"}.get(news.sentiment, "⚪")
+        lines.append(f"  {emoji} [{cname}] {news.title[:55]}")
+        if news.url:
+            lines.append(f"  {news.url}")
+    if not afternoon_news:
+        lines.append("  오후 신규 뉴스 없음")
+    lines.append("")
+
+    # ── 4. 부정 뉴스 경보 ──
+    lines.append("<b>[4. 부정 뉴스 경보]</b>")
+    neg_news = (await db.execute(
+        select(NewsArticle, Candidate.name)
+        .join(Candidate, NewsArticle.candidate_id == Candidate.id)
+        .where(
+            NewsArticle.tenant_id == tenant_id,
+            NewsArticle.election_id == election_id,
+            NewsArticle.sentiment == "negative",
+            func.date(NewsArticle.collected_at) == today,
+        )
+        .order_by(NewsArticle.collected_at.desc())
+        .limit(3)
+    )).all()
+    if neg_news:
+        for n, cname in neg_news:
+            lines.append(f"  🚨 [{cname}] {n.title[:50]}")
+            if n.url:
+                lines.append(f"  {n.url}")
+    else:
+        lines.append("  부정 뉴스 없음 ✅")
+    lines.append("")
+
+    # ── 5. 트렌드 ──
+    lines.append("<b>[5. 검색 트렌드]</b>")
+    trends = (await db.execute(
+        select(SearchTrend).where(
+            SearchTrend.tenant_id == tenant_id,
+            SearchTrend.election_id == election_id,
+        ).order_by(SearchTrend.checked_at.desc()).limit(6)
+    )).scalars().all()
+    if trends:
+        for t in trends:
+            vol = t.relative_volume or t.search_volume or 0
+            lines.append(f"  {t.keyword}: {vol:.0f}")
+    else:
+        lines.append("  트렌드 데이터 없음")
+    lines.append("")
+
+    # ── 6. 약점 체크 ──
     if our:
-        lines.append("<b>[3. 불편한 진실]</b>")
-        our_news = (await db.execute(
+        lines.append("<b>[6. 약점 체크]</b>")
+        our_total = (await db.execute(
             select(func.count()).where(
                 NewsArticle.candidate_id == our.id,
                 func.date(NewsArticle.collected_at) == today,
             )
         )).scalar() or 0
 
-        total_news = (await db.execute(
+        all_total = (await db.execute(
             select(func.count()).where(
                 NewsArticle.tenant_id == tenant_id,
                 NewsArticle.election_id == election_id,
@@ -162,46 +433,264 @@ async def send_briefing_report(
             )
         )).scalar() or 0
 
-        if total_news > 0:
-            ratio = our_news / total_news * 100
-            if ratio < 30:
-                lines.append(
-                    f"  ⚠️ {our.name} 뉴스 비중 {ratio:.0f}% — 노출 심각 부족"
-                )
-            elif ratio < 50:
-                lines.append(
-                    f"  ⚠️ {our.name} 뉴스 비중 {ratio:.0f}% — 경쟁자 대비 부족"
-                )
+        if all_total > 0:
+            share = our_total / all_total * 100
+            if share < 30:
+                lines.append(f"  ⚠️ 뉴스 점유율 {share:.0f}% — 심각한 노출 부족")
+            elif share < 50:
+                lines.append(f"  ⚠️ 뉴스 점유율 {share:.0f}% — 경쟁자 대비 부족")
             else:
-                lines.append(f"  ✅ {our.name} 뉴스 비중 {ratio:.0f}% — 양호")
-
-    # ── 4. 여론조사 현황 ──
-    from sqlalchemy import text as sql_text
-    polls = (await db.execute(
-        sql_text("SELECT survey_org, survey_date, results FROM surveys ORDER BY survey_date DESC LIMIT 3")
-    )).fetchall()
-
-    if polls:
+                lines.append(f"  ✅ 뉴스 점유율 {share:.0f}% — 양호")
+        else:
+            lines.append("  오늘 수집된 뉴스 없음")
         lines.append("")
-        lines.append("<b>[4. 최신 여론조사]</b>")
-        for org, sdate, results in polls:
-            r = results if isinstance(results, dict) else {}
-            top3 = sorted(r.items(), key=lambda x: -x[1])[:3]
-            top_str = " / ".join(f"{p} {v}%" for p, v in top3)
-            lines.append(f"  {sdate} {org[:12]}: {top_str}")
+
+    # ── 7. 전략 방향 ──
+    lines.append("<b>[7. 전략 방향]</b>")
+    lines.append("  → 오후 언론 대응 및 SNS 게시 강화")
+    lines.append("  → 부정 이슈 모니터링 지속")
+    lines.append("")
+
+    lines.append(f"{'=' * 25}")
+    lines.append("ElectionPulse | 객관적 데이터 기반 분석")
+
+    return "\n".join(lines)
+
+
+# ──────────────── DAILY REPORT ──────────────────────────────────
+
+async def _build_daily_report(
+    db, tenant_id, election_id, election, candidates, our, d_day, now, today, yesterday,
+) -> str:
+    """
+    일일 보고서: 종합 요약 (6개 섹션).
+    1. 뉴스 종합 현황
+    2. 주요 기사 TOP 5 + URL
+    3. 커뮤니티/유튜브 동향
+    4. 경쟁자 갭 하이라이트
+    5. 불편한 진실 (객관성 원칙)
+    6. 내일 전략
+    """
+    lines = [
+        f"<b>🌙 [D-{d_day}] 일일 보고서</b>",
+        f"{today.isoformat()} {now.strftime('%H:%M')}",
+        f"{'=' * 25}",
+        "",
+    ]
+
+    # ── 1. 뉴스 종합 현황 ──
+    lines.append("<b>[1. 뉴스 종합]</b>")
+    cand_data = []
+    for cand in candidates:
+        today_cnt = (await db.execute(
+            select(func.count()).where(
+                NewsArticle.candidate_id == cand.id,
+                func.date(NewsArticle.collected_at) == today,
+            )
+        )).scalar() or 0
+        yest_cnt = (await db.execute(
+            select(func.count()).where(
+                NewsArticle.candidate_id == cand.id,
+                func.date(NewsArticle.collected_at) == yesterday,
+            )
+        )).scalar() or 0
+        total_all = (await db.execute(
+            select(func.count()).where(NewsArticle.candidate_id == cand.id)
+        )).scalar() or 0
+        pos = (await db.execute(
+            select(func.count()).where(
+                NewsArticle.candidate_id == cand.id,
+                func.date(NewsArticle.collected_at) == today,
+                NewsArticle.sentiment == "positive",
+            )
+        )).scalar() or 0
+        neg = (await db.execute(
+            select(func.count()).where(
+                NewsArticle.candidate_id == cand.id,
+                func.date(NewsArticle.collected_at) == today,
+                NewsArticle.sentiment == "negative",
+            )
+        )).scalar() or 0
+
+        marker = " ⭐" if cand.is_our_candidate else ""
+        change = today_cnt - yest_cnt
+        arrow = "↑" if change > 0 else ("↓" if change < 0 else "→")
+        lines.append(
+            f"  {cand.name}{marker}: 오늘 {today_cnt}건({arrow}{abs(change)}) "
+            f"누적 {total_all}건 | 긍정{pos}/부정{neg}"
+        )
+        cand_data.append({
+            "name": cand.name, "is_ours": cand.is_our_candidate,
+            "today": today_cnt, "pos": pos, "neg": neg,
+            "total": total_all, "id": cand.id,
+        })
+    lines.append("")
+
+    # ── 2. 주요 기사 TOP 5 ──
+    lines.append("<b>[2. 주요 기사 TOP 5]</b>")
+    top_news = (await db.execute(
+        select(NewsArticle, Candidate.name)
+        .join(Candidate, NewsArticle.candidate_id == Candidate.id)
+        .where(
+            NewsArticle.tenant_id == tenant_id,
+            NewsArticle.election_id == election_id,
+            func.date(NewsArticle.collected_at) == today,
+        )
+        .order_by(NewsArticle.collected_at.desc())
+        .limit(5)
+    )).all()
+
+    for i, (news, cname) in enumerate(top_news, 1):
+        emoji = {"positive": "🟢", "negative": "🔴", "neutral": "⚪"}.get(news.sentiment, "⚪")
+        lines.append(f"  {i}. {emoji} [{cname}] {news.title[:55]}")
+        if news.url:
+            lines.append(f"     {news.url}")
+    if not top_news:
+        lines.append("  수집된 뉴스 없음")
+    lines.append("")
+
+    # ── 3. 커뮤니티/유튜브 동향 ──
+    lines.append("<b>[3. 커뮤니티/유튜브]</b>")
+    for cand in candidates:
+        comm_cnt = (await db.execute(
+            select(func.count()).where(
+                CommunityPost.candidate_id == cand.id,
+                func.date(CommunityPost.collected_at) == today,
+            )
+        )).scalar() or 0
+        yt_cnt = (await db.execute(
+            select(func.count()).where(
+                YouTubeVideo.candidate_id == cand.id,
+                func.date(YouTubeVideo.collected_at) == today,
+            )
+        )).scalar() or 0
+        yt_views = (await db.execute(
+            select(func.coalesce(func.sum(YouTubeVideo.views), 0)).where(
+                YouTubeVideo.candidate_id == cand.id,
+            )
+        )).scalar() or 0
+
+        marker = " ⭐" if cand.is_our_candidate else ""
+        lines.append(
+            f"  {cand.name}{marker}: 커뮤 {comm_cnt}건 / 유튜브 {yt_cnt}건 ({yt_views:,}회)"
+        )
+    lines.append("")
+
+    # ── 4. 경쟁자 갭 하이라이트 ──
+    lines.append("<b>[4. 경쟁자 갭]</b>")
+    our_data = next((d for d in cand_data if d["is_ours"]), None)
+    if our_data:
+        # 뉴스 노출 비교
+        max_cnt = max((d["today"] for d in cand_data), default=0)
+        if max_cnt > 0:
+            our_share = our_data["today"] / max_cnt * 100
+            leader = max(cand_data, key=lambda x: x["today"])
+            if leader["name"] != our_data["name"]:
+                lines.append(
+                    f"  뉴스: {our_data['name']} {our_data['today']}건 vs "
+                    f"{leader['name']} {leader['today']}건 (차이 {leader['today'] - our_data['today']}건)"
+                )
+
+        # 감성 비교
+        for d in cand_data:
+            if not d["is_ours"] and d["pos"] > our_data.get("pos", 0):
+                lines.append(
+                    f"  감성: {d['name']} 긍정 {d['pos']}건 > "
+                    f"{our_data['name']} {our_data.get('pos', 0)}건"
+                )
+    else:
+        lines.append("  우리 후보 미지정")
+    lines.append("")
+
+    # ── 5. 불편한 진실 (객관성 필수 원칙) ──
+    lines.append("<b>[5. 불편한 진실]</b>")
+    if our_data:
+        all_today = sum(d["today"] for d in cand_data)
+        if all_today > 0:
+            share = our_data["today"] / all_today * 100
+            if share < 30:
+                lines.append(f"  🔴 전체 뉴스 중 {our_data['name']} 점유율 {share:.0f}% — 심각 부족")
+            elif share < 50:
+                lines.append(f"  ⚠️ 전체 뉴스 중 {our_data['name']} 점유율 {share:.0f}% — 강화 필요")
+            else:
+                lines.append(f"  ✅ 전체 뉴스 중 {our_data['name']} 점유율 {share:.0f}%")
+
+        if our_data["neg"] > 0:
+            lines.append(f"  🔴 {our_data['name']} 부정 뉴스 {our_data['neg']}건 발생")
+
+        # 경쟁자 강점 보고
+        for d in cand_data:
+            if not d["is_ours"] and d["today"] > our_data["today"]:
+                lines.append(f"  ⚠️ {d['name']}이(가) 뉴스 노출에서 앞서고 있음")
+    else:
+        lines.append("  우리 후보 미지정으로 분석 불가")
+    lines.append("")
+
+    # ── 6. 내일 전략 ──
+    lines.append("<b>[6. 내일 전략]</b>")
+    if our_data and our_data["today"] == 0:
+        lines.append("  1. 보도자료 즉시 배포 (언론 노출 전무)")
+        lines.append("  2. SNS 콘텐츠 집중 발행")
+        lines.append("  3. 지역 언론 인터뷰 섭외")
+    elif our_data and our_data["neg"] > our_data["pos"]:
+        lines.append("  1. 부정 이슈 대응 자료 준비")
+        lines.append("  2. 긍정 스토리 발굴 및 배포")
+        lines.append("  3. 지지층 결집 SNS 캠페인")
+    else:
+        lines.append("  1. 현재 노출 추세 유지 강화")
+        lines.append("  2. 경쟁자 이슈 선점 기회 포착")
+        lines.append("  3. 유권자 관심 이슈 콘텐츠 제작")
 
     lines.append("")
     lines.append(f"{'=' * 25}")
     lines.append("ElectionPulse | 객관적 데이터 기반 분석")
 
-    report_text = "\n".join(lines)
+    return "\n".join(lines)
 
-    # 모든 수신자에게 발송
-    sent = await _send_to_all_recipients(db, tenant_id, report_text, "briefing")
-    logger.info("briefing_sent", tenant_id=tenant_id, type=briefing_type, recipients=sent)
 
-    return report_text
+# ──────────────── CRISIS ALERT FORMAT ───────────────────────────
 
+async def send_crisis_alert(
+    db: AsyncSession,
+    tenant_id: str,
+    alerts: list[dict],
+) -> int:
+    """
+    위기 경보 즉시 발송.
+    alerts: [{"level": "critical|warning", "message": str, "action": str, "url": str?}]
+    """
+    now = datetime.now(KST)
+    lines = [
+        f"🚨 <b>[긴급 위기 경보]</b>",
+        f"{now.strftime('%Y-%m-%d %H:%M')}",
+        f"{'=' * 25}",
+        "",
+    ]
+
+    for i, alert in enumerate(alerts, 1):
+        level_emoji = "🔴" if alert.get("level") == "critical" else "⚠️"
+        lines.append(f"{level_emoji} <b>경보 {i}.</b> {alert['message']}")
+        if alert.get("url"):
+            lines.append(f"  {alert['url']}")
+        if alert.get("action"):
+            lines.append(f"  → 조치: {alert['action']}")
+        lines.append("")
+
+    lines.append("<b>[즉시 대응 필요 사항]</b>")
+    for alert in alerts:
+        if alert.get("action"):
+            lines.append(f"  • {alert['action']}")
+
+    lines.append("")
+    lines.append(f"{'=' * 25}")
+    lines.append("ElectionPulse | 위기 자동 감지")
+
+    text = "\n".join(lines)
+    sent = await _send_to_all_recipients(db, tenant_id, text, "alert")
+    return sent
+
+
+# ──────────────── HELPER: SEND TO ALL ───────────────────────────
 
 async def send_alert(
     db: AsyncSession,

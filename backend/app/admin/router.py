@@ -2,7 +2,7 @@
 ElectionPulse - Admin Panel API
 플랫폼 관리자 전용 — 고객 관리, 시스템 모니터링, 데이터 현황
 """
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -16,7 +16,7 @@ from app.auth.models import Tenant, User, AuditLog
 from app.common.dependencies import CurrentUser
 from app.elections.models import (
     Election, Candidate, NewsArticle, CommunityPost,
-    YouTubeVideo, SearchTrend, Survey, ScheduleConfig, Report,
+    YouTubeVideo, SearchTrend, Survey, ScheduleConfig, ScheduleRun, Report,
 )
 
 router = APIRouter()
@@ -40,8 +40,22 @@ async def system_health(user: CurrentUser, db: AsyncSession = Depends(get_db)):
     user_count = (await db.execute(select(func.count()).select_from(User))).scalar()
     election_count = (await db.execute(select(func.count()).select_from(Election))).scalar()
     news_count = (await db.execute(select(func.count()).select_from(NewsArticle))).scalar()
+    community_count = (await db.execute(select(func.count()).select_from(CommunityPost))).scalar()
+    youtube_count = (await db.execute(select(func.count()).select_from(YouTubeVideo))).scalar()
     survey_count = (await db.execute(select(func.count()).select_from(Survey))).scalar()
     schedule_count = (await db.execute(select(func.count()).where(ScheduleConfig.enabled == True))).scalar()
+    report_count = (await db.execute(select(func.count()).select_from(Report))).scalar()
+
+    # 최근 수집 시간
+    last_news = (await db.execute(
+        select(func.max(NewsArticle.collected_at))
+    )).scalar()
+    last_community = (await db.execute(
+        select(func.max(CommunityPost.collected_at))
+    )).scalar()
+    last_youtube = (await db.execute(
+        select(func.max(YouTubeVideo.collected_at))
+    )).scalar()
 
     return {
         "status": "healthy",
@@ -50,8 +64,17 @@ async def system_health(user: CurrentUser, db: AsyncSession = Depends(get_db)):
         "elections": election_count,
         "data": {
             "news": news_count,
+            "community": community_count,
+            "youtube": youtube_count,
             "surveys": survey_count,
+            "total": (news_count or 0) + (community_count or 0) + (youtube_count or 0) + (survey_count or 0),
             "schedules_active": schedule_count,
+            "reports_generated": report_count,
+        },
+        "last_collection": {
+            "news": last_news.isoformat() if last_news else None,
+            "community": last_community.isoformat() if last_community else None,
+            "youtube": last_youtube.isoformat() if last_youtube else None,
         },
     }
 
@@ -60,7 +83,7 @@ async def system_health(user: CurrentUser, db: AsyncSession = Depends(get_db)):
 
 @router.get("/tenants")
 async def list_tenants(user: CurrentUser, db: AsyncSession = Depends(get_db)):
-    """전체 고객 목록."""
+    """전체 고객 목록 — 수집 데이터, 최근 수집 시간, 스케줄, 보고서 현황 포함."""
     require_superadmin(user)
 
     tenants = (await db.execute(select(Tenant).order_by(Tenant.created_at.desc()))).scalars().all()
@@ -69,8 +92,46 @@ async def list_tenants(user: CurrentUser, db: AsyncSession = Depends(get_db)):
     for t in tenants:
         members = (await db.execute(select(func.count()).where(User.tenant_id == t.id))).scalar()
         elections = (await db.execute(select(func.count()).where(Election.tenant_id == t.id))).scalar()
+
+        # Total data per tenant
         news = (await db.execute(select(func.count()).where(NewsArticle.tenant_id == t.id))).scalar()
-        schedules = (await db.execute(select(func.count()).where(ScheduleConfig.tenant_id == t.id, ScheduleConfig.enabled == True))).scalar()
+        community = (await db.execute(select(func.count()).where(CommunityPost.tenant_id == t.id))).scalar()
+        youtube = (await db.execute(select(func.count()).where(YouTubeVideo.tenant_id == t.id))).scalar()
+
+        # Last collection time
+        last_news_at = (await db.execute(
+            select(func.max(NewsArticle.collected_at)).where(NewsArticle.tenant_id == t.id)
+        )).scalar()
+        last_community_at = (await db.execute(
+            select(func.max(CommunityPost.collected_at)).where(CommunityPost.tenant_id == t.id)
+        )).scalar()
+        last_youtube_at = (await db.execute(
+            select(func.max(YouTubeVideo.collected_at)).where(YouTubeVideo.tenant_id == t.id)
+        )).scalar()
+
+        # Most recent collection across all types
+        times = [t for t in [last_news_at, last_community_at, last_youtube_at] if t]
+        last_collection = max(times).isoformat() if times else None
+
+        # Active schedules
+        schedules_active = (await db.execute(
+            select(func.count()).where(ScheduleConfig.tenant_id == t.id, ScheduleConfig.enabled == True)
+        )).scalar()
+
+        # Recent schedule runs
+        recent_run = (await db.execute(
+            select(ScheduleRun).where(ScheduleRun.tenant_id == t.id)
+            .order_by(ScheduleRun.started_at.desc()).limit(1)
+        )).scalar_one_or_none()
+
+        # Reports generated
+        reports_count = (await db.execute(
+            select(func.count()).where(Report.tenant_id == t.id)
+        )).scalar()
+        latest_report = (await db.execute(
+            select(Report).where(Report.tenant_id == t.id)
+            .order_by(Report.created_at.desc()).limit(1)
+        )).scalar_one_or_none()
 
         result.append({
             "id": str(t.id),
@@ -81,8 +142,27 @@ async def list_tenants(user: CurrentUser, db: AsyncSession = Depends(get_db)):
             "setup_completed": t.setup_completed,
             "members": members,
             "elections": elections,
-            "news_collected": news,
-            "schedules_active": schedules,
+            "data": {
+                "news": news or 0,
+                "community": community or 0,
+                "youtube": youtube or 0,
+                "total": (news or 0) + (community or 0) + (youtube or 0),
+            },
+            "last_collection": last_collection,
+            "schedules_active": schedules_active or 0,
+            "last_schedule_run": {
+                "status": recent_run.status if recent_run else None,
+                "items": recent_run.items_collected if recent_run else None,
+                "at": recent_run.started_at.isoformat() if recent_run else None,
+            } if recent_run else None,
+            "reports": {
+                "total": reports_count or 0,
+                "latest": {
+                    "type": latest_report.report_type,
+                    "date": latest_report.report_date.isoformat(),
+                    "sent_telegram": latest_report.sent_via_telegram,
+                } if latest_report else None,
+            },
             "created_at": t.created_at.isoformat(),
         })
 
@@ -110,7 +190,37 @@ async def tenant_detail(tenant_id: UUID, user: CurrentUser, db: AsyncSession = D
 
     # 수집 현황
     news_cnt = (await db.execute(select(func.count()).where(NewsArticle.tenant_id == tenant_id))).scalar()
+    community_cnt = (await db.execute(select(func.count()).where(CommunityPost.tenant_id == tenant_id))).scalar()
     yt_cnt = (await db.execute(select(func.count()).where(YouTubeVideo.tenant_id == tenant_id))).scalar()
+    trends_cnt = (await db.execute(select(func.count()).where(SearchTrend.tenant_id == tenant_id))).scalar()
+
+    # Last collection times
+    last_news = (await db.execute(
+        select(func.max(NewsArticle.collected_at)).where(NewsArticle.tenant_id == tenant_id)
+    )).scalar()
+    last_community = (await db.execute(
+        select(func.max(CommunityPost.collected_at)).where(CommunityPost.tenant_id == tenant_id)
+    )).scalar()
+    last_youtube = (await db.execute(
+        select(func.max(YouTubeVideo.collected_at)).where(YouTubeVideo.tenant_id == tenant_id)
+    )).scalar()
+
+    # Active schedules
+    schedules = (await db.execute(
+        select(ScheduleConfig).where(ScheduleConfig.tenant_id == tenant_id)
+    )).scalars().all()
+
+    # Recent schedule runs
+    recent_runs = (await db.execute(
+        select(ScheduleRun).where(ScheduleRun.tenant_id == tenant_id)
+        .order_by(ScheduleRun.started_at.desc()).limit(10)
+    )).scalars().all()
+
+    # Reports
+    reports = (await db.execute(
+        select(Report).where(Report.tenant_id == tenant_id)
+        .order_by(Report.created_at.desc()).limit(10)
+    )).scalars().all()
 
     return {
         "tenant": {
@@ -131,8 +241,50 @@ async def tenant_detail(tenant_id: UUID, user: CurrentUser, db: AsyncSession = D
             for e in elections
         ],
         "data_stats": {
-            "news": news_cnt, "youtube": yt_cnt,
+            "news": news_cnt or 0,
+            "community": community_cnt or 0,
+            "youtube": yt_cnt or 0,
+            "trends": trends_cnt or 0,
+            "total": (news_cnt or 0) + (community_cnt or 0) + (yt_cnt or 0),
         },
+        "last_collection": {
+            "news": last_news.isoformat() if last_news else None,
+            "community": last_community.isoformat() if last_community else None,
+            "youtube": last_youtube.isoformat() if last_youtube else None,
+        },
+        "schedules": [
+            {
+                "id": str(s.id),
+                "name": s.name,
+                "type": s.schedule_type,
+                "times": s.fixed_times,
+                "enabled": s.enabled,
+                "config": s.config,
+            }
+            for s in schedules
+        ],
+        "recent_runs": [
+            {
+                "status": r.status,
+                "items": r.items_collected,
+                "started_at": r.started_at.isoformat(),
+                "completed_at": r.completed_at.isoformat() if r.completed_at else None,
+                "duration": r.duration_seconds,
+                "error": r.error_message,
+            }
+            for r in recent_runs
+        ],
+        "reports": [
+            {
+                "id": str(r.id),
+                "type": r.report_type,
+                "title": r.title,
+                "date": r.report_date.isoformat(),
+                "sent_telegram": r.sent_via_telegram,
+                "created_at": r.created_at.isoformat(),
+            }
+            for r in reports
+        ],
     }
 
 
@@ -193,4 +345,26 @@ async def data_statistics(user: CurrentUser, db: AsyncSession = Depends(get_db))
         except:
             stats[tbl] = 0
 
-    return {"tables": stats, "total": sum(stats.values())}
+    # Per-tenant breakdown
+    tenants = (await db.execute(select(Tenant).where(Tenant.is_active == True))).scalars().all()
+    per_tenant = []
+    for t in tenants:
+        t_news = (await db.execute(select(func.count()).where(NewsArticle.tenant_id == t.id))).scalar() or 0
+        t_community = (await db.execute(select(func.count()).where(CommunityPost.tenant_id == t.id))).scalar() or 0
+        t_youtube = (await db.execute(select(func.count()).where(YouTubeVideo.tenant_id == t.id))).scalar() or 0
+        t_reports = (await db.execute(select(func.count()).where(Report.tenant_id == t.id))).scalar() or 0
+        per_tenant.append({
+            "tenant_id": str(t.id),
+            "tenant_name": t.name,
+            "news": t_news,
+            "community": t_community,
+            "youtube": t_youtube,
+            "reports": t_reports,
+            "total": t_news + t_community + t_youtube,
+        })
+
+    return {
+        "tables": stats,
+        "total": sum(stats.values()),
+        "per_tenant": per_tenant,
+    }

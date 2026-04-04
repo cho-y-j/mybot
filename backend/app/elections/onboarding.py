@@ -35,6 +35,59 @@ class SmartSetupRequest(BaseModel):
     competitors: list[dict] = []  # [{"name": "윤건영", "party": "보수"}, ...]
 
 
+def _get_default_schedule_templates() -> list[dict]:
+    """
+    기본 스케줄 템플릿 — 06/08/13/14/17/18 패턴.
+
+    06:00  Full collection (news + community + youtube + trends + comments)
+    08:00  AI analysis → Morning briefing → Telegram
+    08:30~13:00  Alert check every 30 min (built-in via celery beat)
+    13:00  Full collection
+    14:00  AI analysis → Afternoon briefing → Telegram
+    14:30~17:00  Alert check continues
+    17:00  Full collection
+    18:00  AI analysis → Daily report → Telegram
+    """
+    return [
+        {
+            "name": "오전 수집 (06:00)",
+            "schedule_type": "full_collection",
+            "fixed_times": ["06:00"],
+            "config": {"description": "뉴스+커뮤니티+유튜브+트렌드+댓글 전체 수집"},
+        },
+        {
+            "name": "오전 브리핑 (08:00)",
+            "schedule_type": "briefing",
+            "fixed_times": ["08:00"],
+            "config": {"briefing_type": "morning", "send_telegram": True},
+        },
+        {
+            "name": "오후 수집 (13:00)",
+            "schedule_type": "full_collection",
+            "fixed_times": ["13:00"],
+            "config": {"description": "뉴스+커뮤니티+유튜브+트렌드+댓글 전체 수집"},
+        },
+        {
+            "name": "오후 브리핑 (14:00)",
+            "schedule_type": "briefing",
+            "fixed_times": ["14:00"],
+            "config": {"briefing_type": "afternoon", "send_telegram": True},
+        },
+        {
+            "name": "마감 수집 (17:00)",
+            "schedule_type": "full_collection",
+            "fixed_times": ["17:00"],
+            "config": {"description": "뉴스+커뮤니티+유튜브+트렌드+댓글 전체 수집"},
+        },
+        {
+            "name": "일일 보고서 (18:00)",
+            "schedule_type": "briefing",
+            "fixed_times": ["18:00"],
+            "config": {"briefing_type": "daily", "send_telegram": True},
+        },
+    ]
+
+
 @router.get("/regions")
 async def list_regions():
     """시도/시군구 목록 (프론트엔드 셀렉트박스용)."""
@@ -68,6 +121,9 @@ async def preview_setup(req: SmartSetupRequest):
         competitors=req.competitors,
     )
 
+    # Use the correct default schedule templates
+    schedules = _get_default_schedule_templates()
+
     return {
         "message": "자동 생성된 설정을 확인하세요. 수정 후 저장할 수 있습니다.",
         "election": {
@@ -89,7 +145,7 @@ async def preview_setup(req: SmartSetupRequest):
         "community_targets": setup["community_targets"],
         "local_media": setup["local_media"],
         "search_trend_keywords": setup["search_trend_keywords"],
-        "schedules": setup["schedules"],
+        "schedules": schedules,
     }
 
 
@@ -102,6 +158,8 @@ async def apply_setup(
     """
     자동 셋팅 적용 — 선거 + 후보 + 키워드 + 스케줄 한 번에 생성.
     고객이 "시작하기" 버튼 하나로 모든 것이 설정됨.
+
+    스케줄은 06/08/13/14/17/18 패턴으로 자동 생성.
     """
     from datetime import date as date_type
 
@@ -181,9 +239,10 @@ async def apply_setup(
         ))
         kw_count += 1
 
-    # 5. 스케줄 생성
+    # 5. 스케줄 생성 — 06/08/13/14/17/18 패턴
+    schedule_templates = _get_default_schedule_templates()
     sched_count = 0
-    for s in setup["schedules"]:
+    for s in schedule_templates:
         db.add(ScheduleConfig(
             election_id=election.id,
             tenant_id=tid,
@@ -208,6 +267,7 @@ async def apply_setup(
             "competitors": comp_count,
             "keywords": kw_count,
             "schedules": sched_count,
+            "schedule_pattern": "06:00 수집 → 08:00 오전 브리핑 → 13:00 수집 → 14:00 오후 브리핑 → 17:00 수집 → 18:00 일일 보고서",
             "local_media": len(setup["local_media"]),
             "community_targets": len(setup["community_targets"]),
         },

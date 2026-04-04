@@ -204,43 +204,43 @@ def auto_generate_setup(
     trend_keywords = [c["name"] for c in all_candidates]
     trend_keywords.append(f"{short}{type_label}")
 
-    # ── 6. 기본 스케줄 (오전/오후/마감 3회) ──
+    # ── 6. 기본 스케줄 (06/08/13/14/17/18 패턴) ──
     schedules = [
         {
-            "name": "오전 수집 + 브리핑",
-            "schedule_type": "news",
-            "fixed_times": ["09:00"],
-            "config": {"include_briefing": True, "send_telegram": True},
+            "name": "오전 수집 (06:00)",
+            "schedule_type": "full_collection",
+            "fixed_times": ["06:00"],
+            "config": {"description": "전체 수집 (뉴스+커뮤니티+유튜브+트렌드+댓글)"},
         },
         {
-            "name": "오전 커뮤니티 + 트렌드",
-            "schedule_type": "community",
-            "fixed_times": ["09:30"],
-            "config": {},
+            "name": "오전 브리핑 (08:00)",
+            "schedule_type": "briefing",
+            "fixed_times": ["08:00"],
+            "config": {"briefing_type": "morning", "send_telegram": True},
         },
         {
-            "name": "오전 유튜브",
-            "schedule_type": "youtube",
-            "fixed_times": ["10:00"],
-            "config": {},
+            "name": "오후 수집 (13:00)",
+            "schedule_type": "full_collection",
+            "fixed_times": ["13:00"],
+            "config": {"description": "전체 수집 (뉴스+커뮤니티+유튜브+트렌드+댓글)"},
         },
         {
-            "name": "오후 수집 + 브리핑",
-            "schedule_type": "news",
+            "name": "오후 브리핑 (14:00)",
+            "schedule_type": "briefing",
             "fixed_times": ["14:00"],
-            "config": {"include_briefing": True, "send_telegram": True},
+            "config": {"briefing_type": "afternoon", "send_telegram": True},
         },
         {
-            "name": "오후 트렌드 + 유튜브",
-            "schedule_type": "trends",
-            "fixed_times": ["15:00"],
-            "config": {},
+            "name": "마감 수집 (17:00)",
+            "schedule_type": "full_collection",
+            "fixed_times": ["17:00"],
+            "config": {"description": "전체 수집 (뉴스+커뮤니티+유튜브+트렌드+댓글)"},
         },
         {
-            "name": "마감 일일 보고서",
+            "name": "일일 보고서 (18:00)",
             "schedule_type": "briefing",
             "fixed_times": ["18:00"],
-            "config": {"type": "daily_full", "send_telegram": True, "send_pdf": True},
+            "config": {"briefing_type": "daily", "send_telegram": True},
         },
     ]
 

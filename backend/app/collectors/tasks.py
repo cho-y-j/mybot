@@ -3,7 +3,7 @@ ElectionPulse - Celery Collection Tasks
 기존 프로토타입의 검증된 수집 로직을 비동기 태스크로 통합
 """
 import asyncio
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 from uuid import UUID
 
 from celery import Celery
@@ -15,6 +15,9 @@ import structlog
 
 logger = structlog.get_logger()
 settings = get_settings()
+
+# KST timezone
+KST = timezone(timedelta(hours=9))
 
 # ── Celery App ──
 celery_app = Celery(
@@ -414,7 +417,6 @@ def collect_news_comments(self, tenant_id: str, election_id: str, schedule_id: s
     session = get_sync_session()
     try:
         # 최근 24시간 뉴스 가져오기
-        from datetime import datetime, timezone, timedelta
         cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
 
         articles = session.execute(
@@ -661,6 +663,89 @@ def collect_youtube_enhanced(self, tenant_id: str, election_id: str, schedule_id
         session.close()
 
 
+# ──────────────── FULL COLLECTION ──────────────────────────────
+
+@celery_app.task(bind=True, name="collect.full_collection")
+def full_collection(self, tenant_id: str, election_id: str):
+    """
+    전체 수집 (뉴스 + 커뮤니티 + 유튜브 + 트렌드 + 댓글).
+    06:00, 13:00, 17:00 에 실행.
+    """
+    from app.elections.models import ScheduleConfig
+
+    session = get_sync_session()
+    try:
+        # Find or create a dummy schedule_id for tracking
+        schedule = session.execute(
+            select(ScheduleConfig).where(
+                ScheduleConfig.election_id == election_id,
+                ScheduleConfig.tenant_id == tenant_id,
+                ScheduleConfig.schedule_type == "full_collection",
+                ScheduleConfig.enabled == True,
+            )
+        ).scalar_one_or_none()
+
+        schedule_id = str(schedule.id) if schedule else None
+
+        results = {}
+
+        # News
+        try:
+            if schedule_id:
+                r = collect_news.apply(args=[tenant_id, election_id, schedule_id])
+                results["news"] = r.result if r.result else {"status": "ok"}
+            else:
+                results["news"] = {"status": "no_schedule"}
+        except Exception as e:
+            results["news"] = {"status": "error", "error": str(e)[:200]}
+
+        # Community
+        try:
+            if schedule_id:
+                r = collect_community_enhanced.apply(args=[tenant_id, election_id, schedule_id])
+                results["community"] = r.result if r.result else {"status": "ok"}
+            else:
+                results["community"] = {"status": "no_schedule"}
+        except Exception as e:
+            results["community"] = {"status": "error", "error": str(e)[:200]}
+
+        # YouTube
+        try:
+            if schedule_id:
+                r = collect_youtube_enhanced.apply(args=[tenant_id, election_id, schedule_id])
+                results["youtube"] = r.result if r.result else {"status": "ok"}
+            else:
+                results["youtube"] = {"status": "no_schedule"}
+        except Exception as e:
+            results["youtube"] = {"status": "error", "error": str(e)[:200]}
+
+        # Trends
+        try:
+            if schedule_id:
+                r = collect_trends.apply(args=[tenant_id, election_id, schedule_id])
+                results["trends"] = r.result if r.result else {"status": "ok"}
+            else:
+                results["trends"] = {"status": "no_schedule"}
+        except Exception as e:
+            results["trends"] = {"status": "error", "error": str(e)[:200]}
+
+        # News comments
+        try:
+            r = collect_news_comments.apply(args=[tenant_id, election_id])
+            results["comments"] = r.result if r.result else {"status": "ok"}
+        except Exception as e:
+            results["comments"] = {"status": "error", "error": str(e)[:200]}
+
+        logger.info("full_collection_done", tenant_id=tenant_id, results=results)
+        return {"status": "success", "results": results}
+
+    except Exception as e:
+        logger.error("full_collection_error", error=str(e))
+        return {"status": "error", "error": str(e)[:500]}
+    finally:
+        session.close()
+
+
 # ──────────────── ALERT MONITOR ──────────────────────────────
 
 @celery_app.task(bind=True, name="collect.alert_check")
@@ -738,22 +823,177 @@ def _send_alert_via_telegram(session, tenant_id: str, message: str):
         _run_async(bot.send_message(message))
 
 
+# ──────────────── BRIEFING TASKS ─────────────────────────────
+
+@celery_app.task(bind=True, name="briefing.morning")
+def morning_briefing(self, tenant_id: str, election_id: str):
+    """
+    오전 브리핑 (08:00): 전체 수집 후 AI 분석 → 텔레그램 발송.
+    """
+    return _run_briefing(tenant_id, election_id, "morning")
+
+
+@celery_app.task(bind=True, name="briefing.afternoon")
+def afternoon_briefing(self, tenant_id: str, election_id: str):
+    """
+    오후 브리핑 (14:00): 전체 수집 후 AI 분석 → 텔레그램 발송.
+    """
+    return _run_briefing(tenant_id, election_id, "afternoon")
+
+
+@celery_app.task(bind=True, name="briefing.daily")
+def daily_report(self, tenant_id: str, election_id: str):
+    """
+    일일 보고서 (18:00): 전체 수집 후 AI 분석 → 텔레그램 발송.
+    """
+    return _run_briefing(tenant_id, election_id, "daily")
+
+
+def _run_briefing(tenant_id: str, election_id: str, briefing_type: str) -> dict:
+    """브리핑 공통 로직: AI 보고서 생성 → DB 저장 → 텔레그램 발송."""
+    import uuid as uuid_mod
+    from app.elections.models import Report
+
+    session = get_sync_session()
+    try:
+        # 1. AI 보고서 생성 시도
+        report_text = ""
+        ai_generated = False
+
+        try:
+            # generate_ai_report is async — run it
+            result = _run_async(_generate_report_async(tenant_id, election_id))
+            report_text = result.get("text", "")
+            ai_generated = result.get("ai_generated", False)
+        except Exception as e:
+            logger.warning("briefing_ai_error", error=str(e), type=briefing_type)
+
+        # 2. AI 실패시 데이터 기반 보고서 (via telegram reporter)
+        if not report_text:
+            try:
+                report_text = _run_async(
+                    _generate_briefing_text(tenant_id, election_id, briefing_type)
+                )
+            except Exception as e:
+                logger.error("briefing_fallback_error", error=str(e))
+                report_text = f"보고서 생성 실패: {str(e)[:200]}"
+
+        # 3. DB 저장
+        type_map = {
+            "morning": "morning_brief",
+            "afternoon": "afternoon_brief",
+            "daily": "daily",
+        }
+        report = Report(
+            id=uuid_mod.uuid4(),
+            tenant_id=tenant_id,
+            election_id=election_id,
+            report_type=type_map.get(briefing_type, briefing_type),
+            title=report_text.split("\n")[0] if report_text else f"{briefing_type} 보고서",
+            content_text=report_text,
+            report_date=date.today(),
+            sent_via_telegram=False,
+        )
+        session.add(report)
+        session.commit()
+
+        # 4. 텔레그램 발송
+        sent = 0
+        try:
+            sent = _run_async(
+                _send_briefing_telegram(tenant_id, report_text, briefing_type)
+            )
+            if sent > 0:
+                report.sent_via_telegram = True
+                report.sent_at = datetime.now(timezone.utc)
+                session.commit()
+        except Exception as e:
+            logger.error("briefing_telegram_error", error=str(e))
+
+        logger.info(
+            "briefing_complete",
+            type=briefing_type,
+            tenant_id=tenant_id,
+            ai=ai_generated,
+            telegram_sent=sent,
+        )
+
+        return {
+            "status": "success",
+            "briefing_type": briefing_type,
+            "ai_generated": ai_generated,
+            "telegram_sent": sent,
+            "report_id": str(report.id),
+        }
+
+    except Exception as e:
+        logger.error("briefing_error", error=str(e), type=briefing_type)
+        return {"status": "error", "error": str(e)[:500]}
+    finally:
+        session.close()
+
+
+async def _generate_report_async(tenant_id: str, election_id: str) -> dict:
+    """AI 보고서 생성 (async context)."""
+    from app.database import async_session_factory
+    from app.reports.ai_report import generate_ai_report
+
+    async with async_session_factory() as db:
+        return await generate_ai_report(db, tenant_id, election_id)
+
+
+async def _generate_briefing_text(
+    tenant_id: str, election_id: str, briefing_type: str,
+) -> str:
+    """브리핑 텍스트 생성 (async context, 텔레그램 발송 없음)."""
+    from app.database import async_session_factory
+    from app.telegram_service.reporter import generate_briefing_text
+
+    async with async_session_factory() as db:
+        text = await generate_briefing_text(db, tenant_id, election_id, briefing_type)
+        return text or ""
+
+
+async def _send_briefing_telegram(
+    tenant_id: str, text: str, briefing_type: str,
+) -> int:
+    """텔레그램 발송 (async context)."""
+    from app.database import async_session_factory
+    from app.telegram_service.reporter import _send_to_all_recipients
+
+    async with async_session_factory() as db:
+        return await _send_to_all_recipients(db, tenant_id, text, "briefing")
+
+
 # ──────────────── SCHEDULER ────────────────────────────────────
 
 @celery_app.task(name="scheduler.check_and_run")
 def check_and_run_schedules():
-    """1분마다 실행: 모든 테넌트의 스케줄 확인 및 실행."""
+    """
+    1분마다 실행: 모든 테넌트의 스케줄 확인 및 실행.
+
+    Schedule workflow (KST):
+      06:00  Full collection (news + community + youtube + trends + comments)
+      08:00  AI analysis → Morning briefing → Telegram
+      08:30~13:00  Alert check every 30 min (lightweight)
+      13:00  Full collection
+      14:00  AI analysis → Afternoon briefing → Telegram
+      14:30~17:00  Alert check continues
+      17:00  Full collection
+      18:00  AI analysis → Daily report → Telegram
+      18:00~06:00  No collection (server idle)
+    """
     from app.elections.models import ScheduleConfig
     from app.auth.models import Tenant
 
     session = get_sync_session()
     try:
-        now = datetime.now(timezone(timedelta(hours=9)))  # KST
+        now = datetime.now(KST)
         current_time = now.strftime("%H:%M")
         current_hour = now.hour
 
-        # 운영 시간 체크 (09:00~20:00)
-        if current_hour < 9 or current_hour >= 20:
+        # 운영 시간 체크 (06:00~19:00 KST)
+        if current_hour < 6 or current_hour >= 19:
             return {"message": "Off hours", "time": current_time}
 
         schedules = session.execute(
@@ -763,28 +1003,55 @@ def check_and_run_schedules():
         ).all()
 
         triggered = 0
-        task_map = {
+
+        # Task dispatch map
+        collection_task_map = {
             "news": collect_news,
             "community": collect_community_enhanced,
             "youtube": collect_youtube_enhanced,
             "trends": collect_trends,
         }
 
+        briefing_task_map = {
+            "morning": morning_briefing,
+            "afternoon": afternoon_briefing,
+            "daily": daily_report,
+        }
+
         for schedule, tenant in schedules:
-            if current_time in (schedule.fixed_times or []):
-                task_fn = task_map.get(schedule.schedule_type)
-                if task_fn:
-                    task_fn.delay(
-                        str(schedule.tenant_id),
-                        str(schedule.election_id),
-                        str(schedule.id),
-                    )
-                    triggered += 1
+            if current_time not in (schedule.fixed_times or []):
+                continue
+
+            stype = schedule.schedule_type
+            config = schedule.config or {}
+            tid = str(schedule.tenant_id)
+            eid = str(schedule.election_id)
+            sid = str(schedule.id)
+
+            if stype == "full_collection":
+                # Full collection: news + community + youtube + trends + comments
+                full_collection.delay(tid, eid)
+                triggered += 1
+
+            elif stype == "briefing":
+                # Briefing: generate report + send telegram
+                bt = config.get("briefing_type", "daily")
+                task_fn = briefing_task_map.get(bt, daily_report)
+                task_fn.delay(tid, eid)
+                triggered += 1
+
+            elif stype in collection_task_map:
+                # Individual collection type
+                task_fn = collection_task_map[stype]
+                task_fn.delay(tid, eid, sid)
+                triggered += 1
 
         return {"time": current_time, "checked": len(schedules), "triggered": triggered}
     finally:
         session.close()
 
+
+# ──────────────── CELERY BEAT SCHEDULE ────────────────────────
 
 celery_app.conf.beat_schedule = {
     "check-schedules-every-minute": {
@@ -802,16 +1069,16 @@ celery_app.conf.beat_schedule = {
 def alert_check_all_tenants():
     """
     모든 활성 테넌트에 대해 위기 감지 실행.
-    08:00~18:00 사이에만 실행.
+    08:00~18:00 KST 사이에만 실행.
     """
     from app.elections.models import Election
     from app.auth.models import Tenant
 
     session = get_sync_session()
     try:
-        now = datetime.now(timezone(timedelta(hours=9)))
+        now = datetime.now(KST)
         if now.hour < 8 or now.hour >= 18:
-            return {"message": "Alert check off hours"}
+            return {"message": "Alert check off hours (08:00-18:00 KST only)"}
 
         # 활성 테넌트 + 선거 조회
         elections = session.execute(

@@ -14,6 +14,8 @@ import structlog
 
 logger = structlog.get_logger()
 
+KST = timezone(timedelta(hours=9))
+
 
 class CollectionScheduler:
     """수집 스케줄러 — 모든 테넌트의 스케줄을 관리."""
@@ -24,10 +26,10 @@ class CollectionScheduler:
     def get_due_schedules(self, current_time: str = None) -> list[dict]:
         """
         현재 시각에 실행해야 할 스케줄 목록.
-        current_time: "HH:MM" 형태 (미지정시 현재 시각)
+        current_time: "HH:MM" 형태 (미지정시 현재 KST 시각)
         """
         if not current_time:
-            current_time = datetime.now(timezone.utc).strftime("%H:%M")
+            current_time = datetime.now(KST).strftime("%H:%M")
 
         # 활성 테넌트의 활성 스케줄만
         schedules = self.session.execute(
@@ -63,14 +65,16 @@ class CollectionScheduler:
         return due
 
     def _already_ran_today(self, schedule_id) -> bool:
-        """오늘 이미 실행된 스케줄인지 확인."""
-        today_start = datetime.now(timezone.utc).replace(
-            hour=0, minute=0, second=0, microsecond=0
-        )
+        """오늘 이미 실행된 스케줄인지 확인 (KST 기준)."""
+        # KST 오늘 00:00 = UTC 전날 15:00
+        now_kst = datetime.now(KST)
+        today_start_kst = now_kst.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_start_utc = today_start_kst.astimezone(timezone.utc)
+
         result = self.session.execute(
             select(ScheduleRun).where(
                 ScheduleRun.schedule_id == schedule_id,
-                ScheduleRun.started_at >= today_start,
+                ScheduleRun.started_at >= today_start_utc,
             )
         ).scalar_one_or_none()
         return result is not None
@@ -109,35 +113,92 @@ class CollectionScheduler:
 
     @staticmethod
     def _get_schedule_templates(plan: str) -> list[dict]:
-        """요금제별 스케줄 템플릿."""
-        basic = [
-            {"name": "뉴스 수집 (오전)", "type": "news", "times": ["09:00"]},
-            {"name": "뉴스 수집 (오후)", "type": "news", "times": ["18:00"]},
+        """
+        요금제별 스케줄 템플릿.
+        All plans use the 06/08/13/14/17/18 pattern.
+        Higher plans add more collection frequency.
+        """
+        # Standard pattern for all plans
+        standard = [
+            {
+                "name": "오전 수집 (06:00)",
+                "type": "full_collection",
+                "times": ["06:00"],
+                "config": {"description": "전체 수집 (뉴스+커뮤니티+유튜브+트렌드+댓글)"},
+            },
+            {
+                "name": "오전 브리핑 (08:00)",
+                "type": "briefing",
+                "times": ["08:00"],
+                "config": {"briefing_type": "morning", "send_telegram": True},
+            },
+            {
+                "name": "오후 수집 (13:00)",
+                "type": "full_collection",
+                "times": ["13:00"],
+                "config": {"description": "전체 수집 (뉴스+커뮤니티+유튜브+트렌드+댓글)"},
+            },
+            {
+                "name": "오후 브리핑 (14:00)",
+                "type": "briefing",
+                "times": ["14:00"],
+                "config": {"briefing_type": "afternoon", "send_telegram": True},
+            },
+            {
+                "name": "마감 수집 (17:00)",
+                "type": "full_collection",
+                "times": ["17:00"],
+                "config": {"description": "전체 수집 (뉴스+커뮤니티+유튜브+트렌드+댓글)"},
+            },
+            {
+                "name": "일일 보고서 (18:00)",
+                "type": "briefing",
+                "times": ["18:00"],
+                "config": {"briefing_type": "daily", "send_telegram": True},
+            },
         ]
 
-        pro = [
-            {"name": "오전 브리핑", "type": "briefing", "times": ["09:00"],
-             "config": {"sections": ["news", "sentiment", "trends", "alerts"]}},
-            {"name": "뉴스 수집", "type": "news", "times": ["09:30", "14:30"]},
-            {"name": "검색 트렌드", "type": "trends", "times": ["10:00", "15:30"]},
-            {"name": "유튜브 모니터링", "type": "youtube", "times": ["10:30", "16:00"]},
-            {"name": "커뮤니티 모니터링", "type": "community", "times": ["11:00"]},
-            {"name": "오후 브리핑", "type": "briefing", "times": ["14:00"],
-             "config": {"sections": ["news", "sentiment", "hot_issues"]}},
-            {"name": "지역언론 수집", "type": "news", "times": ["09:30", "14:30"],
-             "config": {"sources": ["local"]}},
-            {"name": "일일 보고서", "type": "briefing", "times": ["18:00"],
-             "config": {"type": "daily_full", "send_pdf": True}},
-        ]
+        if plan == "basic":
+            # Basic: just morning/evening collection + daily report
+            return [
+                {
+                    "name": "오전 수집 (06:00)",
+                    "type": "full_collection",
+                    "times": ["06:00"],
+                    "config": {},
+                },
+                {
+                    "name": "마감 수집 (17:00)",
+                    "type": "full_collection",
+                    "times": ["17:00"],
+                    "config": {},
+                },
+                {
+                    "name": "일일 보고서 (18:00)",
+                    "type": "briefing",
+                    "times": ["18:00"],
+                    "config": {"briefing_type": "daily", "send_telegram": True},
+                },
+            ]
 
-        enterprise = pro + [
-            {"name": "실시간 뉴스 (2시간)", "type": "news",
-             "times": ["08:00", "10:00", "12:00", "14:00", "16:00", "18:00", "20:00"]},
-            {"name": "위기 감지", "type": "alert",
-             "times": ["09:00", "12:00", "15:00", "18:00"],
-             "config": {"threshold": 5, "notify_immediately": True}},
-            {"name": "경쟁자 약점 추적", "type": "weakness",
-             "times": ["10:30", "15:00"]},
-        ]
+        elif plan == "pro":
+            return standard
 
-        return {"basic": basic, "pro": pro, "enterprise": enterprise}.get(plan, basic)
+        elif plan == "enterprise":
+            # Enterprise: standard + midday collection + extra alert times
+            return standard + [
+                {
+                    "name": "추가 수집 (10:00)",
+                    "type": "full_collection",
+                    "times": ["10:00"],
+                    "config": {"description": "추가 수집"},
+                },
+                {
+                    "name": "추가 수집 (15:30)",
+                    "type": "full_collection",
+                    "times": ["15:30"],
+                    "config": {"description": "추가 수집"},
+                },
+            ]
+
+        return standard  # Default: pro pattern
