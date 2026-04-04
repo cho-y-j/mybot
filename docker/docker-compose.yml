@@ -1,0 +1,37 @@
+services:
+  # ──────────────── PostgreSQL (포트 5440 — 기존 5432/5435 충돌 회피) ──
+  postgres:
+    image: postgres:16-alpine
+    container_name: ep_postgres
+    environment:
+      POSTGRES_DB: electionpulse
+      POSTGRES_USER: electionpulse
+      POSTGRES_PASSWORD: ep_dev_password_2026
+    ports:
+      - "5440:5432"
+    volumes:
+      - ep_postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U electionpulse"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ──────────────── Redis (포트 6380 — 기존 6379/6399 충돌 회피) ───────
+  redis:
+    image: redis:7-alpine
+    container_name: ep_redis
+    ports:
+      - "6380:6379"
+    volumes:
+      - ep_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  ep_postgres_data:
+  ep_redis_data:

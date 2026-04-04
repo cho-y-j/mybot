@@ -1,0 +1,53 @@
+================================================
+{{ title }}
+{{ date }} | D-{{ d_day }}
+================================================
+
+[1. 종합 현황]
+뉴스 {{ total_news }}건 | 커뮤니티 {{ total_community }}건 | 유튜브 {{ total_youtube }}건
+
+{% for name, data in news.items() %}
+  {{ name }}: {{ data.count }}건 (긍정 {{ data.positive }} / 부정 {{ data.negative }})
+{% endfor %}
+
+[2. 후보별 감성 비교]
+{% for name, data in sentiment.items() %}
+  {{ name }}: 긍정 {{ data.positive }} | 부정 {{ data.negative }} | 중립 {{ data.neutral }}
+  감성비율: {{ "%.1f"|format(data.ratio * 100) }}%
+{% endfor %}
+
+[3. 검색 트렌드]
+{% for t in trends %}
+  {{ t.keyword }}: 상대검색량 {{ t.volume }} ({{ t.rank }}위)
+{% endfor %}
+
+[4. 유튜브]
+{% for name, data in youtube.items() %}
+  {{ name }}: {{ data.count }}건, 총 {{ data.total_views }}회 조회
+{% endfor %}
+
+[5. 최근 여론조사]
+{% for s in surveys %}
+  {{ s.org }} ({{ s.date }}, n={{ s.sample_size }})
+  {% for candidate, rate in s.results.items() %}
+    {{ candidate }}: {{ rate }}%
+  {% endfor %}
+{% endfor %}
+
+{% if alerts %}
+[!! 긴급 알림]
+{% for a in alerts %}
+  {{ a.level|upper }}: {{ a.message }}
+{% endfor %}
+{% endif %}
+
+{% if uncomfortable_truths %}
+[불편한 진실]
+{% for truth in uncomfortable_truths %}
+  - {{ truth }}
+{% endfor %}
+{% endif %}
+
+================================================
+ElectionPulse | 객관적 데이터 기반 분석
+================================================
