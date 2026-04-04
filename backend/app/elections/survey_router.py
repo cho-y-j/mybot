@@ -63,16 +63,22 @@ async def list_surveys(
     from app.elections.models import Election
     election = (await db.execute(select(Election).where(Election.id == election_id))).scalar_one_or_none()
 
-    # 해당 테넌트 + 충북 관련 공공데이터 전체
+    # 해당 테넌트 + 해당 지역 공공데이터 전체
+    region_filter = None
+    if election and election.region_sido:
+        region_filter = Survey.region_sido == election.region_sido
+
+    conditions = [Survey.tenant_id == user["tenant_id"]]
+    if region_filter is not None:
+        conditions.append(region_filter)
+    # 충북 프로토타입 데이터도 포함
+    conditions.append(Survey.source_url == 'chungbuk_prototype')
+    conditions.append(Survey.source_url.like('pdf/%충북%'))
+    conditions.append(Survey.source_url.like('pdf/%리얼미터%'))
+
     result = await db.execute(
-        select(Survey).where(
-            or_(
-                Survey.tenant_id == user["tenant_id"],
-                Survey.source_url == 'chungbuk_prototype',
-                Survey.source_url.like('pdf/%충북%'),
-                Survey.source_url.like('pdf/%리얼미터%'),
-            )
-        ).order_by(Survey.survey_date.desc()).limit(50)
+        select(Survey).where(or_(*conditions))
+        .order_by(Survey.survey_date.desc()).limit(50)
     )
     surveys = result.scalars().all()
 

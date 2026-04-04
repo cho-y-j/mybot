@@ -180,16 +180,16 @@ async def analysis_overview(
         "collected_at": n.collected_at.isoformat() if n.collected_at else None,
     } for n, cname in recent_news]
 
-    # ── 여론조사 (충북 데이터) ──
+    # ── 여론조사 (해당 지역 데이터) ──
+    survey_conditions = [Survey.tenant_id == tid]
+    if election:
+        survey_conditions.append(Survey.region_sido == election.region_sido)
+    survey_conditions.append(Survey.source_url == 'chungbuk_prototype')
+    survey_conditions.append(Survey.source_url.like('pdf/%'))
+
     surveys = (await db.execute(
-        select(Survey).where(
-            or_(
-                Survey.tenant_id == tid,
-                Survey.source_url == 'chungbuk_prototype',
-                Survey.source_url.like('pdf/%충북%'),
-                Survey.source_url.like('pdf/%리얼미터%'),
-            )
-        ).order_by(Survey.survey_date.desc()).limit(10)
+        select(Survey).where(or_(*survey_conditions))
+        .order_by(Survey.survey_date.desc()).limit(10)
     )).scalars().all()
 
     survey_list = [{
