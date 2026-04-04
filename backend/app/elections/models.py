@@ -286,8 +286,8 @@ class Survey(Base):
     __tablename__ = "surveys"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id = Column(UUID(as_uuid=True), nullable=False)
-    election_id = Column(UUID(as_uuid=True), ForeignKey("elections.id", ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(UUID(as_uuid=True), nullable=True)
+    election_id = Column(UUID(as_uuid=True), ForeignKey("elections.id", ondelete="CASCADE"), nullable=True)
 
     survey_org = Column(String(200), nullable=False, comment="여론조사 기관")
     client_org = Column(String(200), nullable=True, comment="의뢰 기관")
@@ -302,6 +302,10 @@ class Survey(Base):
 
     source_url = Column(String(1000), nullable=True)
     collected_at = Column(DateTime(timezone=True), default=utcnow)
+
+    # 지역/선거유형 (공공데이터 필터용)
+    election_type = Column(String(50), nullable=True)
+    region_sido = Column(String(50), nullable=True)
 
     # Relationships
     crosstabs = relationship("SurveyCrosstab", back_populates="survey", cascade="all, delete-orphan")
