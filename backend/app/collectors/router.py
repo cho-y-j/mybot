@@ -137,6 +137,56 @@ async def get_related_keywords(
     }
 
 
+@router.get("/{election_id}/keyword-trends-regional")
+async def get_regional_keyword_trends(
+    election_id: UUID,
+    user: CurrentUser,
+    days: int = 30,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    지역 vs 전국 이슈 검색량 비교.
+    지역에서 특히 관심이 높은 이슈를 식별.
+    """
+    from app.collectors.keyword_tracker import KeywordTracker
+    from app.elections.models import Election
+    from app.elections.korea_data import REGIONS
+
+    election = (await db.execute(
+        select(Election).where(Election.id == election_id)
+    )).scalar_one_or_none()
+    if not election:
+        raise HTTPException(404, "선거를 찾을 수 없습니다")
+
+    region_info = REGIONS.get(election.region_sido, {})
+    region_short = region_info.get("short", "")
+
+    tracker = KeywordTracker()
+    result = await tracker.get_regional_issue_trends(
+        election.election_type or "superintendent",
+        region_short,
+        min(days, 90),
+    )
+
+    # regional_boost 기준 정렬 (지역 강세 순)
+    sorted_issues = sorted(
+        result.items(),
+        key=lambda x: x[1].get("regional_boost", 0),
+        reverse=True,
+    )
+
+    return {
+        "region": region_short,
+        "election_type": election.election_type,
+        "issues": dict(sorted_issues),
+        "hot_local": [
+            {"keyword": k, **v}
+            for k, v in sorted_issues
+            if v.get("regional_boost", 0) > 10
+        ],
+    }
+
+
 @router.get("/{election_id}/search-keyword")
 async def search_single_keyword(
     election_id: UUID,
@@ -167,12 +217,15 @@ async def search_single_keyword(
 async def collect_now(
     election_id: UUID,
     collect_type: str = "news",
+    background: bool = True,
     user: CurrentUser = None,
     db: AsyncSession = Depends(get_db),
 ):
     """
     즉시 수집 실행 (Celery 없이 동기 실행).
     collect_type: news | youtube | community | trends | all
+    background=True (default): fire-and-forget — 즉시 응답, 백그라운드에서 수집 진행
+    background=False: 동기 실행 후 결과 반환 (긴 작업은 hang 가능)
 
     all: news + community + youtube + trends (각각의 수량 반환)
          news에는 댓글 수집도 포함.
@@ -183,6 +236,83 @@ async def collect_now(
     )
 
     tid = user["tenant_id"]
+
+    # 백그라운드 모드: 별도 DB 세션으로 fire-and-forget
+    if background:
+        import asyncio
+        import structlog
+        from app.database import async_session_factory
+
+        async def _bg_collect():
+            log = structlog.get_logger()
+            try:
+                async with async_session_factory() as bg_db:
+                    if collect_type == "all":
+                        await collect_all_now(bg_db, tid, str(election_id))
+                        # trends도 같이
+                        try:
+                            from app.collectors.keyword_tracker import collect_and_store_trends
+                            from app.elections.models import Election
+                            from app.elections.korea_data import REGIONS
+                            cands = (await bg_db.execute(
+                                select(Candidate).where(
+                                    Candidate.election_id == election_id,
+                                    Candidate.tenant_id == tid,
+                                    Candidate.enabled == True,
+                                )
+                            )).scalars().all()
+                            el = (await bg_db.execute(
+                                select(Election).where(Election.id == election_id)
+                            )).scalar_one_or_none()
+                            region_short = ""
+                            etype = "superintendent"
+                            if el:
+                                region_short = REGIONS.get(el.region_sido, {}).get("short", "")
+                                etype = el.election_type
+                            await collect_and_store_trends(
+                                bg_db, tid, str(election_id), [c.name for c in cands], etype, region_short,
+                            )
+                        except Exception as e:
+                            log.warning("bg_collect_trends_failed", error=str(e))
+                    elif collect_type == "news":
+                        await collect_news_now(bg_db, tid, str(election_id))
+                    elif collect_type == "community":
+                        await collect_community_now(bg_db, tid, str(election_id))
+                    elif collect_type == "youtube":
+                        await collect_youtube_now(bg_db, tid, str(election_id))
+                    elif collect_type == "trends":
+                        from app.collectors.keyword_tracker import collect_and_store_trends
+                        from app.elections.models import Election
+                        from app.elections.korea_data import REGIONS
+                        cands = (await bg_db.execute(
+                            select(Candidate).where(
+                                Candidate.election_id == election_id,
+                                Candidate.tenant_id == tid,
+                                Candidate.enabled == True,
+                            )
+                        )).scalars().all()
+                        el = (await bg_db.execute(
+                            select(Election).where(Election.id == election_id)
+                        )).scalar_one_or_none()
+                        region_short = ""
+                        etype = "superintendent"
+                        if el:
+                            region_short = REGIONS.get(el.region_sido, {}).get("short", "")
+                            etype = el.election_type
+                        await collect_and_store_trends(
+                            bg_db, tid, str(election_id), [c.name for c in cands], etype, region_short,
+                        )
+                log.info("bg_collect_done", election_id=str(election_id), type=collect_type)
+            except Exception as e:
+                log.error("bg_collect_failed", error=str(e), election_id=str(election_id))
+
+        asyncio.create_task(_bg_collect())
+        return {
+            "message": f"수집 시작됨 (백그라운드). 잠시 후 데이터가 반영됩니다.",
+            "background": True,
+            "collect_type": collect_type,
+        }
+
     results = []
 
     if collect_type == "all":
@@ -378,7 +508,7 @@ async def get_keyword_trends(
 
     # 후보별 + 이슈별 병렬 수집
     import asyncio
-    cand_task = tracker.get_candidate_trends(cand_names, days)
+    cand_task = tracker.get_candidate_trends(cand_names, days, election_type, region_short)
     issue_task = tracker.get_issue_trends(election_type, region_short, days)
 
     cand_trends, issue_trends = await asyncio.gather(cand_task, issue_task)
@@ -451,13 +581,21 @@ async def get_collected_news(
     sentiment: str = None,
     db: AsyncSession = Depends(get_db),
 ):
-    """수집된 뉴스 목록 (필터 지원)."""
-    query = select(NewsArticle, Candidate.name).join(
+    """수집된 뉴스 목록 (필터 지원, 공유 데이터 포함).
+    기본 정렬: 발행일(published_at) 역순 — 모든 후보 섞여서 최신순.
+    후보 필터는 candidate_id 파라미터로.
+    """
+    from app.common.election_access import get_election_tenant_ids
+    all_tids = await get_election_tenant_ids(db, election_id)
+    query = select(NewsArticle, Candidate.name, Candidate.is_our_candidate).join(
         Candidate, NewsArticle.candidate_id == Candidate.id
     ).where(
-        NewsArticle.tenant_id == user["tenant_id"],
+        NewsArticle.tenant_id.in_(all_tids),
         NewsArticle.election_id == election_id,
-    ).order_by(NewsArticle.collected_at.desc()).limit(limit)
+    ).order_by(
+        NewsArticle.published_at.desc().nullslast(),
+        NewsArticle.collected_at.desc(),
+    ).limit(limit)
 
     if candidate_id:
         query = query.where(NewsArticle.candidate_id == candidate_id)
@@ -476,8 +614,9 @@ async def get_collected_news(
             "sentiment": n.sentiment,
             "sentiment_score": n.sentiment_score,
             "candidate": cand_name,
+            "is_our_candidate": is_ours,
             "date": (n.published_at or n.collected_at).strftime("%Y-%m-%d") if (n.published_at or n.collected_at) else None,
             "collected_at": n.collected_at.isoformat() if n.collected_at else None,
         }
-        for n, cand_name in rows
+        for n, cand_name, is_ours in rows
     ]

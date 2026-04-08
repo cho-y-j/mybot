@@ -1,7 +1,8 @@
 """
 ElectionPulse - Reports API
-보고서 생성, 조회, 텔레그램 발송
+보고서 생성, 조회, 텔레그램 발송, PDF 다운로드
 """
+import os
 import uuid
 from uuid import UUID
 from datetime import date, datetime, timezone
@@ -66,7 +67,7 @@ async def generate_report(
     if use_ai:
         try:
             from app.reports.ai_report import generate_ai_report
-            result = await generate_ai_report(db, tid, str(election_id))
+            result = await generate_ai_report(db, tid, str(election_id), report_type=briefing_type)
             report_text = result.get("text", "")
             ai_generated = result.get("ai_generated", False)
         except Exception as e:
@@ -155,6 +156,52 @@ async def get_report(
         "content": report.content_text,
         "sent_telegram": report.sent_via_telegram,
     }
+
+
+@router.get("/{election_id}/{report_id}/download-pdf")
+async def download_report_pdf(
+    election_id: UUID,
+    report_id: UUID,
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """보고서 PDF 다운로드."""
+    from fastapi.responses import FileResponse
+
+    result = await db.execute(
+        select(Report).where(Report.id == report_id, Report.tenant_id == user["tenant_id"])
+    )
+    report = result.scalar_one_or_none()
+    if not report:
+        raise HTTPException(status_code=404)
+
+    # PDF가 이미 생성되어 있으면 반환
+    if report.file_path_pdf and os.path.exists(report.file_path_pdf):
+        return FileResponse(report.file_path_pdf, media_type="application/pdf",
+                            filename=f"report_{report.report_date}.pdf")
+
+    # 아니면 실시간 생성
+    from app.reports.pdf_generator import generate_report_pdf
+
+    election = (await db.execute(select(Election).where(Election.id == election_id))).scalar_one_or_none()
+    election_name = election.name if election else ""
+
+    pdf_path = generate_report_pdf(
+        report_text=report.content_text or "",
+        election_name=election_name,
+        report_date=report.report_date.isoformat() if report.report_date else "",
+        report_type=report.report_type or "daily",
+    )
+
+    if not pdf_path:
+        raise HTTPException(status_code=500, detail="PDF 생성 실패 (fpdf2 설치 필요: pip install fpdf2)")
+
+    # DB에 PDF 경로 저장
+    report.file_path_pdf = pdf_path
+    await db.flush()
+
+    return FileResponse(pdf_path, media_type="application/pdf",
+                        filename=f"ElectionPulse_{report.report_date}_{report.report_type}.pdf")
 
 
 @router.post("/{election_id}/{report_id}/send-telegram")

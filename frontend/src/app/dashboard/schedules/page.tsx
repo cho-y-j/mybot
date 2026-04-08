@@ -24,6 +24,9 @@ export default function SchedulesPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ name: '', schedule_type: 'news', fixed_times: '', enabled: true });
   const [message, setMessage] = useState('');
+  // 편집 모달
+  const [editing, setEditing] = useState<any>(null);
+  const [editForm, setEditForm] = useState({ name: '', fixed_times: '', schedule_type: 'news' });
 
   useEffect(() => {
     if (election) loadSchedules();
@@ -34,7 +37,9 @@ export default function SchedulesPage() {
     try {
       const data = await api.getSchedules(election.id);
       setSchedules(data);
-    } catch {} finally { setLoading(false); }
+    } catch (e: any) {
+      console.error('schedules load error:', e);
+    } finally { setLoading(false); }
   };
 
   const handleCreateDefaults = async () => {
@@ -45,16 +50,42 @@ export default function SchedulesPage() {
       setMessage(result.message);
       loadSchedules();
     } catch (e: any) {
-      setMessage(e.message);
+      setMessage('기본 스케줄 생성 실패: ' + (e?.message || ''));
     } finally { setCreating(false); }
   };
 
   const handleToggle = async (scheduleId: string, currentEnabled: boolean) => {
     if (!election) return;
     try {
-      await api.updateSchedule(election.id, scheduleId, { enabled: String(!currentEnabled) });
+      await api.updateSchedule(election.id, scheduleId, { enabled: !currentEnabled });
       loadSchedules();
-    } catch {}
+    } catch (e: any) {
+      alert('변경 실패: ' + (e?.message || ''));
+    }
+  };
+
+  const handleEdit = (s: any) => {
+    setEditing(s);
+    setEditForm({
+      name: s.name || '',
+      fixed_times: (s.fixed_times || []).join(', '),
+      schedule_type: s.schedule_type || 'news',
+    });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!election || !editing) return;
+    try {
+      await api.updateSchedule(election.id, editing.id, {
+        name: editForm.name,
+        fixed_times: editForm.fixed_times.split(',').map(t => t.trim()).filter(Boolean),
+        schedule_type: editForm.schedule_type,
+      });
+      setEditing(null);
+      loadSchedules();
+    } catch (e: any) {
+      alert('수정 실패: ' + (e?.message || ''));
+    }
   };
 
   const handleDelete = async (scheduleId: string) => {
@@ -62,7 +93,9 @@ export default function SchedulesPage() {
     try {
       await api.deleteSchedule(election.id, scheduleId);
       loadSchedules();
-    } catch {}
+    } catch (e: any) {
+      alert('삭제 실패: ' + (e?.message || ''));
+    }
   };
 
   const handleAdd = async (e: React.FormEvent) => {
@@ -76,7 +109,9 @@ export default function SchedulesPage() {
       setShowAdd(false);
       setForm({ name: '', schedule_type: 'news', fixed_times: '', enabled: true });
       loadSchedules();
-    } catch {}
+    } catch (e: any) {
+      alert('스케줄 추가 실패: ' + (e?.message || ''));
+    }
   };
 
   if (elLoading || loading) {
@@ -191,11 +226,51 @@ export default function SchedulesPage() {
                 className={`relative w-11 h-6 rounded-full transition-colors ${s.enabled ? 'bg-green-500' : 'bg-gray-300'}`}>
                 <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${s.enabled ? 'left-[22px]' : 'left-0.5'}`} />
               </button>
+              <button onClick={() => handleEdit(s)} className="text-xs text-blue-500 hover:text-blue-700">편집</button>
               <button onClick={() => handleDelete(s.id)} className="text-xs text-gray-400 hover:text-red-500">삭제</button>
             </div>
           </div>
         ))}
       </div>
+
+      {/* 편집 모달 */}
+      {editing && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="card w-96">
+            <h3 className="font-bold text-lg mb-4">스케줄 편집</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium mb-1">이름</label>
+                <input className="input-field w-full" value={editForm.name}
+                  onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">유형</label>
+                <select className="input-field w-full" value={editForm.schedule_type}
+                  onChange={e => setEditForm({ ...editForm, schedule_type: e.target.value })}>
+                  <option value="full_with_briefing">전체 수집 + 브리핑 (추천)</option>
+                  <option value="full_collection">전체 수집만</option>
+                  <option value="news">뉴스만</option>
+                  <option value="community">커뮤니티만</option>
+                  <option value="youtube">유튜브만</option>
+                  <option value="trends">검색 트렌드만</option>
+                  <option value="briefing">브리핑만</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">실행 시간 (HH:MM, 콤마 구분)</label>
+                <input className="input-field w-full font-mono" value={editForm.fixed_times}
+                  onChange={e => setEditForm({ ...editForm, fixed_times: e.target.value })}
+                  placeholder="07:00, 13:00, 18:00" />
+              </div>
+            </div>
+            <div className="flex gap-2 mt-5">
+              <button onClick={handleSaveEdit} className="flex-1 btn-primary">저장</button>
+              <button onClick={() => setEditing(null)} className="btn-secondary">취소</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 스케줄 추가 폼 */}
       {showAdd && (
@@ -212,6 +287,8 @@ export default function SchedulesPage() {
               <label className="block text-sm font-medium text-gray-700 mb-1">유형</label>
               <select className="input-field" value={form.schedule_type}
                 onChange={e => setForm({ ...form, schedule_type: e.target.value })}>
+                <option value="full_with_briefing">전체 수집 + 브리핑 (추천)</option>
+                <option value="full_collection">전체 수집만</option>
                 <option value="news">뉴스 수집</option>
                 <option value="community">커뮤니티/블로그</option>
                 <option value="youtube">유튜브</option>

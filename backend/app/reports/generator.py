@@ -106,7 +106,7 @@ async def generate_daily_report(
             NewsArticle.tenant_id == tenant_id,
             func.date(NewsArticle.collected_at) == today,
         )
-        .order_by(NewsArticle.collected_at.desc())
+        .order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.collected_at.desc())
         .limit(5)
     )).all()
 
@@ -195,12 +195,18 @@ async def generate_daily_report(
             else:
                 lines.append(f"  ✅ {our.name} 뉴스 비중 {pct:.0f}% — 양호")
 
-        # 최근 여론조사
+        # 최근 여론조사 (해당 테넌트 + 해당 선거 지역)
+        survey_q = select(Survey).where(
+            Survey.tenant_id == tenant_id,
+        )
+        if election and election.region_sido:
+            from sqlalchemy import or_
+            survey_q = survey_q.where(or_(
+                Survey.election_id == election_id,
+                Survey.region_sido == election.region_sido,
+            ))
         latest_survey = (await db.execute(
-            select(Survey)
-            .where(Survey.source_url == 'chungbuk_prototype')
-            .order_by(Survey.survey_date.desc())
-            .limit(1)
+            survey_q.order_by(Survey.survey_date.desc()).limit(1)
         )).scalar_one_or_none()
 
         if latest_survey and latest_survey.results:

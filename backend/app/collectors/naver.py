@@ -138,12 +138,26 @@ class NaverCollector:
                                 desc = desc_el.get_text(strip=True)[:300]
                                 break
 
+                    # 날짜 추출 시도 (부모 요소에서)
+                    pub_date_str = None
+                    if parent:
+                        for date_cls in ["info_group_inner", "sub_txt", "news_info", "dsc_sub"]:
+                            date_el = parent.find(["span", "div", "p"], class_=lambda c: c and date_cls in str(c))
+                            if date_el:
+                                date_text = date_el.get_text(strip=True)
+                                # "2026.04.05." 또는 "1시간 전" 등
+                                import re
+                                date_match = re.search(r'(\d{4})\.(\d{2})\.(\d{2})', date_text)
+                                if date_match:
+                                    pub_date_str = f"{date_match.group(1)}-{date_match.group(2)}-{date_match.group(3)}"
+                                break
+
                     articles.append({
                         "title": title,
                         "url": href,
                         "source": source,
                         "description": desc,
-                        "pub_date": None,
+                        "pub_date": pub_date_str,
                         "platform": "naver",
                     })
 
@@ -250,22 +264,39 @@ class NaverCollector:
     # ──────────────── HELPERS ──────────────────────────────────
 
     def _apply_homonym_filter(self, articles: list[dict], filters: dict) -> list[dict]:
-        """동명이인 필터 적용 (기존 코드 검증 완료)."""
+        """동명이인 필터 적용.
+
+        filters:
+            exclude: list[str] — 이 단어가 본문에 있으면 무조건 차단 (산은캐피탈, 사외이사 등)
+            require_any: list[str] — 이 중 하나라도 있어야 함 (정치/지역 컨텍스트 OR)
+            require_name: list[str] — 후보 이름 변형 (이 중 하나라도 있어야 함, 강제)
+        """
         exclude = filters.get("exclude", [])
         require_any = filters.get("require_any", [])
+        require_name = filters.get("require_name", [])
         filtered = []
+        excluded_count = 0
+        no_require_count = 0
+        no_name_count = 0
 
         for article in articles:
             text = f"{article['title']} {article.get('description', '')}"
-            # 제외 키워드 포함 → 스킵
+            # 1. 동명이인 차단어
             if any(ex in text for ex in exclude):
+                excluded_count += 1
                 continue
-            # 필수 키워드 중 하나라도 있어야 통과
+            # 2. 후보 이름이 본문에 반드시 있어야 함 (네이버 API가 키워드 매칭 외 이상한 결과 반환할 때 차단)
+            if require_name and not any(n in text for n in require_name):
+                no_name_count += 1
+                continue
+            # 3. 정치/지역 컨텍스트 키워드 (OR)
             if require_any and not any(req in text for req in require_any):
+                no_require_count += 1
                 continue
             filtered.append(article)
 
-        logger.info("homonym_filtered", before=len(articles), after=len(filtered))
+        logger.info("homonym_filtered", before=len(articles), after=len(filtered),
+                    excluded=excluded_count, no_name=no_name_count, no_context=no_require_count)
         return filtered
 
     @staticmethod

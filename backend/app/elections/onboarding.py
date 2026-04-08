@@ -37,51 +37,30 @@ class SmartSetupRequest(BaseModel):
 
 def _get_default_schedule_templates() -> list[dict]:
     """
-    기본 스케줄 템플릿 — 06/08/13/14/17/18 패턴.
+    기본 스케줄 템플릿 — 수집 직후 브리핑 통합 (3회).
 
-    06:00  Full collection (news + community + youtube + trends + comments)
-    08:00  AI analysis → Morning briefing → Telegram
-    08:30~13:00  Alert check every 30 min (built-in via celery beat)
-    13:00  Full collection
-    14:00  AI analysis → Afternoon briefing → Telegram
-    14:30~17:00  Alert check continues
-    17:00  Full collection
-    18:00  AI analysis → Daily report → Telegram
+    07:00  수집 + 오전 브리핑 (밤사이 데이터 + 출근 전 보고)
+    13:00  수집 + 오후 브리핑 (오전 활동 + 점심 후 확인)
+    18:00  수집 + 일일 종합 보고서 (퇴근 시간 도착)
+
+    각 시간에 수집 후 즉시 AI 분석 + 보고서 생성 + 텔레그램 발송.
     """
     return [
         {
-            "name": "오전 수집 (06:00)",
-            "schedule_type": "full_collection",
-            "fixed_times": ["06:00"],
-            "config": {"description": "뉴스+커뮤니티+유튜브+트렌드+댓글 전체 수집"},
-        },
-        {
-            "name": "오전 브리핑 (08:00)",
-            "schedule_type": "briefing",
-            "fixed_times": ["08:00"],
+            "name": "오전 수집+브리핑 (07:00)",
+            "schedule_type": "full_with_briefing",
+            "fixed_times": ["07:00"],
             "config": {"briefing_type": "morning", "send_telegram": True},
         },
         {
-            "name": "오후 수집 (13:00)",
-            "schedule_type": "full_collection",
+            "name": "오후 수집+브리핑 (13:00)",
+            "schedule_type": "full_with_briefing",
             "fixed_times": ["13:00"],
-            "config": {"description": "뉴스+커뮤니티+유튜브+트렌드+댓글 전체 수집"},
-        },
-        {
-            "name": "오후 브리핑 (14:00)",
-            "schedule_type": "briefing",
-            "fixed_times": ["14:00"],
             "config": {"briefing_type": "afternoon", "send_telegram": True},
         },
         {
-            "name": "마감 수집 (17:00)",
-            "schedule_type": "full_collection",
-            "fixed_times": ["17:00"],
-            "config": {"description": "뉴스+커뮤니티+유튜브+트렌드+댓글 전체 수집"},
-        },
-        {
-            "name": "일일 보고서 (18:00)",
-            "schedule_type": "briefing",
+            "name": "일일 종합 보고서 (18:00)",
+            "schedule_type": "full_with_briefing",
             "fixed_times": ["18:00"],
             "config": {"briefing_type": "daily", "send_telegram": True},
         },
@@ -239,22 +218,79 @@ async def apply_setup(
         ))
         kw_count += 1
 
-    # 5. 스케줄 생성 — 06/08/13/14/17/18 패턴
+    # 5. 스케줄 생성 — 캠프별 시간 오프셋 자동 분산 (Claude API 부하 분산)
+    import hashlib
+    offset_min = int(hashlib.md5(str(tid).encode()).hexdigest()[:4], 16) % 15  # 0~14분 오프셋
+
+    def _apply_offset(time_str: str) -> str:
+        h, m = map(int, time_str.split(':'))
+        m += offset_min
+        if m >= 60:
+            h += 1
+            m -= 60
+        return f"{h:02d}:{m:02d}"
+
     schedule_templates = _get_default_schedule_templates()
     sched_count = 0
     for s in schedule_templates:
+        adjusted_times = [_apply_offset(t) for t in s["fixed_times"]]
         db.add(ScheduleConfig(
             election_id=election.id,
             tenant_id=tid,
-            name=s["name"],
+            name=s["name"].replace(s["fixed_times"][0], adjusted_times[0]) if s["fixed_times"] else s["name"],
             schedule_type=s["schedule_type"],
-            fixed_times=s["fixed_times"],
+            fixed_times=adjusted_times,
             enabled=True,
             config=s.get("config", {}),
         ))
         sched_count += 1
 
     await db.flush()
+
+    # 6. 즉시 첫 수집 + 자동 부트스트랩 (백그라운드 task — fire and forget)
+    # 수집 → 분석 → AI 리포트까지 순차 자동 실행. 사용자가 첫 페이지 방문 시 모든 게 채워져 있어야 함.
+    try:
+        import asyncio
+        from app.collectors.instant import collect_all_now
+        from app.elections.bootstrap import bootstrap_campaign
+
+        async def _bg_collect_and_bootstrap():
+            from app.database import async_session_factory
+            import structlog
+            log = structlog.get_logger()
+            try:
+                # 1단계: 데이터 수집
+                async with async_session_factory() as bg_db:
+                    await collect_all_now(bg_db, tid, str(election.id))
+                    log.info("onboarding_collect_done", election_id=str(election.id))
+
+                # 2단계: 분석/리포트 자동 부트스트랩 (수집 끝난 후)
+                async with async_session_factory() as bg_db2:
+                    boot = await bootstrap_campaign(bg_db2, tid, str(election.id))
+                    await bg_db2.commit()
+                    log.info("onboarding_bootstrap_done", election_id=str(election.id), result=boot)
+            except Exception as e:
+                log.error("bg_first_collect_failed", error=str(e))
+
+        asyncio.create_task(_bg_collect_and_bootstrap())
+    except Exception as e:
+        import structlog
+        structlog.get_logger().warning("onboarding_first_collect_failed", error=str(e))
+
+    # 7. 과거 선거 데이터 자동 로드 (선관위 API)
+    history_result = {"records_imported": 0}
+    try:
+        from app.collectors.nec_api import fetch_and_store_history
+        history_result = await fetch_and_store_history(
+            db_session=db,
+            region_sido=req.sido,
+            election_type=req.election_type,
+            tenant_id=tid,
+        )
+        await db.flush()
+    except Exception as e:
+        import structlog
+        structlog.get_logger().warning("onboarding_history_failed", error=str(e))
 
     return {
         "message": "설정이 완료되었습니다! 분석을 시작할 수 있습니다.",
@@ -270,5 +306,6 @@ async def apply_setup(
             "schedule_pattern": "06:00 수집 → 08:00 오전 브리핑 → 13:00 수집 → 14:00 오후 브리핑 → 17:00 수집 → 18:00 일일 보고서",
             "local_media": len(setup["local_media"]),
             "community_targets": len(setup["community_targets"]),
+            "history_records": history_result.get("records_imported", 0),
         },
     }

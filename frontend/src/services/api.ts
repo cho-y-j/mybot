@@ -247,11 +247,93 @@ class ApiClient {
     return this.request<any>(`/collectors/${electionId}/collect-trends`, { method: 'POST' });
   }
 
+  searchKeyword(electionId: string, keyword: string) {
+    return this.request<any>(`/collectors/${electionId}/search-keyword?keyword=${encodeURIComponent(keyword)}`);
+  }
+
+  getKeywordVolumes(electionId: string, extraKeywords?: string) {
+    const params = extraKeywords ? `?extra_keywords=${encodeURIComponent(extraKeywords)}` : '';
+    return this.request<any>(`/collectors/${electionId}/keyword-volumes${params}`);
+  }
+
+  getKeywordCategories(electionType: string = 'superintendent') {
+    return this.request<any>(`/content/keyword-categories?election_type=${encodeURIComponent(electionType)}`);
+  }
+
+  getRegionalKeywordTrends(electionId: string, days: number = 30) {
+    return this.request<any>(`/collectors/${electionId}/keyword-trends-regional?days=${days}`);
+  }
+
+  getBlogTags(electionId: string) {
+    return this.request<any>(`/content/blog-tags/${electionId}`);
+  }
+
+  getIssueCandidateMatrix(electionId: string) {
+    return this.request<any>(`/analysis/${electionId}/issue-candidate-matrix`);
+  }
+
+  getCommunityData(electionId: string, days: number = 30) {
+    return this.request<any>(`/analysis/${electionId}/community-data?days=${days}`);
+  }
+
+  getCommunityPosts(electionId: string, days: number = 30, candidate: string = '', sentiment: string = '') {
+    const params = new URLSearchParams({ days: String(days), limit: '200' });
+    if (candidate) params.set('candidate', candidate);
+    if (sentiment) params.set('sentiment', sentiment);
+    return this.request<any[]>(`/analysis/${electionId}/community-posts?${params}`);
+  }
+
+  refreshBriefing(electionId: string) {
+    return this.request<any>(`/analysis/${electionId}/refresh-briefing`, { method: 'POST' });
+  }
+
+  analyzeMediaWithAI(electionId: string, limit: number = 15) {
+    return this.request<any>(`/analysis/${electionId}/analyze-media?limit=${limit}`, { method: 'POST' });
+  }
+
+  getAIThreats(electionId: string) {
+    return this.request<any>(`/analysis/${electionId}/ai-threats`);
+  }
+
+  getMediaOverview(electionId: string, days: number = 7) {
+    return this.request<any>(`/analysis/${electionId}/media-overview?days=${days}`);
+  }
+
+  getElectionLawToc() {
+    return this.request<any>('/content/election-law');
+  }
+
+  searchElectionLaw(query: string) {
+    return this.request<any>(`/content/election-law/search?q=${encodeURIComponent(query)}`);
+  }
+
+  getElectionLawSection(sectionId: string) {
+    return this.request<any>(`/content/election-law/${sectionId}`);
+  }
+
+  generateContent(electionId: string, contentType: string, topic: string, style: string = 'formal', context: string = '') {
+    const params = new URLSearchParams({ content_type: contentType, topic, style, context });
+    return this.request<any>(`/content/generate-content/${electionId}?${params}`, { method: 'POST' });
+  }
+
+  getContentSituations(electionId: string) {
+    return this.request<any>(`/content/content-situations/${electionId}`);
+  }
+
   getCollectedNews(electionId: string, limit: number = 50, candidateId?: string, sentiment?: string) {
     let url = `/collectors/${electionId}/news?limit=${limit}`;
     if (candidateId) url += `&candidate_id=${candidateId}`;
     if (sentiment) url += `&sentiment=${sentiment}`;
     return this.request<any[]>(url);
+  }
+
+  // ─── Strategic 4-Quadrant ───────────────────────────────────
+  getStrategicQuadrant(electionId: string, media: 'all'|'news'|'community'|'youtube' = 'all', itemsPerQuadrant: number = 5) {
+    return this.request<any>(`/strategy/${electionId}/quadrant?media=${media}&items_per_quadrant=${itemsPerQuadrant}`);
+  }
+
+  triggerStrategicAnalysis(electionId: string, limitPerType: number = 30) {
+    return this.request<any>(`/strategy/${electionId}/analyze?limit_per_type=${limitPerType}`, { method: 'POST' });
   }
 
   // ─── Schedules ──────────────────────────────────────────────
@@ -266,8 +348,9 @@ class ApiClient {
   }
 
   updateSchedule(electionId: string, scheduleId: string, data: any) {
-    return this.request<any>(`/elections/${electionId}/schedules/${scheduleId}?${new URLSearchParams(data)}`, {
+    return this.request<any>(`/elections/${electionId}/schedules/${scheduleId}`, {
       method: 'PUT',
+      body: JSON.stringify(data),
     });
   }
 
@@ -306,8 +389,8 @@ class ApiClient {
   }
 
   // ─── Competitor / Content / AI Report ─────────────────────────
-  getCompetitorGaps(electionId: string, days: number = 7) {
-    return this.request<any>(`/analysis/${electionId}/competitor-gaps?days=${days}`);
+  getCompetitorGaps(electionId: string, days: number = 7, refresh: boolean = false) {
+    return this.request<any>(`/analysis/${electionId}/competitor-gaps?days=${days}&refresh=${refresh}`);
   }
 
   getContentStrategy(electionId: string) {
@@ -316,6 +399,26 @@ class ApiClient {
 
   generateAIReport(electionId: string, sendTelegram: boolean = false) {
     return this.request<any>(`/analysis/${electionId}/generate-ai-report?send_telegram=${sendTelegram}`, { method: 'POST' });
+  }
+
+  getRealtimeTrends() {
+    return this.request<any>('/analysis/realtime-trends');
+  }
+
+  getHistoryDeepAnalysis(electionId: string) {
+    return this.request<any>(`/analysis/${electionId}/history-deep-analysis`);
+  }
+
+  getSurveyDeepAnalysis(electionId: string) {
+    return this.request<any>(`/analysis/${electionId}/survey-deep-analysis`);
+  }
+
+  getSurveyCrosstabs(electionId: string, surveyId: string) {
+    return this.request<any>(`/surveys/${electionId}/surveys/${surveyId}`);
+  }
+
+  getYouTubeData(electionId: string, days: number = 30) {
+    return this.request<any>(`/analysis/${electionId}/youtube-data?days=${days}`);
   }
 
   // ─── Surveys ────────────────────────────────────────────────

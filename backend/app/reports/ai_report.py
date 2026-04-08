@@ -22,36 +22,82 @@ logger = structlog.get_logger()
 
 # ── AI 보고서 프롬프트 ──
 
-REPORT_SYSTEM_PROMPT = """당신은 선거 캠프의 수석 전략 분석관입니다.
-아래 데이터를 기반으로 일일 전략 보고서를 작성합니다.
+REPORT_PROMPT_DAILY = """당신은 선거 캠프의 수석 전략 분석관입니다.
+아래 데이터를 기반으로 일일 종합 전략 보고서를 작성합니다.
 
 [절대 원칙]
 1. 우리 후보에게 불리한 정보도 숨기지 않고 그대로 보고
 2. "잘하고 있다", "긍정적이다" 같은 위안성 표현 금지
 3. 수치와 데이터로만 판단 (주관적 평가 금지)
 4. 경쟁자의 강점도 정확히 분석
-5. 텔레그램에서 읽기 좋게 간결하게 작성
-6. 기사 URL이 있으면 반드시 포함
+5. 기사 URL이 있으면 반드시 포함
 
-[보고서 형식 — 정확히 이 5개 섹션만]
-1. 📊 오늘 현황: 뉴스 건수, 전일 대비 변화, 핵심 기사 + URL
-2. ⚔️ 경쟁자 대비 체크: 우리가 부족한 점 구체적으로
-3. 💬 여론 동향: 커뮤니티/댓글 감성 요약, 유권자 관심사
-4. 🚨 위기/기회: 부정 뉴스, 이슈 선점 기회
-5. 🎯 AI 전략 제안: 오늘 해야 할 구체적 행동 3가지
+[보고서 형식 — 3파트 16섹션]
 
-각 섹션은 3-5줄 이내로 핵심만. 총 보고서 길이 1500자 이내.
-반드시 한국어로 작성.
+═══ PART 1: 현황 ═══
+1. 핵심 요약 (30초 브리핑) — D-Day, 현재 순위, 오늘 핵심 변화 1줄
+2. 후보 비교 분석 — 후보별 뉴스 건수, 감성, 미디어 점유율 비교
+3. 검색 노출 현황 — 검색 트렌드 순위, 검색량 변화
+4. 뉴스 모니터링 — 주요 기사 요약 + URL (긍정/부정 분류)
+5. SNS/커뮤니티 여론 — 카페/블로그/유튜브 댓글 감성 요약
+6. 경쟁자 동향 — 경쟁자별 특이사항, 공약, 활동
+
+═══ PART 2: 분석 ═══
+7. SWOT 전략 분석 — 우리 후보 강점/약점/기회/위협
+8. 여론조사 현황 — 최신 지지율, 추세 (상승/하락/보합)
+9. 과거 선거 참고 — 해당 지역 역대 선거 패턴 시사점
+10. 타겟 유권자 공략 — 세그먼트별 공략 전략 (연령대/지역 등)
+11. 지역별 전략 — 강세/약세/접전 지역별 대응
+
+═══ PART 3: 전략 ═══
+12. 위험 항목 & 대응 — 부정 뉴스, 감성 악화, 대응 방안
+13. AI 전략 제언 — 오늘 해야 할 구체적 행동 5가지
+14. 콘텐츠 전략 — 블로그/유튜브/SNS 주제 추천
+15. 불편한 진실 — 우리에게 불리한 데이터 솔직히 (필수)
+16. 스케줄 실행 현황 — 오늘 수집/분석 현황 요약
+
+각 섹션은 3-8줄. 총 보고서 4000자 이내. 반드시 한국어.
 """
+
+REPORT_PROMPT_MORNING = """당신은 선거 캠프의 전략 분석관입니다.
+오전 브리핑을 작성합니다. 간결하게 5섹션만.
+
+[보고서 형식]
+1. 핵심 요약 — 어제 변화, 오늘 예상
+2. 뉴스 체크 — 어제 주요 기사 3건 + URL
+3. 경쟁자 — 경쟁자 어제 활동
+4. 위기/기회 — 부정 뉴스 있으면 대응
+5. 오늘 할 일 — 구체적 3가지
+
+각 섹션 3줄 이내. 총 1000자. 한국어.
+"""
+
+REPORT_PROMPT_AFTERNOON = """당신은 선거 캠프의 전략 분석관입니다.
+오후 중간점검을 작성합니다.
+
+[보고서 형식]
+1. 오전 변화 — 오전에 나온 뉴스/이슈
+2. 감성 변화 — 긍정/부정 변동
+3. 경쟁자 — 경쟁자 오전 활동
+4. 대응 필요 — 즉시 대응할 사항
+5. 오후 전략 — 오후에 해야 할 것
+
+각 섹션 3줄 이내. 총 800자. 한국어.
+"""
+
+# 기본 호환용 (기존 코드에서 참조)
+REPORT_SYSTEM_PROMPT = REPORT_PROMPT_DAILY
 
 
 async def generate_ai_report(
     db: AsyncSession,
     tenant_id: str,
     election_id: str,
+    report_type: str = "daily",
 ) -> dict:
     """
     AI 기반 전략 보고서 생성.
+    report_type: "daily" (16섹션), "morning" (5섹션), "afternoon" (5섹션)
     Returns: {"text": str, "sections": dict, "ai_generated": bool}
     """
     # 1. DB에서 모든 데이터 수집
@@ -63,8 +109,14 @@ async def generate_ai_report(
     # 2. 데이터 팩트시트 생성
     factsheet = _format_factsheet(data_context)
 
-    # 3. Claude CLI로 AI 분석
-    ai_text = await _call_claude_for_report(factsheet)
+    # 3. Claude CLI로 AI 분석 (보고서 유형별 프롬프트)
+    prompt_map = {
+        "daily": REPORT_PROMPT_DAILY,
+        "morning": REPORT_PROMPT_MORNING,
+        "afternoon": REPORT_PROMPT_AFTERNOON,
+    }
+    system_prompt = prompt_map.get(report_type, REPORT_PROMPT_DAILY)
+    ai_text = await _call_claude_for_report(factsheet, system_prompt)
 
     if ai_text:
         report_text = _format_final_report(data_context, ai_text)
@@ -92,20 +144,35 @@ async def _build_report_data(
     week_ago = today - timedelta(days=7)
     now_kst = datetime.now(timezone(timedelta(hours=9)))
 
-    # 선거 정보
+    # 선거 정보 (공유 데이터 지원)
+    from app.common.election_access import get_election_tenant_ids, get_our_candidate_id
+
     election = (await db.execute(
         select(Election).where(Election.id == election_id)
     )).scalar_one_or_none()
     if not election:
         return {}
 
-    candidates = (await db.execute(
+    all_tids = await get_election_tenant_ids(db, election_id)
+    our_cand_id = await get_our_candidate_id(db, tenant_id, election_id)
+
+    all_candidates = (await db.execute(
         select(Candidate).where(
             Candidate.election_id == election_id,
-            Candidate.tenant_id == tenant_id,
+            Candidate.tenant_id.in_(all_tids),
             Candidate.enabled == True,
         ).order_by(Candidate.priority)
     )).scalars().all()
+
+    # 중복 제거 + 우리 후보 동적 설정
+    seen = set()
+    candidates = []
+    for c in all_candidates:
+        if c.name not in seen:
+            seen.add(c.name)
+            if our_cand_id:
+                c.is_our_candidate = (str(c.id) == our_cand_id)
+            candidates.append(c)
 
     our = next((c for c in candidates if c.is_our_candidate), None)
     d_day = (election.election_date - today).days
@@ -176,7 +243,7 @@ async def _build_report_data(
             NewsArticle.tenant_id == tenant_id,
             NewsArticle.election_id == election_id,
         )
-        .order_by(NewsArticle.collected_at.desc())
+        .order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.collected_at.desc())
         .limit(15)
     )).all()
 
@@ -200,7 +267,7 @@ async def _build_report_data(
             NewsArticle.election_id == election_id,
             NewsArticle.sentiment == "negative",
         )
-        .order_by(NewsArticle.collected_at.desc())
+        .order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.collected_at.desc())
         .limit(10)
     )).all()
 
@@ -323,6 +390,42 @@ async def _build_report_data(
             "sample_size": s.sample_size,
         })
 
+    # ── 교차분석 요약 ──
+    crosstab_summary = []
+    try:
+        survey_ids = [s.id for s in latest_survey]
+        if survey_ids:
+            cts = (await db.execute(
+                select(SurveyCrosstab).where(SurveyCrosstab.survey_id.in_(survey_ids))
+            )).scalars().all()
+            # 차원별 그룹핑 (상위 항목만)
+            from collections import defaultdict
+            dims = defaultdict(lambda: defaultdict(dict))
+            for ct in cts:
+                dims[ct.dimension][ct.segment][ct.candidate] = ct.value
+            for dim, segs in dims.items():
+                for seg, cands in list(segs.items())[:5]:
+                    crosstab_summary.append(f"[{dim}] {seg}: " + ", ".join(f"{k} {v}%" for k, v in cands.items()))
+    except Exception:
+        pass
+
+    # ── 과거 선거 요약 ──
+    history_summary = []
+    try:
+        from app.elections.history_models import ElectionResult
+        hist_results = (await db.execute(
+            select(ElectionResult).where(
+                ElectionResult.tenant_id == tenant_id,
+                ElectionResult.region_sido == election.region_sido,
+                ElectionResult.election_type == election.election_type,
+                ElectionResult.is_winner == True,
+            ).order_by(ElectionResult.election_year.desc()).limit(6)
+        )).scalars().all()
+        for h in hist_results:
+            history_summary.append(f"{h.election_year}년: {h.candidate_name} ({h.party}) {h.vote_rate}%")
+    except Exception:
+        pass
+
     sections_data = {
         "candidate_news": candidate_news,
         "negative_news_count": len(neg_items),
@@ -349,6 +452,8 @@ async def _build_report_data(
         "yt_comment_stats": yt_comment_stats,
         "trends": trend_items,
         "surveys": survey_items,
+        "crosstab_summary": crosstab_summary,
+        "history_summary": history_summary,
         "now_kst": now_kst.strftime("%Y-%m-%d %H:%M"),
         "sections_data": sections_data,
     }
@@ -428,6 +533,20 @@ def _format_factsheet(data: dict) -> str:
         for s in data["surveys"]:
             results_str = ", ".join(f"{k}: {v}%" for k, v in s["results"].items()) if s["results"] else "결과 없음"
             lines.append(f"{s['org']} ({s['date']}): {results_str} (n={s['sample_size'] or '?'})")
+        lines.append("")
+
+    # 교차분석
+    if data.get("crosstab_summary"):
+        lines.append("=== 여론조사 교차분석 ===")
+        for ct in data["crosstab_summary"][:15]:
+            lines.append(f"  {ct}")
+        lines.append("")
+
+    # 과거 선거
+    if data.get("history_summary"):
+        lines.append("=== 역대 선거 당선자 ===")
+        for h in data["history_summary"]:
+            lines.append(f"  {h}")
         lines.append("")
 
     return "\n".join(lines)
@@ -515,14 +634,14 @@ def _generate_fallback_report(data: dict) -> str:
     return "\n".join(lines)
 
 
-async def _call_claude_for_report(factsheet: str) -> Optional[str]:
+async def _call_claude_for_report(factsheet: str, system_prompt: str = None) -> Optional[str]:
     """Claude CLI로 AI 보고서 생성."""
     claude_path = shutil.which("claude")
     if not claude_path:
         logger.info("claude_cli_not_found")
         return None
 
-    prompt = f"{REPORT_SYSTEM_PROMPT}\n\n[수집 데이터 팩트시트]\n{factsheet}"
+    prompt = f"{system_prompt or REPORT_PROMPT_DAILY}\n\n[수집 데이터 팩트시트]\n{factsheet}"
 
     try:
         proc = await asyncio.create_subprocess_exec(

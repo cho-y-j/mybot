@@ -24,6 +24,7 @@ from app.content.router import router as content_router
 from app.elections.history_router import router as history_router
 from app.elections.events_router import router as events_router
 from app.elections.survey_router import router as survey_router
+from app.strategy.router import router as strategy_router
 from app.common.middleware import (
     RateLimitMiddleware,
     AuditLogMiddleware,
@@ -63,6 +64,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://localhost:3001",
+        "http://localhost:3100",
         f"https://{settings.APP_DOMAIN}",
         f"https://admin.{settings.APP_DOMAIN}",
     ],
@@ -92,6 +94,7 @@ app.include_router(content_router, prefix="/api/content", tags=["Content Tools"]
 app.include_router(history_router, prefix="/api/history", tags=["Election History"])
 app.include_router(events_router, prefix="/api/events", tags=["Events & Recommendations"])
 app.include_router(survey_router, prefix="/api/surveys", tags=["Surveys"])
+app.include_router(strategy_router, prefix="/api/strategy", tags=["Strategy 4-Quadrant"])
 
 
 # ──────────────── Health Check ─────────────────────────────────────────────

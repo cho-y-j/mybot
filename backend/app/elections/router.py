@@ -7,6 +7,7 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -31,8 +32,20 @@ async def list_elections(
     user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
-    """내 테넌트의 선거 목록 조회."""
-    query = select(Election).where(Election.tenant_id == user["tenant_id"])
+    """내 테넌트의 선거 목록 조회 (공유 선거 포함)."""
+    from sqlalchemy import or_, text as sql_text
+    tid = user["tenant_id"]
+
+    # 자기 tenant 선거 + tenant_elections 매핑된 선거
+    shared_ids = (await db.execute(sql_text(
+        "SELECT election_id FROM tenant_elections WHERE tenant_id = :tid"
+    ), {"tid": str(tid)})).scalars().all()
+
+    conditions = [Election.tenant_id == tid]
+    if shared_ids:
+        conditions.append(Election.id.in_(shared_ids))
+
+    query = select(Election).where(or_(*conditions))
     result = await db.execute(query)
     elections = result.scalars().all()
 
@@ -128,14 +141,30 @@ async def list_candidates(
     user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
-    """후보자 목록 조회."""
+    """후보자 목록 조회 (공유 선거 포함, 우리 후보 tenant별 동적 설정)."""
+    from app.common.election_access import get_election_tenant_ids, get_our_candidate_id
+    tid = user["tenant_id"]
+    all_tids = await get_election_tenant_ids(db, election_id)
+    our_cand_id = await get_our_candidate_id(db, tid, election_id)
+
     result = await db.execute(
         select(Candidate).where(
             Candidate.election_id == election_id,
-            Candidate.tenant_id == user["tenant_id"],
-        ).order_by(Candidate.is_our_candidate.desc(), Candidate.priority, Candidate.name)
+            Candidate.tenant_id.in_(all_tids),
+        ).order_by(Candidate.priority, Candidate.name)
     )
-    candidates = result.scalars().all()
+    # 중복 후보 제거 + 우리 후보 동적 설정
+    seen = set()
+    candidates = []
+    for c in result.scalars().all():
+        if c.name not in seen:
+            seen.add(c.name)
+            # tenant별 "우리 후보" 동적 설정
+            if our_cand_id:
+                c.is_our_candidate = (str(c.id) == our_cand_id)
+            candidates.append(c)
+    # 우리 후보 먼저 정렬
+    candidates.sort(key=lambda x: (0 if x.is_our_candidate else 1, x.priority or 99))
     return [
         CandidateResponse(
             id=str(c.id),
@@ -410,17 +439,23 @@ async def create_schedule(
     return {"id": str(schedule.id), "name": schedule.name, "message": "스케줄이 생성되었습니다"}
 
 
+class ScheduleUpdateBody(BaseModel):
+    enabled: Optional[bool] = None
+    fixed_times: Optional[list[str]] = None
+    name: Optional[str] = None
+    schedule_type: Optional[str] = None
+    config: Optional[dict] = None
+
+
 @router.put("/{election_id}/schedules/{schedule_id}")
 async def update_schedule(
     election_id: UUID,
     schedule_id: UUID,
+    body: ScheduleUpdateBody,
     user: CurrentUser,
-    enabled: bool = None,
-    fixed_times: list[str] = None,
-    name: str = None,
     db: AsyncSession = Depends(get_db),
 ):
-    """스케줄 수정 (활성/비활성, 시간 변경)."""
+    """스케줄 수정 (활성/비활성, 시간 변경, 이름 등)."""
     result = await db.execute(
         select(ScheduleConfig).where(
             ScheduleConfig.id == schedule_id,
@@ -431,10 +466,18 @@ async def update_schedule(
     if not schedule:
         raise HTTPException(status_code=404, detail="스케줄을 찾을 수 없습니다")
 
+    enabled = body.enabled
+    fixed_times = body.fixed_times
+    name = body.name
+
     if enabled is not None:
         schedule.enabled = enabled
     if fixed_times is not None:
         schedule.fixed_times = fixed_times
+    if body.schedule_type is not None:
+        schedule.schedule_type = body.schedule_type
+    if body.config is not None:
+        schedule.config = body.config
     if name is not None:
         schedule.name = name
 

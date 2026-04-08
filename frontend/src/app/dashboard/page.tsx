@@ -2,42 +2,52 @@
 import { useState, useEffect, useMemo } from 'react';
 import { api } from '@/services/api';
 import { getCandidateColorMap, useElection } from '@/hooks/useElection';
-import StatCard from '@/components/cards/StatCard';
-import AlertCard from '@/components/cards/AlertCard';
+import StrategicQuadrant from '@/components/StrategicQuadrant';
 import {
-  CandidateNewsBar, SentimentPie, SurveyTrendChart,
+  CandidateRadar, CANDIDATE_COLORS,
 } from '@/components/charts';
+import {
+  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  BarChart, Bar, Cell,
+} from 'recharts';
 
 export default function DashboardPage() {
   const { election, candidates, candidateNames, ourCandidate, loading: elLoading } = useElection();
   const colorMap = useMemo(() => getCandidateColorMap(candidates), [candidates]);
   const [data, setData] = useState<any>(null);
-  const [gaps, setGaps] = useState<any>(null);
-  const [tgStatus, setTgStatus] = useState<any>(null);
   const [collecting, setCollecting] = useState(false);
+  const [refreshingBrief, setRefreshingBrief] = useState(false);
+
+  const handleRefreshBriefing = async () => {
+    if (!election) return;
+    setRefreshingBrief(true);
+    try {
+      await api.refreshBriefing(election.id);
+      await loadData();
+    } catch {} finally { setRefreshingBrief(false); }
+  };
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => { if (election) loadData(); }, [election]);
 
   const loadData = async () => {
     if (!election) return;
-    setLoading(true);
+    setLoading(true); setError('');
     try {
-      const [ov, gp, tg] = await Promise.all([
-        api.getAnalysisOverview(election.id, 30),
-        api.getCompetitorGaps(election.id).catch(() => null),
-        api.getTelegramStatus().catch(() => null),
-      ]);
+      const ov = await api.getAnalysisOverview(election.id, 30);
       setData(ov);
-      setGaps(gp);
-      setTgStatus(tg);
-    } catch {} finally { setLoading(false); }
+    } catch (e: any) {
+      setError(e?.message || '데이터를 불러올 수 없습니다.');
+    } finally { setLoading(false); }
   };
 
   const handleCollect = async () => {
     if (!election) return;
     setCollecting(true);
-    try { await api.collectNow(election.id, 'news'); await loadData(); } catch {} finally { setCollecting(false); }
+    try { await api.collectNow(election.id, 'all'); await loadData(); }
+    catch (e: any) { setError('수집 실패: ' + (e?.message || '')); }
+    finally { setCollecting(false); }
   };
 
   if (elLoading || loading) return (
@@ -53,264 +63,333 @@ export default function DashboardPage() {
     </div>
   );
 
+  if (error) return (
+    <div className="space-y-4">
+      <h1 className="text-2xl font-bold">대시보드</h1>
+      <div className="card text-center py-12">
+        <p className="text-red-500 mb-3">{error}</p>
+        <button onClick={loadData} className="btn-primary text-sm">다시 시도</button>
+      </div>
+    </div>
+  );
+
   if (!data) return null;
 
   const kpi = data.kpi || {};
-  const newsByCand = data.news_by_candidate || [];
-  const recentNews = data.recent_news || [];
+  const scoreBoard = data.score_board || [];
+  const radarData = data.radar_data || [];
+  const sentiment7d = data.sentiment_7d || [];
+  const negNews = data.negative_news || [];
   const surveys = data.surveys || [];
-  const alerts = (data.alerts || []).map((a: any) => ({ ...a, time: '실시간' }));
+  const alerts = data.alerts || [];
+  const brief = data.ai_briefing || {};
   const oursName = data.our_candidate || '';
-  const oursData = newsByCand.find((n: any) => n.is_ours);
 
-  // Sort newsByCand: our candidate first
-  const sortedNewsByCand = [...newsByCand].sort((a: any, b: any) => {
-    if (a.is_ours) return -1;
-    if (b.is_ours) return 1;
-    return b.count - a.count;
+  // 우리 후보 순위 색상
+  const rankColor = (rank: number) => rank === 1 ? 'text-blue-600' : rank === 2 ? 'text-gray-600' : 'text-red-600';
+
+  // 레이더 차트 데이터 변환
+  const radarChartData = ['뉴스 노출', '긍정 감성', '커뮤니티', '유튜브', '종합'].map(metric => {
+    const row: any = { metric };
+    radarData.forEach((c: any) => { row[c.name] = c[metric] || 0; });
+    return row;
   });
 
-  // Survey trend data
-  const surveyTrend = surveys.filter((s: any) => s.results && Object.keys(s.results).length > 0)
-    .reverse()
-    .map((s: any) => {
-      const row: any = { date: s.date?.substring(5) || '' };
-      // Our candidate first in data keys
-      const ourName = ourCandidate?.name;
-      if (ourName && s.results[ourName] !== undefined) row[ourName] = s.results[ourName];
-      candidateNames.forEach(n => {
-        if (n !== ourName) row[n] = s.results[n] || 0;
-      });
-      return row;
-    });
-
-  // Ordered candidate names: our candidate first
-  const orderedCandNames = ourCandidate
-    ? [ourCandidate.name, ...candidateNames.filter(n => n !== ourCandidate.name)]
-    : candidateNames;
-
-  // AI insight generation from real data
-  const generateInsight = () => {
-    if (!oursData) return null;
-    const totalAll = newsByCand.reduce((s: number, n: any) => s + n.count, 0);
-    const maxCand = [...newsByCand].sort((a: any, b: any) => b.count - a.count)[0];
-    const ourTotal = oursData.count || 0;
-    const ourPosRate = kpi.our_pos_rate || 0;
-    const parts: string[] = [];
-
-    if (maxCand && maxCand.name !== oursName && maxCand.count > ourTotal) {
-      parts.push(
-        `${maxCand.name} 후보가 뉴스 ${maxCand.count}건으로 노출 1위. ` +
-        `${oursName} 후보는 ${ourTotal}건(${maxCand.count > 0 ? Math.round(ourTotal / maxCand.count * 100) : 0}% 수준).`
-      );
-    } else if (maxCand && maxCand.name === oursName) {
-      parts.push(`${oursName} 후보가 뉴스 ${ourTotal}건으로 노출 1위.`);
+  // 여론조사 최신 1건
+  // 여론조사: 중첩 구조 펼치기 (교육감지지도 등에서 후보 지지율 추출)
+  const latestSurvey = surveys[0];
+  const rawResults = latestSurvey?.results || {};
+  const flatSurvey: Record<string, number> = {};
+  for (const [k, v] of Object.entries(rawResults)) {
+    if (typeof v === 'number') {
+      flatSurvey[k] = v;
+    } else if (typeof v === 'object' && v !== null && !Array.isArray(v)) {
+      for (const [sk, sv] of Object.entries(v as Record<string, any>)) {
+        if (typeof sv === 'number') flatSurvey[sk] = sv;
+      }
     }
+  }
+  // 후보 이름과 매칭되는 것만 (또는 모름/없음 포함)
+  const candSet = new Set([...candidateNames, '모름', '없음', '모름/무응답']);
+  const surveyFiltered = Object.entries(flatSurvey).filter(([k]) => candSet.has(k) || candidateNames.some(cn => k.includes(cn)));
+  const surveyBarData = surveyFiltered
+    .sort((a: any, b: any) => {
+      if (a[0] === oursName) return -1;
+      if (b[0] === oursName) return 1;
+      return b[1] - a[1];
+    })
+    .map(([name, value]) => ({
+      name: name.length > 4 ? name.substring(0, 4) + '..' : name,
+      fullName: name,
+      value,
+      fill: name === oursName ? '#3b82f6' : name === '모름' || name === '없음' ? '#cbd5e1' : '#94a3b8',
+    }));
 
-    parts.push(`긍정률 ${ourPosRate}%${ourPosRate < 40 ? ' (위험 수준 - 대응 필요)' : ourPosRate < 60 ? ' (보통)' : ' (양호)'}.`);
-
-    if (oursData.negative > 0) {
-      parts.push(`부정 뉴스 ${oursData.negative}건 감지 - 모니터링 필요.`);
-    }
-
-    return parts.join(' ');
-  };
-
-  // Competitor gap items
-  const gapItems = gaps?.gaps || [];
-  const strengthItems = gaps?.strengths || [];
+  // 감성 추이 후보 목록
+  const sentCandNames = candidates.filter(c => c.enabled).map(c => c.name);
+  const orderedSentNames = ourCandidate
+    ? [ourCandidate.name, ...sentCandNames.filter(n => n !== ourCandidate.name)]
+    : sentCandNames;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="space-y-5">
+      {/* ── 헤더 ── */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">{data.election?.name}</h1>
-          <p className="text-gray-500 mt-1">선거일 {data.election?.date} | 후보 {data.election?.candidates_count}명</p>
+          <p className="text-gray-500 mt-0.5 text-sm">
+            {data.election?.date} | 후보 {data.election?.candidates_count}명 | 뉴스 {kpi.total_news}건 | 여론조사 {kpi.survey_count || 0}건
+          </p>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-gray-500">데이터 <strong>{kpi.total_news}건</strong></span>
-          <button onClick={handleCollect} disabled={collecting} className="btn-primary text-sm">
+        <div className="flex items-center gap-2">
+          <span className={`text-sm font-bold ${kpi.d_day > 30 ? 'text-blue-600' : kpi.d_day > 7 ? 'text-amber-600' : 'text-red-600'}`}>
+            {kpi.d_day > 0 ? `D-${kpi.d_day}` : kpi.d_day === 0 ? 'D-Day' : `D+${Math.abs(kpi.d_day)}`}
+          </span>
+          <button onClick={handleCollect} disabled={collecting}
+            className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
             {collecting ? '수집중...' : '지금 수집'}
           </button>
-          {tgStatus?.connected && <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">TG 연결</span>}
         </div>
       </div>
 
-      {/* KPI Row */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <StatCard label="D-Day" value={kpi.d_day > 0 ? `D-${kpi.d_day}` : kpi.d_day === 0 ? 'D-Day' : `D+${Math.abs(kpi.d_day)}`} sub={data.election?.date} color="blue" />
-        <StatCard label="뉴스" value={kpi.total_news} sub="수집 건수" color="purple" />
-        <StatCard label="긍정률" value={`${kpi.our_pos_rate}%`} sub={oursName} color="green" />
-        <StatCard label="부정 경보" value={kpi.negative_alerts} sub="감지됨" color="red" />
-        <StatCard label="여론조사" value={kpi.survey_count} sub="등록됨" color="amber" />
-      </div>
+      {/* ── [전략 4사분면] AI 분류 — 액션 가능 콘텐츠 ── */}
+      {election && <StrategicQuadrant electionId={election.id} itemsPerQuadrant={4} />}
 
-      {/* AI Insight Card */}
-      {oursData && (
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200 p-5">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-lg">AI</span>
-            <h3 className="font-bold text-blue-900">AI 현황 분석</h3>
-            <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">실시간 데이터 기반</span>
-          </div>
-          <p className="text-sm text-gray-700 leading-relaxed">{generateInsight()}</p>
-        </div>
-      )}
-
-      {/* Alerts */}
-      {alerts.length > 0 && <AlertCard alerts={alerts} />}
-
-      {/* Competitor Gap Checklist */}
-      {gaps && (gapItems.length > 0 || strengthItems.length > 0) && (
-        <div className="card">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold">경쟁자 대비 갭 분석</h3>
-            <span className="text-xs text-gray-400">{gaps.analysis_period}</span>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Gaps (areas where we lag) */}
-            {gapItems.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-red-600 mb-2">부족한 영역</p>
-                <div className="space-y-2">
-                  {gapItems.slice(0, 5).map((g: any, i: number) => (
-                    <div key={i} className="flex items-start gap-2 text-sm">
-                      <span className="text-red-400 mt-0.5 flex-shrink-0">-</span>
-                      <div>
-                        <span className="font-medium">{g.area}</span>
-                        {g.detail && <span className="text-gray-500"> - {g.detail}</span>}
-                        {g.our_value !== undefined && g.comp_value !== undefined && (
-                          <span className="text-xs text-gray-400 ml-1">
-                            ({oursName}: {g.our_value}{g.unit || ''} vs {g.comp_name}: {g.comp_value}{g.unit || ''})
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {/* Strengths */}
-            {strengthItems.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-green-600 mb-2">우위 영역</p>
-                <div className="space-y-2">
-                  {strengthItems.slice(0, 5).map((s: any, i: number) => (
-                    <div key={i} className="flex items-start gap-2 text-sm">
-                      <span className="text-green-400 mt-0.5 flex-shrink-0">+</span>
-                      <div>
-                        <span className="font-medium">{s.area}</span>
-                        {s.detail && <span className="text-gray-500"> - {s.detail}</span>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-          {gaps.ai_summary && (
-            <p className="text-xs text-gray-500 mt-3 pt-3 border-t border-gray-100">{gaps.ai_summary}</p>
-          )}
-        </div>
-      )}
-
-      {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="card lg:col-span-2">
-          <h3 className="font-semibold mb-4">후보별 뉴스 감성</h3>
-          <CandidateNewsBar data={sortedNewsByCand} />
-        </div>
-        {oursData && (
-          <div className="card">
-            <h3 className="font-semibold mb-2">{oursName} 감성</h3>
-            <SentimentPie positive={oursData.positive} negative={oursData.negative} neutral={oursData.neutral} />
-            <div className="grid grid-cols-3 gap-2 text-center text-sm mt-2">
-              <div><span className="font-bold text-green-600">{oursData.positive}</span><br/><span className="text-xs">긍정</span></div>
-              <div><span className="font-bold text-red-600">{oursData.negative}</span><br/><span className="text-xs">부정</span></div>
-              <div><span className="font-bold text-gray-500">{oursData.neutral}</span><br/><span className="text-xs">중립</span></div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Survey Trend */}
-      {surveyTrend.length >= 2 && (
-        <div className="card">
-          <div className="flex justify-between mb-4">
-            <h3 className="font-semibold">여론조사 추이</h3>
-            <a href="/dashboard/surveys" className="text-xs text-primary-600">상세 &rarr;</a>
-          </div>
-          <SurveyTrendChart data={surveyTrend} candidates={orderedCandNames} />
-        </div>
-      )}
-
-      {/* Recent News */}
+      {/* ── [1] 미디어 활동 현황 ── */}
       <div className="card">
-        <div className="flex justify-between mb-4">
-          <h3 className="font-semibold">최근 뉴스 <span className="text-xs text-green-600 ml-1">실시간 {recentNews.length}건</span></h3>
-          <a href="/dashboard/news" className="text-xs text-primary-600">전체 &rarr;</a>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="font-bold text-lg">미디어 활동 현황</h3>
+            <p className="text-xs text-[var(--muted)]">뉴스 · 감성 · 커뮤니티 · 유튜브 실측 데이터</p>
+          </div>
+          <a href="/dashboard/candidates" className="text-xs text-blue-500 hover:underline">상세 비교 →</a>
         </div>
-        <div className="space-y-2">
-          {recentNews.length === 0 && (
-            <p className="text-sm text-gray-400 text-center py-4">수집된 뉴스가 없습니다. &quot;지금 수집&quot; 버튼을 눌러주세요.</p>
-          )}
-          {recentNews.map((news: any, i: number) => (
-            <a key={i} href={news.url || '#'} target="_blank" rel="noopener noreferrer"
-              className={`block p-3 rounded-lg border transition-all hover:shadow-md ${
-                news.sentiment === 'negative' ? 'bg-red-50/50 border-red-200' :
-                news.sentiment === 'positive' ? 'bg-green-50/30 border-green-100' : 'bg-white border-gray-100'
-              }`}>
-              <div className="flex items-start gap-2">
-                <span className={`mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                  news.sentiment === 'negative' ? 'bg-red-500' : news.sentiment === 'positive' ? 'bg-green-500' : 'bg-gray-300'
-                }`} />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5 mb-0.5">
-                    <span className={`text-[10px] px-1 py-0.5 rounded font-bold ${
-                      news.sentiment === 'negative' ? 'bg-red-100 text-red-700' :
-                      news.sentiment === 'positive' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
-                    }`}>{news.sentiment === 'negative' ? '부정' : news.sentiment === 'positive' ? '긍정' : '중립'}</span>
-                    <span className="text-xs font-semibold" style={{ color: colorMap[news.candidate] || '#666' }}>{news.candidate}</span>
-                    <span className="text-[10px] text-gray-400">{news.source}</span>
-                    <span className="text-[10px] text-gray-300 ml-auto">{news.date || ''}</span>
-                  </div>
-                  <p className={`text-sm font-medium ${news.sentiment === 'negative' ? 'text-red-900' : 'text-gray-900'}`}>{news.title}</p>
-                  {news.summary && <p className="text-xs text-gray-400 mt-0.5 line-clamp-1">{news.summary}</p>}
-                  {news.url && <span className="text-[10px] text-primary-500">기사 원문 &rarr;</span>}
-                </div>
-              </div>
-            </a>
-          ))}
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-[var(--card-border)]">
+                <th className="text-left py-2 px-2 font-medium text-[var(--muted)] text-xs">후보</th>
+                <th className="text-center py-2 px-2 font-medium text-[var(--muted)] text-xs">뉴스</th>
+                <th className="text-center py-2 px-2 font-medium text-[var(--muted)] text-xs">긍정률</th>
+                <th className="text-center py-2 px-2 font-medium text-[var(--muted)] text-xs">부정</th>
+                <th className="text-center py-2 px-2 font-medium text-[var(--muted)] text-xs">커뮤니티</th>
+                <th className="text-center py-2 px-2 font-medium text-[var(--muted)] text-xs">유튜브</th>
+              </tr>
+            </thead>
+            <tbody>
+              {scoreBoard.map((s: any, i: number) => {
+                const newsMax = Math.max(...scoreBoard.map((x: any) => x.news || 0), 1);
+                const isTop = (field: string) => s[field] === Math.max(...scoreBoard.map((x: any) => x[field] || 0));
+                return (
+                  <tr key={s.name} className={`border-b border-[var(--card-border)]/50 ${s.is_ours ? 'bg-blue-500/5' : ''}`}>
+                    <td className="py-3 px-2">
+                      <a href="/dashboard/candidates" className="flex items-center gap-2 hover:text-blue-500 transition">
+                        <span className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold ${i === 0 ? 'bg-amber-500' : i === 1 ? 'bg-gray-400' : 'bg-gray-300'}`}>
+                          {i + 1}
+                        </span>
+                        <span className={`font-bold ${s.is_ours ? 'text-blue-500' : ''}`}>
+                          {s.name} {s.is_ours && '★'}
+                        </span>
+                        <span className="text-[10px] text-[var(--muted)]">{s.party || ''}</span>
+                      </a>
+                    </td>
+                    <td className={`py-3 px-2 text-center font-bold ${isTop('news') ? 'text-blue-500' : ''}`}>{s.news}</td>
+                    <td className={`py-3 px-2 text-center font-bold ${s.sentiment_rate >= 50 ? 'text-green-500' : s.sentiment_rate < 30 ? 'text-red-500' : ''}`}>{s.sentiment_rate}%</td>
+                    <td className="py-3 px-2 text-center">
+                      {(() => {
+                        const neg = (scoreBoard.find((x: any) => x.name === s.name) as any);
+                        const negCount = neg ? (neg.news - Math.round(neg.news * neg.sentiment_rate / 100)) : 0;
+                        return negCount > 0 ? <span className="text-red-500 font-bold">{negCount}</span> : <span className="text-[var(--muted)]">0</span>;
+                      })()}
+                    </td>
+                    <td className={`py-3 px-2 text-center font-bold ${isTop('community') ? 'text-blue-500' : ''}`}>{s.community}</td>
+                    <td className={`py-3 px-2 text-center font-bold ${isTop('youtube_views') ? 'text-blue-500' : ''}`}>{(s.youtube_views || 0).toLocaleString()}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-      </div>
-
-      {/* Candidate Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {sortedNewsByCand.map((c: any) => {
-          const total = c.positive + c.negative + c.neutral;
-          const posRate = total ? Math.round(c.positive / total * 100) : 0;
+        {scoreBoard.length > 0 && (() => {
+          const ours = scoreBoard.find((s: any) => s.is_ours);
+          if (!ours) return null;
+          const warnings = [];
+          const topNews = Math.max(...scoreBoard.map((x: any) => x.news || 0));
+          const topComm = Math.max(...scoreBoard.map((x: any) => x.community || 0));
+          const topYt = Math.max(...scoreBoard.map((x: any) => x.youtube_views || 0));
+          if (ours.news < topNews * 0.5) warnings.push('뉴스 노출 부족');
+          if (ours.sentiment_rate < 30) warnings.push('부정 여론 주의');
+          if (ours.community < topComm * 0.5) warnings.push('커뮤니티 활동 부족');
+          if (ours.youtube_views < topYt * 0.3) warnings.push('유튜브 노출 부족');
+          if (warnings.length === 0) return null;
           return (
-            <div key={c.name} className={`card ${c.is_ours ? 'ring-2 ring-blue-400' : ''}`}>
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold"
-                  style={{ backgroundColor: colorMap[c.name] || '#666' }}>{c.name[0]}</div>
-                <div>
-                  <h4 className="font-bold">{c.name} {c.is_ours && <span className="text-xs text-blue-500">(우리)</span>}</h4>
-                  <p className="text-xs text-gray-500">{c.party || ''} | {total}건 | 긍정률 {posRate}%</p>
-                </div>
-              </div>
-              <div className="h-2.5 rounded-full overflow-hidden flex bg-gray-100">
-                {total > 0 && <>
-                  <div className="bg-green-500 h-full" style={{ width: `${c.positive / total * 100}%` }} />
-                  <div className="bg-red-500 h-full" style={{ width: `${c.negative / total * 100}%` }} />
-                  <div className="bg-gray-300 h-full" style={{ width: `${c.neutral / total * 100}%` }} />
-                </>}
-              </div>
+            <div className="mt-3 p-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
+              <span className="text-xs text-amber-500 font-bold">부족한 점: </span>
+              <span className="text-xs text-amber-400">{warnings.join(' · ')}</span>
             </div>
           );
-        })}
+        })()}
       </div>
+
+      {/* ── [2] AI 브리핑 + [3] 레이더 차트 ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        {/* AI 오늘의 브리핑 */}
+        <div className="card bg-gradient-to-br from-blue-500/5 to-indigo-500/5 border-blue-500/20">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-lg font-bold">AI</span>
+            <h3 className="font-bold">오늘의 브리핑</h3>
+            {brief.ai_generated && <span className="text-[9px] bg-purple-500/10 text-purple-500 px-1.5 py-0.5 rounded">Claude 분석</span>}
+            {brief.ai_generated === false && <span className="text-[9px] bg-[var(--muted-bg)] text-[var(--muted)] px-1.5 py-0.5 rounded">자동 분석</span>}
+            {brief.cached && <span className="text-[9px] text-[var(--muted)]">캐시</span>}
+            <button onClick={handleRefreshBriefing} disabled={refreshingBrief}
+              className="text-[9px] px-2 py-0.5 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50 ml-auto">
+              {refreshingBrief ? 'AI 분석중...' : 'AI 재분석'}
+            </button>
+            <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${brief.rank === 1 ? 'bg-blue-100 text-blue-700' : brief.rank === 2 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+              {brief.rank_total > 0 ? `${brief.rank}위 / ${brief.rank_total}명` : '-'}
+            </span>
+          </div>
+
+          {(brief.crises || []).length > 0 && (
+            <div className="mb-3">
+              <p className="text-xs font-bold text-red-600 mb-1">위기</p>
+              {brief.crises.map((c: string, i: number) => (
+                <p key={i} className="text-sm text-red-800 flex items-start gap-1.5">
+                  <span className="text-red-500 mt-0.5">!</span> {c}
+                </p>
+              ))}
+            </div>
+          )}
+
+          {(brief.opportunities || []).length > 0 && (
+            <div className="mb-3">
+              <p className="text-xs font-bold text-green-600 mb-1">기회</p>
+              {brief.opportunities.map((o: string, i: number) => (
+                <p key={i} className="text-sm text-green-800 flex items-start gap-1.5">
+                  <span className="text-green-500 mt-0.5">+</span> {o}
+                </p>
+              ))}
+            </div>
+          )}
+
+          <div>
+            <p className="text-xs font-bold text-blue-600 mb-1">오늘 할 일</p>
+            {(brief.todos || []).map((t: string, i: number) => (
+              <p key={i} className="text-sm text-gray-700 flex items-start gap-1.5">
+                <span className="text-blue-500 font-bold mt-0.5">{i + 1}.</span> {t}
+              </p>
+            ))}
+          </div>
+        </div>
+
+        {/* 후보별 활동 비교 레이더 */}
+        <div className="card">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="font-bold">후보별 활동 비교</h3>
+            <a href="/dashboard/candidates" className="text-xs text-blue-600 hover:underline">상세 →</a>
+          </div>
+          {radarChartData.length > 0 && candidates.length > 0 ? (
+            <CandidateRadar data={radarChartData} candidates={orderedSentNames} />
+          ) : (
+            <div className="flex items-center justify-center h-48 text-gray-400 text-sm">데이터 수집 후 표시됩니다</div>
+          )}
+        </div>
+      </div>
+
+      {/* ── [4] 감성 트렌드 + [5] 여론조사 ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        {/* 7일 감성 추이 */}
+        <div className="card">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-bold">7일 감성 추이 (긍정률 %)</h3>
+            <a href="/dashboard/news" className="text-xs text-blue-600 hover:underline">뉴스 분석 →</a>
+          </div>
+          {sentiment7d.length > 0 ? (
+            <ResponsiveContainer width="100%" height={220}>
+              <AreaChart data={sentiment7d}>
+                <defs>
+                  {orderedSentNames.map((name, i) => (
+                    <linearGradient key={name} id={`grad_${i}`} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={CANDIDATE_COLORS[i % CANDIDATE_COLORS.length]} stopOpacity={0.3} />
+                      <stop offset="95%" stopColor={CANDIDATE_COLORS[i % CANDIDATE_COLORS.length]} stopOpacity={0} />
+                    </linearGradient>
+                  ))}
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} unit="%" domain={[0, 100]} />
+                <Tooltip formatter={(val: number) => `${val}%`} />
+                <Legend />
+                {orderedSentNames.map((name, i) => (
+                  <Area key={name} type="monotone" dataKey={name}
+                    stroke={CANDIDATE_COLORS[i % CANDIDATE_COLORS.length]}
+                    fill={`url(#grad_${i})`} strokeWidth={name === oursName ? 2.5 : 1.5} />
+                ))}
+              </AreaChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex items-center justify-center h-48 text-gray-400 text-sm">뉴스 수집 후 표시됩니다</div>
+          )}
+        </div>
+
+        {/* 여론조사 최신 */}
+        <div className="card">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-bold">최근 여론조사</h3>
+            <a href="/dashboard/surveys" className="text-xs text-blue-600 hover:underline">상세 분석 →</a>
+          </div>
+          {latestSurvey ? (
+            <>
+              <p className="text-xs text-gray-500 mb-3">{latestSurvey.org} | {latestSurvey.date} | n={latestSurvey.sample_size || '?'}</p>
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart data={surveyBarData} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis type="number" tick={{ fontSize: 11 }} unit="%" domain={[0, 60]} />
+                  <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={50} />
+                  <Tooltip formatter={(val: number, name: string, props: any) => [`${val}%`, props.payload.fullName]} />
+                  <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                    {surveyBarData.map((entry, i) => (
+                      <Cell key={i} fill={entry.fill} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </>
+          ) : (
+            <div className="flex items-center justify-center h-48 text-gray-400 text-sm">
+              등록된 여론조사가 없습니다
+              <a href="/dashboard/surveys" className="ml-2 text-blue-500 underline">등록하기</a>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── [6] 부정 뉴스 알림 (있을 때만) ── */}
+      {negNews.length > 0 && (
+        <div className="card border-red-500/20 bg-red-500/5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-bold text-red-700">부정 뉴스 알림 — 대응 필요</h3>
+            <a href="/dashboard/news" className="text-xs text-red-600 hover:underline">전체 뉴스 →</a>
+          </div>
+          <div className="space-y-2">
+            {negNews.map((n: any, i: number) => (
+              <a key={i} href={n.url || '#'} target="_blank" rel="noopener noreferrer"
+                className="block p-3 bg-[var(--card-bg)] rounded-lg border border-red-500/10 hover:shadow-md transition">
+                <div className="flex items-start gap-2">
+                  <span className="w-1.5 h-1.5 bg-red-500 rounded-full mt-2 flex-shrink-0" />
+                  <div>
+                    <div className="flex items-center gap-2 text-xs mb-0.5">
+                      <span className="font-bold text-red-600">{n.candidate}</span>
+                      <span className="text-gray-400">{n.date}</span>
+                    </div>
+                    <p className="text-sm font-medium text-gray-900">{n.title}</p>
+                  </div>
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
