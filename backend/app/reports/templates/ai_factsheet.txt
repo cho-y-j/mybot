@@ -1,0 +1,73 @@
+=== 선거: {{ election.name }} (D-{{ election.d_day }}) ===
+지역: {{ election.region }}, 선거일: {{ election.date }}
+우리 후보: {{ our_candidate or '미지정' }}
+전체 후보: {{ candidates|join(', ') }}
+
+=== 후보별 뉴스 현황 ===
+{% for cn in candidate_news %}
+{{ cn.name }}{{ " (우리)" if cn.is_ours else "" }}: 오늘 {{ cn.today }}건({{ "+%d"|format(cn.today - cn.yesterday) if cn.today > cn.yesterday else cn.today - cn.yesterday }}), 주간 {{ cn.week }}건, 전체 {{ cn.total }}건 | 오늘 긍정 {{ cn.today_pos }} 부정 {{ cn.today_neg }}
+{% endfor %}
+
+=== 최근 주요 뉴스 ===
+{% for n in recent_news[:10] %}
+[{{ {"positive": "+", "negative": "-", "neutral": "o"}.get(n.sentiment, "o") }}][{{ n.candidate }}] {{ n.title }}
+{% if n.url %}  URL: {{ n.url }}{% endif %}
+{% endfor %}
+
+{% if negative_news %}
+=== 부정 뉴스 경보 ===
+{% for n in negative_news[:5] %}
+[{{ n.candidate }}] {{ n.title }}
+{% if n.url %}  URL: {{ n.url }}{% endif %}
+{% endfor %}
+{% endif %}
+
+=== 커뮤니티 현황 ===
+{% for cs in community_stats %}
+{{ cs.name }}: {{ cs.count }}건 (긍정 {{ cs.positive }}, 부정 {{ cs.negative }})
+{% endfor %}
+{% if community_items %}
+최근 글:
+{% for ci in community_items[:5] %}
+  [{{ ci.candidate }}][{{ ci.source }}] {{ ci.title }} (이슈: {{ ci.issue or '일반' }})
+{% endfor %}
+{% endif %}
+
+=== 유튜브 현황 ===
+{% for ys in youtube_stats %}
+{{ ys.name }}: {{ ys.count }}개 영상, {{ "{:,}".format(ys.views) }}회 조회
+{% endfor %}
+{% if yt_comment_stats %}
+유튜브 댓글 감성:
+{% for yc in yt_comment_stats %}
+  {{ yc.name }}: {{ yc.total }}건 (긍정 {{ yc.positive }}, 부정 {{ yc.negative }})
+{% endfor %}
+{% endif %}
+
+{% if trends %}
+=== 검색 트렌드 ===
+{% for t in trends[:10] %}
+{{ t.keyword }}: 검색량 {{ t.volume }} ({{ t.platform }})
+{% endfor %}
+{% endif %}
+
+{% if surveys %}
+=== 최신 여론조사 ===
+{% for s in surveys %}
+{{ s.org }} ({{ s.date }}): {{ s.results.items()|map('join', ': ')|join(', ') if s.results else '결과 없음' }} (n={{ s.sample_size or '?' }})
+{% endfor %}
+{% endif %}
+
+{% if crosstab_summary %}
+=== 여론조사 교차분석 ===
+{% for ct in crosstab_summary[:15] %}
+  {{ ct }}
+{% endfor %}
+{% endif %}
+
+{% if history_summary %}
+=== 역대 선거 당선자 ===
+{% for h in history_summary %}
+  {{ h }}
+{% endfor %}
+{% endif %}

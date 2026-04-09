@@ -1,0 +1,50 @@
+📋 [D-{{ d_day }}] 일일 보고서
+{{ today }} {{ now_time }}
+============================
+
+📊 <b>[1. 오늘 현황]</b>
+{% for s in cand_stats %}
+  {{ s.name }}{{ " ⭐" if s.is_ours else "" }}: {{ s.today }}건({{ "↑" if s.change > 0 else "↓" if s.change < 0 else "→" }}{{ s.change|abs if s.change != 0 else "" }}) 긍정{{ s.pos }}/부정{{ s.neg }}
+{% endfor %}
+  ─ 합계: {{ total_today }}건
+
+📰 <b>[2. 주요 뉴스]</b>
+{% if recent_news %}
+{% for news in recent_news %}
+  {{ {"positive": "🟢", "negative": "🔴"}.get(news.sentiment, "⚪") }}[{{ news.candidate }}] {{ news.title[:45] }}
+{% endfor %}
+{% else %}
+  (오늘 수집된 뉴스 없음)
+{% endif %}
+{% if neg_news %}
+  🚨 부정뉴스 {{ neg_news|length }}건:
+{% for n in neg_news[:3] %}
+    🔴 [{{ n.candidate }}] {{ n.title[:40] }}
+{% endfor %}
+{% endif %}
+
+📈 <b>[3. 검색 트렌드]</b>
+{% if trends %}
+{% for t in trends[:5] %}
+  {{ t.keyword }}: {{ "%.1f"|format(t.volume) }}
+{% endfor %}
+{% else %}
+  (트렌드 데이터 수집 필요 — 대시보드에서 '지금 업데이트')
+{% endif %}
+
+⚡ <b>[4. 위기/기회]</b>
+{% if alerts %}
+{% for a in alerts %}
+  {{ a }}
+{% endfor %}
+{% else %}
+  특이사항 없음
+{% endif %}
+
+💀 <b>[5. 불편한 진실]</b>
+{% for truth in truths %}
+  {{ truth }}
+{% endfor %}
+
+============================
+ElectionPulse | 상세분석은 대시보드에서

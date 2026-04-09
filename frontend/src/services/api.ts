@@ -272,6 +272,18 @@ class ApiClient {
     return this.request<any>(`/analysis/${electionId}/issue-candidate-matrix`);
   }
 
+  getSwingVoterAnalysis(electionId: string, days: number = 30) {
+    return this.request<any>(`/analysis/${electionId}/swing-voters?days=${days}`);
+  }
+
+  getAdAnalysis(electionId: string) {
+    return this.request<any>(`/analysis/${electionId}/ads`);
+  }
+
+  collectAds(electionId: string) {
+    return this.request<any>(`/analysis/${electionId}/collect-ads`, { method: 'POST' });
+  }
+
   getCommunityData(electionId: string, days: number = 30) {
     return this.request<any>(`/analysis/${electionId}/community-data?days=${days}`);
   }
@@ -318,6 +330,20 @@ class ApiClient {
 
   getContentSituations(electionId: string) {
     return this.request<any>(`/content/content-situations/${electionId}`);
+  }
+
+  generateDebateScript(electionId: string, topics: string[] = [], opponent?: string, style: string = 'balanced') {
+    return this.request<any>(`/content/debate-script/${electionId}`, {
+      method: 'POST',
+      body: JSON.stringify({ topics, opponent, style }),
+    });
+  }
+
+  generateMultiTone(electionId: string, topic: string, context: string = '', platforms: string[] = ['instagram', 'blog'], tones: string[] = ['formal', 'friendly']) {
+    return this.request<any>(`/content/generate-multi-tone/${electionId}`, {
+      method: 'POST',
+      body: JSON.stringify({ topic, context, platforms, tones }),
+    });
   }
 
   getCollectedNews(electionId: string, limit: number = 50, candidateId?: string, sentiment?: string) {

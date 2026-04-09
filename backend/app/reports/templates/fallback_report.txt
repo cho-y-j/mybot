@@ -1,0 +1,43 @@
+📋 [D-{{ election.d_day }}] 일일 보고서 (데이터 기반)
+{{ now_kst }}
+============================
+
+📊 <b>[1. 오늘 현황]</b>
+{% for cn in candidate_news %}
+  {{ cn.name }}{{ " ⭐" if cn.is_ours else "" }}: {{ cn.today }}건({{ "↑" if cn.today > cn.yesterday else "↓" if cn.today < cn.yesterday else "→" }}{{ (cn.today - cn.yesterday)|abs }}) 긍정{{ cn.today_pos }}/부정{{ cn.today_neg }}
+{% endfor %}
+
+⚔️ <b>[2. 경쟁자 대비]</b>
+{% if our_data and max_news > 0 %}
+{% if our_data.today < max_news %}
+  뉴스 노출: {{ our_data.name }} {{ our_data.today }}건 vs {{ leader.name }} {{ leader.today }}건 ({{ (our_data.today / max_news * 100)|round|int }}%)
+{% else %}
+  뉴스 노출: {{ our_data.name }} 선두 ({{ our_data.today }}건)
+{% endif %}
+{% endif %}
+
+💬 <b>[3. 여론 동향]</b>
+{% for cs in community_stats %}
+{% if cs.count > 0 %}
+  {{ cs.name }}: 커뮤니티 {{ cs.count }}건 (긍정 {{ cs.positive }}, 부정 {{ cs.negative }})
+{% endif %}
+{% endfor %}
+
+🚨 <b>[4. 위기/기회]</b>
+{% if negative_news %}
+{% for n in negative_news[:3] %}
+  🔴 [{{ n.candidate }}] {{ n.title[:40] }}
+{% if n.url %}     {{ n.url }}{% endif %}
+{% endfor %}
+{% else %}
+  특이사항 없음
+{% endif %}
+
+🎯 <b>[5. 전략 제안]</b>
+  (AI 분석 불가 — Claude CLI 설치 필요)
+{% if our_data and max_news > 0 and our_data.today / max_news < 0.5 %}
+  → 뉴스 노출 강화 필요 (현재 선두 대비 {{ (our_data.today / max_news * 100)|round|int }}%)
+{% endif %}
+
+============================
+ElectionPulse | 상세분석은 대시보드에서

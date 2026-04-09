@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { useElection } from '@/hooks/useElection';
 import { api } from '@/services/api';
 
-type Tab = 'generate' | 'compliance' | 'law';
+type Tab = 'generate' | 'multitone' | 'compliance' | 'law';
 
 export default function ContentToolsPage() {
   const { election, loading: elLoading } = useElection();
@@ -145,6 +145,7 @@ export default function ContentToolsPage() {
       <div className="flex gap-1 bg-[var(--muted-bg)] rounded-lg p-1">
         {([
           ['generate', 'AI 콘텐츠 생성'],
+          ['multitone', 'SNS 멀티톤'],
           ['compliance', '선거법 검증'],
           ['law', '선거법 보기'],
         ] as [Tab, string][]).map(([key, label]) => (
@@ -388,6 +389,9 @@ export default function ContentToolsPage() {
         </>
       )}
 
+      {/* ═══ SNS 멀티톤 ═══ */}
+      {tab === 'multitone' && <MultiToneTab electionId={election?.id} />}
+
       {/* ═══ 선거법 검증 ═══ */}
       {tab === 'compliance' && (
         <div className="space-y-4">
@@ -581,6 +585,134 @@ export default function ContentToolsPage() {
       {loading && (
         <div className="flex items-center justify-center py-8">
           <div className="animate-spin h-6 w-6 border-4 border-blue-500 border-t-transparent rounded-full" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+function MultiToneTab({ electionId }: { electionId?: string }) {
+  const [topic, setTopic] = useState('');
+  const [context, setContext] = useState('');
+  const [platforms, setPlatforms] = useState<string[]>(['instagram', 'blog']);
+  const [tones, setTones] = useState<string[]>(['formal', 'friendly']);
+  const [result, setResult] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+
+  const toggleItem = (list: string[], item: string, setter: (v: string[]) => void) => {
+    setter(list.includes(item) ? list.filter(x => x !== item) : [...list, item]);
+  };
+
+  const generate = async () => {
+    if (!electionId || !topic) return;
+    setLoading(true);
+    try {
+      const data = await api.generateMultiTone(electionId, topic, context, platforms, tones);
+      setResult(data);
+    } catch (e: any) {
+      alert(e.message || '생성 실패');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const platformOptions = [
+    { key: 'instagram', label: '인스타그램' },
+    { key: 'facebook', label: '페이스북' },
+    { key: 'twitter', label: 'X(트위터)' },
+    { key: 'blog', label: '블로그' },
+    { key: 'cafe', label: '맘카페' },
+  ];
+  const toneOptions = [
+    { key: 'formal', label: '공식' },
+    { key: 'friendly', label: '친근' },
+    { key: 'humor', label: '유머' },
+    { key: 'emotional', label: '감동' },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="card space-y-4">
+        <h3 className="font-bold">SNS 멀티톤 콘텐츠 생성</h3>
+        <p className="text-sm text-[var(--muted)]">하나의 주제를 플랫폼별 × 톤별 조합으로 동시 생성합니다.</p>
+        <div>
+          <label className="block text-sm font-medium mb-1">주제 *</label>
+          <input value={topic} onChange={e => setTopic(e.target.value)}
+            placeholder="예: 무상급식 확대 정책" className="input w-full" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">추가 맥락 (선택)</label>
+          <textarea value={context} onChange={e => setContext(e.target.value)}
+            placeholder="예: D-30 시점, 경쟁 후보가 반대 입장 표명" className="input w-full" rows={2} />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-2">플랫폼 (다중 선택)</label>
+          <div className="flex flex-wrap gap-2">
+            {platformOptions.map(p => (
+              <button key={p.key} onClick={() => toggleItem(platforms, p.key, setPlatforms)}
+                className={`px-3 py-1.5 rounded-full text-sm border ${platforms.includes(p.key) ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-400 text-blue-700 dark:text-blue-300' : 'border-gray-300 dark:border-gray-600'}`}>
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-2">톤 (다중 선택)</label>
+          <div className="flex flex-wrap gap-2">
+            {toneOptions.map(t => (
+              <button key={t.key} onClick={() => toggleItem(tones, t.key, setTones)}
+                className={`px-3 py-1.5 rounded-full text-sm border ${tones.includes(t.key) ? 'bg-purple-100 dark:bg-purple-900/30 border-purple-400 text-purple-700 dark:text-purple-300' : 'border-gray-300 dark:border-gray-600'}`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="text-xs text-[var(--muted)]">
+          생성 조합: {platforms.length} 플랫폼 × {tones.length} 톤 = {platforms.length * tones.length}개
+        </div>
+        <button onClick={generate} disabled={loading || !topic || platforms.length === 0 || tones.length === 0}
+          className="w-full py-3 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50">
+          {loading ? 'AI 생성 중...' : `${platforms.length * tones.length}개 콘텐츠 동시 생성`}
+        </button>
+      </div>
+
+      {result && (
+        <div className="space-y-3">
+          <div className="text-sm text-[var(--muted)]">
+            생성 완료: {result.generated}/{result.total}개
+          </div>
+          {(result.results || []).map((r: any, i: number) => (
+            <div key={i} className="card">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded">
+                    {r.platform_name}
+                  </span>
+                  <span className="text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 px-2 py-0.5 rounded">
+                    {r.tone_name}
+                  </span>
+                  <span className="text-xs text-[var(--muted)]">
+                    {r.char_count}/{r.max_chars}자
+                  </span>
+                </div>
+                {r.content && (
+                  <button onClick={() => { navigator.clipboard.writeText(r.content); alert('복사됨'); }}
+                    className="text-xs text-blue-600 hover:underline">복사</button>
+                )}
+              </div>
+              {r.content ? (
+                <pre className="whitespace-pre-wrap text-sm bg-[var(--muted-bg)] p-3 rounded">{r.content}</pre>
+              ) : (
+                <div className="text-sm text-red-500">생성 실패</div>
+              )}
+              {r.compliance && !r.compliance.compliant && (
+                <div className="mt-2 text-xs text-yellow-600">
+                  선거법 주의: {r.compliance.warnings?.join(', ')}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       )}
     </div>

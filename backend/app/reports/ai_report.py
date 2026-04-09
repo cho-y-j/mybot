@@ -406,8 +406,8 @@ async def _build_report_data(
             for dim, segs in dims.items():
                 for seg, cands in list(segs.items())[:5]:
                     crosstab_summary.append(f"[{dim}] {seg}: " + ", ".join(f"{k} {v}%" for k, v in cands.items()))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("ai_report_crosstab_error", error=str(e)[:200])
 
     # ── 과거 선거 요약 ──
     history_summary = []
@@ -423,8 +423,8 @@ async def _build_report_data(
         )).scalars().all()
         for h in hist_results:
             history_summary.append(f"{h.election_year}년: {h.candidate_name} ({h.party}) {h.vote_rate}%")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("ai_report_history_error", error=str(e)[:200])
 
     sections_data = {
         "candidate_news": candidate_news,
@@ -460,96 +460,9 @@ async def _build_report_data(
 
 
 def _format_factsheet(data: dict) -> str:
-    """데이터를 AI가 분석할 수 있는 팩트시트로 변환."""
-    lines = []
-    el = data["election"]
-    lines.append(f"=== 선거: {el['name']} (D-{el['d_day']}) ===")
-    lines.append(f"지역: {el['region']}, 선거일: {el['date']}")
-    lines.append(f"우리 후보: {data['our_candidate'] or '미지정'}")
-    lines.append(f"전체 후보: {', '.join(data['candidates'])}")
-    lines.append("")
-
-    # 뉴스 통계
-    lines.append("=== 후보별 뉴스 현황 ===")
-    for cn in data["candidate_news"]:
-        marker = " (우리)" if cn["is_ours"] else ""
-        change = cn["today"] - cn["yesterday"]
-        change_s = f"+{change}" if change > 0 else str(change)
-        lines.append(
-            f"{cn['name']}{marker}: 오늘 {cn['today']}건({change_s}), "
-            f"주간 {cn['week']}건, 전체 {cn['total']}건 "
-            f"| 오늘 긍정 {cn['today_pos']} 부정 {cn['today_neg']}"
-        )
-    lines.append("")
-
-    # 최근 뉴스 (URL 포함)
-    lines.append("=== 최근 주요 뉴스 ===")
-    for n in data["recent_news"][:10]:
-        sent = {"positive": "+", "negative": "-", "neutral": "o"}.get(n["sentiment"], "o")
-        lines.append(f"[{sent}][{n['candidate']}] {n['title']}")
-        if n["url"]:
-            lines.append(f"  URL: {n['url']}")
-    lines.append("")
-
-    # 부정 뉴스
-    if data["negative_news"]:
-        lines.append("=== 부정 뉴스 경보 ===")
-        for n in data["negative_news"][:5]:
-            lines.append(f"[{n['candidate']}] {n['title']}")
-            if n["url"]:
-                lines.append(f"  URL: {n['url']}")
-        lines.append("")
-
-    # 커뮤니티
-    lines.append("=== 커뮤니티 현황 ===")
-    for cs in data["community_stats"]:
-        lines.append(f"{cs['name']}: {cs['count']}건 (긍정 {cs['positive']}, 부정 {cs['negative']})")
-    if data["community_items"]:
-        lines.append("최근 글:")
-        for ci in data["community_items"][:5]:
-            lines.append(f"  [{ci['candidate']}][{ci['source']}] {ci['title']} (이슈: {ci['issue'] or '일반'})")
-    lines.append("")
-
-    # 유튜브
-    lines.append("=== 유튜브 현황 ===")
-    for ys in data["youtube_stats"]:
-        lines.append(f"{ys['name']}: {ys['count']}개 영상, {ys['views']:,}회 조회")
-    if data["yt_comment_stats"]:
-        lines.append("유튜브 댓글 감성:")
-        for yc in data["yt_comment_stats"]:
-            lines.append(f"  {yc['name']}: {yc['total']}건 (긍정 {yc['positive']}, 부정 {yc['negative']})")
-    lines.append("")
-
-    # 검색 트렌드
-    if data["trends"]:
-        lines.append("=== 검색 트렌드 ===")
-        for t in data["trends"][:10]:
-            lines.append(f"{t['keyword']}: 검색량 {t['volume']} ({t['platform']})")
-        lines.append("")
-
-    # 여론조사
-    if data["surveys"]:
-        lines.append("=== 최신 여론조사 ===")
-        for s in data["surveys"]:
-            results_str = ", ".join(f"{k}: {v}%" for k, v in s["results"].items()) if s["results"] else "결과 없음"
-            lines.append(f"{s['org']} ({s['date']}): {results_str} (n={s['sample_size'] or '?'})")
-        lines.append("")
-
-    # 교차분석
-    if data.get("crosstab_summary"):
-        lines.append("=== 여론조사 교차분석 ===")
-        for ct in data["crosstab_summary"][:15]:
-            lines.append(f"  {ct}")
-        lines.append("")
-
-    # 과거 선거
-    if data.get("history_summary"):
-        lines.append("=== 역대 선거 당선자 ===")
-        for h in data["history_summary"]:
-            lines.append(f"  {h}")
-        lines.append("")
-
-    return "\n".join(lines)
+    """데이터를 AI가 분석할 수 있는 팩트시트로 변환 — 템플릿 렌더링."""
+    from app.reports.template_engine import render
+    return render("ai_factsheet.txt", **data)
 
 
 def _format_final_report(data: dict, ai_text: str) -> str:
@@ -568,99 +481,25 @@ def _format_final_report(data: dict, ai_text: str) -> str:
 
 
 def _generate_fallback_report(data: dict) -> str:
-    """AI 불가시 데이터 기반 자동 보고서."""
-    el = data["election"]
-    now = data["now_kst"]
-    lines = []
-    lines.append(f"📋 [D-{el['d_day']}] 일일 보고서 (데이터 기반)")
-    lines.append(f"{now}")
-    lines.append("=" * 28)
-
-    # 1. 오늘 현황
-    lines.append("")
-    lines.append("📊 <b>[1. 오늘 현황]</b>")
-    for cn in data["candidate_news"]:
-        marker = " ⭐" if cn["is_ours"] else ""
-        change = cn["today"] - cn["yesterday"]
-        arrow = "↑" if change > 0 else ("↓" if change < 0 else "→")
-        lines.append(
-            f"  {cn['name']}{marker}: {cn['today']}건({arrow}{abs(change)}) "
-            f"긍정{cn['today_pos']}/부정{cn['today_neg']}"
-        )
-
-    # 2. 경쟁자 대비
-    lines.append("")
-    lines.append("⚔️ <b>[2. 경쟁자 대비]</b>")
+    """AI 불가시 데이터 기반 자동 보고서 — 템플릿 렌더링."""
+    from app.reports.template_engine import render
     our_data = next((cn for cn in data["candidate_news"] if cn["is_ours"]), None)
-    if our_data:
-        max_news = max((cn["today"] for cn in data["candidate_news"]), default=0)
-        if max_news > 0:
-            ratio = our_data["today"] / max_news * 100
-            leader = max(data["candidate_news"], key=lambda x: x["today"])
-            if ratio < 100:
-                lines.append(f"  뉴스 노출: {our_data['name']} {our_data['today']}건 vs {leader['name']} {leader['today']}건 ({ratio:.0f}%)")
-            else:
-                lines.append(f"  뉴스 노출: {our_data['name']} 선두 ({our_data['today']}건)")
-
-    # 3. 여론 동향
-    lines.append("")
-    lines.append("💬 <b>[3. 여론 동향]</b>")
-    for cs in data["community_stats"]:
-        if cs["count"] > 0:
-            lines.append(f"  {cs['name']}: 커뮤니티 {cs['count']}건 (긍정 {cs['positive']}, 부정 {cs['negative']})")
-
-    # 4. 위기/기회
-    lines.append("")
-    lines.append("🚨 <b>[4. 위기/기회]</b>")
-    if data["negative_news"]:
-        for n in data["negative_news"][:3]:
-            lines.append(f"  🔴 [{n['candidate']}] {n['title'][:40]}")
-            if n["url"]:
-                lines.append(f"     {n['url']}")
-    else:
-        lines.append("  특이사항 없음")
-
-    # 5. 할 일
-    lines.append("")
-    lines.append("🎯 <b>[5. 전략 제안]</b>")
-    lines.append("  (AI 분석 불가 — Claude CLI 설치 필요)")
-    if our_data and max_news > 0 and our_data["today"] / max_news < 0.5:
-        lines.append(f"  → 뉴스 노출 강화 필요 (현재 선두 대비 {our_data['today'] / max_news * 100:.0f}%)")
-
-    lines.append("")
-    lines.append("=" * 28)
-    lines.append("ElectionPulse | 상세분석은 대시보드에서")
-
-    return "\n".join(lines)
+    max_news = max((cn["today"] for cn in data["candidate_news"]), default=0)
+    leader = max(data["candidate_news"], key=lambda x: x["today"]) if data["candidate_news"] else None
+    return render("fallback_report.txt",
+        election=data["election"],
+        now_kst=data["now_kst"],
+        candidate_news=data["candidate_news"],
+        community_stats=data["community_stats"],
+        negative_news=data["negative_news"],
+        our_data=our_data,
+        max_news=max_news,
+        leader=leader,
+    )
 
 
 async def _call_claude_for_report(factsheet: str, system_prompt: str = None) -> Optional[str]:
-    """Claude CLI로 AI 보고서 생성."""
-    claude_path = shutil.which("claude")
-    if not claude_path:
-        logger.info("claude_cli_not_found")
-        return None
-
+    """Claude CLI로 AI 보고서 생성 — ai_service로 위임."""
+    from app.services.ai_service import call_claude_text
     prompt = f"{system_prompt or REPORT_PROMPT_DAILY}\n\n[수집 데이터 팩트시트]\n{factsheet}"
-
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            claude_path, "-p", prompt,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=90)
-
-        if proc.returncode == 0 and stdout:
-            result = stdout.decode("utf-8").strip()
-            if len(result) > 50:
-                logger.info("ai_report_generated", length=len(result))
-                return result
-        logger.warning("claude_cli_empty_result")
-        return None
-    except asyncio.TimeoutError:
-        logger.warning("claude_cli_timeout_report")
-        return None
-    except Exception as e:
-        logger.error("claude_cli_report_error", error=str(e))
-        return None
+    return await call_claude_text(prompt, timeout=90, context="ai_report_generation")

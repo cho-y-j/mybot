@@ -1,0 +1,247 @@
+"""
+ElectionPulse - Debate Script Service
+AI 기반 토론 대본 생성.
+상대 후보 약점 + 팩트 데이터 + 선거법 검증.
+"""
+import structlog
+from datetime import date, timedelta
+from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.elections.models import (
+    Election, Candidate, NewsArticle, Survey,
+)
+from app.services.ai_service import call_claude
+from app.content.compliance import check_content
+
+logger = structlog.get_logger()
+
+
+async def generate_debate_script(
+    db: AsyncSession,
+    tenant_id: str,
+    election_id: str,
+    topics: list[str] | None = None,
+    opponent_name: str | None = None,
+    style: str = "balanced",
+) -> dict:
+    """
+    토론 대본 생성.
+    Returns: {opening, key_points[], rebuttals[], closing, compliance, ai_generated}
+    """
+    from app.common.election_access import get_election_tenant_ids
+    all_tids = await get_election_tenant_ids(db, election_id)
+
+    # 데이터 수집
+    election = (await db.execute(
+        select(Election).where(Election.id == election_id)
+    )).scalar_one_or_none()
+    if not election:
+        return {"error": "선거 정보 없음"}
+
+    candidates = (await db.execute(
+        select(Candidate).where(
+            Candidate.election_id == election_id,
+            Candidate.tenant_id.in_(all_tids),
+            Candidate.enabled == True,
+        )
+    )).scalars().all()
+
+    our = next((c for c in candidates if c.is_our_candidate), None)
+    if not our:
+        return {"error": "우리 후보가 설정되지 않았습니다"}
+
+    # 상대 후보 특정
+    opponent = None
+    if opponent_name:
+        opponent = next((c for c in candidates if c.name == opponent_name and not c.is_our_candidate), None)
+    if not opponent:
+        # 가장 위협적인 경쟁자 자동 선택 (뉴스 노출 최다)
+        competitors = [c for c in candidates if not c.is_our_candidate]
+        if competitors:
+            comp_news = []
+            for c in competitors:
+                cnt = (await db.execute(
+                    select(func.count()).where(
+                        NewsArticle.candidate_id == c.id,
+                        func.date(NewsArticle.collected_at) >= date.today() - timedelta(days=30),
+                    )
+                )).scalar() or 0
+                comp_news.append((c, cnt))
+            comp_news.sort(key=lambda x: -x[1])
+            opponent = comp_news[0][0] if comp_news else None
+
+    if not opponent:
+        return {"error": "경쟁 후보가 없습니다"}
+
+    # 상대 후보 부정 뉴스 수집
+    since = date.today() - timedelta(days=90)
+    opponent_neg_news = (await db.execute(
+        select(NewsArticle).where(
+            NewsArticle.candidate_id == opponent.id,
+            NewsArticle.sentiment == "negative",
+            func.date(NewsArticle.collected_at) >= since,
+        ).order_by(NewsArticle.collected_at.desc()).limit(10)
+    )).scalars().all()
+
+    # 우리 후보 긍정 뉴스 (강점 근거)
+    our_pos_news = (await db.execute(
+        select(NewsArticle).where(
+            NewsArticle.candidate_id == our.id,
+            NewsArticle.sentiment == "positive",
+            func.date(NewsArticle.collected_at) >= since,
+        ).order_by(NewsArticle.collected_at.desc()).limit(5)
+    )).scalars().all()
+
+    # 여론조사
+    latest_survey = (await db.execute(
+        select(Survey).where(
+            Survey.tenant_id.in_(all_tids),
+        ).order_by(Survey.survey_date.desc()).limit(1)
+    )).scalar_one_or_none()
+
+    # 토론 주제 (미지정 시 부정 뉴스 기반 자동 선택)
+    if not topics:
+        from app.elections.korea_data import ELECTION_ISSUES
+        issue_list = ELECTION_ISSUES.get(election.election_type or "superintendent", {}).get("issues", [])
+        topics = issue_list[:3] if issue_list else ["교육 정책", "지역 발전", "행정 투명성"]
+
+    # 팩트시트 구성
+    factsheet = _build_debate_factsheet(
+        our, opponent, opponent_neg_news, our_pos_news, latest_survey, topics, election,
+    )
+
+    style_prompt = {
+        "aggressive": "공격적인 어조로, 상대 약점을 강하게 지적하면서도 선거법(비방 금지)을 위반하지 않도록",
+        "defensive": "방어적인 어조로, 우리 후보의 강점과 실적을 중심으로 차분하게",
+        "balanced": "균형 잡힌 어조로, 상대 약점 지적과 우리 강점 어필을 적절히 배합하여",
+    }.get(style, "균형 잡힌 어조로")
+
+    prompt = (
+        f"{factsheet}\n\n"
+        f"위 데이터를 바탕으로 {our.name} 후보가 {opponent.name} 후보와의 토론/면접에서 사용할 대본을 작성하세요.\n"
+        f"스타일: {style_prompt}\n\n"
+        f"반드시 아래 JSON 형식으로만 답변하세요:\n"
+        f'{{\n'
+        f'  "opening": "1분 오프닝 발언 (자기소개 + 핵심 비전)",\n'
+        f'  "key_points": [\n'
+        f'    {{"topic": "주제1", "our_position": "우리 입장", "data_point": "근거 데이터", "attack_question": "상대에게 할 질문"}},\n'
+        f'    ...\n'
+        f'  ],\n'
+        f'  "rebuttals": [\n'
+        f'    {{"opponent_claim": "상대가 할 수 있는 주장", "our_response": "반박 대본"}},\n'
+        f'    ...\n'
+        f'  ],\n'
+        f'  "closing": "1분 마무리 발언"\n'
+        f'}}\n\n'
+        f"규칙:\n"
+        f"- key_points: 주제별 공략 포인트 (최대 5개)\n"
+        f"- rebuttals: 상대 예상 공격에 대한 반박 (최대 3개)\n"
+        f"- 한국어로, 구체적이고 실전 토론에서 바로 사용 가능하게\n"
+        f"- 선거법 위반 소지가 있는 비방/허위사실은 절대 포함하지 않기\n"
+        f"- 데이터에 근거한 팩트만 사용"
+    )
+
+    result = await call_claude(prompt, timeout=90, context="debate_script", tenant_id=tenant_id, db=db)
+
+    if result:
+        # 선거법 검증
+        full_text = result.get("opening", "") + " " + result.get("closing", "")
+        for kp in result.get("key_points", []):
+            full_text += " " + kp.get("attack_question", "") + " " + kp.get("our_position", "")
+        compliance = check_content(full_text, election)
+
+        return {
+            "opening": result.get("opening", ""),
+            "key_points": result.get("key_points", [])[:5],
+            "rebuttals": result.get("rebuttals", [])[:3],
+            "closing": result.get("closing", ""),
+            "compliance": compliance,
+            "our_candidate": our.name,
+            "opponent": opponent.name,
+            "topics": topics,
+            "style": style,
+            "ai_generated": True,
+        }
+
+    # Fallback: 규칙 기반 핵심 포인트
+    return _generate_fallback_script(our, opponent, opponent_neg_news, topics, election)
+
+
+def _build_debate_factsheet(our, opponent, opp_neg_news, our_pos_news, survey, topics, election) -> str:
+    """토론 대본용 팩트시트 구성."""
+    d_day = (election.election_date - date.today()).days
+    lines = [
+        f"[토론 준비 팩트시트]",
+        f"선거: {election.name} (D-{d_day})",
+        f"우리 후보: {our.name} ({our.party or '무소속'})",
+        f"상대 후보: {opponent.name} ({opponent.party or '무소속'})",
+        f"토론 주제: {', '.join(topics)}",
+        "",
+    ]
+
+    if opp_neg_news:
+        lines.append(f"[{opponent.name} 부정 뉴스 {len(opp_neg_news)}건]")
+        for n in opp_neg_news[:7]:
+            lines.append(f"- {n.title[:60]}")
+            if n.ai_summary:
+                lines.append(f"  요약: {n.ai_summary[:100]}")
+        lines.append("")
+
+    if our_pos_news:
+        lines.append(f"[{our.name} 긍정 뉴스 (강점 근거)]")
+        for n in our_pos_news[:5]:
+            lines.append(f"- {n.title[:60]}")
+        lines.append("")
+
+    if survey and survey.results:
+        lines.append(f"[최근 여론조사: {survey.survey_org}]")
+        for name, rate in (survey.results or {}).items():
+            lines.append(f"  {name}: {rate}%")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def _generate_fallback_script(our, opponent, opp_neg_news, topics, election) -> dict:
+    """AI 불가 시 규칙 기반 토론 스크립트."""
+    d_day = (election.election_date - date.today()).days
+
+    key_points = []
+    for topic in topics[:3]:
+        point = {
+            "topic": topic,
+            "our_position": f"{our.name} 후보의 {topic} 관련 핵심 공약을 준비하세요",
+            "data_point": "구체적 데이터를 대시보드에서 확인하세요",
+            "attack_question": f"{opponent.name} 후보의 {topic} 관련 구체적 계획이 있는지 질문",
+        }
+        key_points.append(point)
+
+    # 부정 뉴스 기반 공략 포인트 추가
+    for n in opp_neg_news[:2]:
+        key_points.append({
+            "topic": "언론 보도 관련",
+            "our_position": "투명한 행정과 소통을 강조",
+            "data_point": f"보도: {n.title[:50]}",
+            "attack_question": f"'{n.title[:30]}' 보도에 대한 입장을 물어보세요",
+        })
+
+    compliance = check_content(
+        " ".join(kp["attack_question"] for kp in key_points), election
+    )
+
+    return {
+        "opening": f"안녕하십니까. {election.name}에 출마한 {our.name}입니다. D-{d_day}, 지역의 미래를 위해 준비한 비전을 말씀드리겠습니다.",
+        "key_points": key_points[:5],
+        "rebuttals": [
+            {"opponent_claim": "경험 부족 지적", "our_response": "새로운 시각과 구체적 데이터로 준비했습니다"},
+            {"opponent_claim": "실현 불가능 공약", "our_response": "예산 근거와 실행 계획이 마련되어 있습니다"},
+        ],
+        "closing": f"주민 여러분, {our.name}은 데이터와 소통으로 함께하겠습니다. 감사합니다.",
+        "compliance": compliance,
+        "our_candidate": our.name,
+        "opponent": opponent.name,
+        "topics": topics,
+        "style": "balanced",
+        "ai_generated": False,
+    }
