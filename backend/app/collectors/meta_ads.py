@@ -30,7 +30,8 @@ async def collect_meta_ads(
     Meta Ad Library API로 후보별 광고 수집.
     Returns: {collected: int, errors: list}
     """
-    access_token = os.getenv("META_AD_LIBRARY_TOKEN")
+    from app.config import get_settings
+    access_token = get_settings().META_AD_LIBRARY_TOKEN
     if not access_token:
         return {"collected": 0, "errors": ["META_AD_LIBRARY_TOKEN 환경변수가 설정되지 않았습니다"]}
 

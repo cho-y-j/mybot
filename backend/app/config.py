@@ -68,6 +68,9 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
 
+    # --- Meta Ad Library ---
+    META_AD_LIBRARY_TOKEN: str = ""
+
     # --- Sentry ---
     SENTRY_DSN: str = ""
 
