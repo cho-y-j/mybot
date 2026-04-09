@@ -63,7 +63,7 @@ async def list_pending_users(user: CurrentUser, db: AsyncSession = Depends(get_d
 
 @router.post("/approve-user/{user_id}")
 async def approve_user(
-    user_id: UUID, req: ApprovalNote, user: CurrentUser, db: AsyncSession = Depends(get_db),
+    user_id: UUID, user: CurrentUser, db: AsyncSession = Depends(get_db), req: ApprovalNote = ApprovalNote(),
 ):
     """가입 신청 승인 — is_active=True, approval_status='approved'."""
     require_superadmin(user)
@@ -94,7 +94,7 @@ async def approve_user(
 
 @router.post("/reject-user/{user_id}")
 async def reject_user(
-    user_id: UUID, req: ApprovalNote, user: CurrentUser, db: AsyncSession = Depends(get_db),
+    user_id: UUID, user: CurrentUser, db: AsyncSession = Depends(get_db), req: ApprovalNote = ApprovalNote(),
 ):
     """가입 신청 거절."""
     require_superadmin(user)
