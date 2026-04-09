@@ -63,13 +63,12 @@ async def detect_swing_indicators(
             MAX(collected_at) as latest
         FROM community_posts
         WHERE tenant_id = ANY(:tids)
-          AND election_id = :eid
           AND issue_category IS NOT NULL
           AND collected_at >= :since
         GROUP BY issue_category
         HAVING COUNT(*) >= 2
         ORDER BY COUNT(*) DESC
-    """), {"tids": all_tids, "eid": str(election_id), "since": since})).all()
+    """), {"tids": all_tids, "since": since})).all()
 
     # ── 2. 이슈별 최근 뜨거운 게시글 ──
     hot_issues = []
@@ -97,7 +96,6 @@ async def detect_swing_indicators(
             select(CommunityPost.title, CommunityPost.sentiment, CommunityPost.source, CommunityPost.url)
             .where(
                 CommunityPost.tenant_id.in_(all_tids),
-                CommunityPost.election_id == election_id,
                 CommunityPost.issue_category == issue,
                 CommunityPost.collected_at >= since,
             )
