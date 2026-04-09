@@ -3,44 +3,101 @@ import { useState, useEffect } from 'react';
 import { useElection } from '@/hooks/useElection';
 import { api } from '@/services/api';
 
-type Tab = 'hashtags' | 'blog' | 'suggestions' | 'compliance';
+type Tab = 'generate' | 'compliance' | 'law';
 
 export default function ContentToolsPage() {
   const { election, loading: elLoading } = useElection();
-  const [tab, setTab] = useState<Tab>('hashtags');
-  const [hashtags, setHashtags] = useState<any>(null);
-  const [blogTags, setBlogTags] = useState<any>(null);
-  const [suggestions, setSuggestions] = useState<any>(null);
+  const [tab, setTab] = useState<Tab>('generate');
+
+  // AI 생성 v2
+  const [genType, setGenType] = useState('blog');
+  const [genPurpose, setGenPurpose] = useState('promote');
+  const [genTopic, setGenTopic] = useState('');
+  const [genDirection, setGenDirection] = useState('');
+  const [genTarget, setGenTarget] = useState('all');
+  const [genLength, setGenLength] = useState('medium');
+  const [genStyle, setGenStyle] = useState('formal');
+  const [genContext, setGenContext] = useState('');
+  const [genResult, setGenResult] = useState<any>(null);
+  const [generating, setGenerating] = useState(false);
+  const [situations, setSituations] = useState<any[]>([]);
+  const [situationsLoading, setSituationsLoading] = useState(false);
+  const [quadrantItems, setQuadrantItems] = useState<any[]>([]);
+  const [showQuadrant, setShowQuadrant] = useState(false);
+
+  // 선거법 체크
   const [complianceText, setComplianceText] = useState('');
   const [complianceType, setComplianceType] = useState('general');
   const [complianceResult, setComplianceResult] = useState<any>(null);
+
+  // 선거법 보기
+  const [lawToc, setLawToc] = useState<any[]>([]);
+  const [lawDetail, setLawDetail] = useState<any>(null);
+  const [lawSearch, setLawSearch] = useState('');
+  const [lawSearchResults, setLawSearchResults] = useState<any[]>([]);
+
+
   const [loading, setLoading] = useState(false);
   const [copiedTag, setCopiedTag] = useState('');
 
   useEffect(() => {
-    if (election) loadData();
-  }, [election, tab]);
+    if (tab === 'generate' && situations.length === 0 && election) loadSituations();
+    if (tab === 'law' && lawToc.length === 0) loadLawToc();
+  }, [tab, election]);
 
-  const loadData = async () => {
+  const loadSituations = async () => {
     if (!election) return;
-    setLoading(true);
+    setSituationsLoading(true);
     try {
-      if (tab === 'hashtags' && !hashtags) setHashtags(await api.getHashtags(election.id));
-      if (tab === 'blog' && !blogTags) setBlogTags(await api.getBlogTags(election.id));
-      if (tab === 'suggestions' && !suggestions) setSuggestions(await api.getContentSuggestions(election.id));
-    } catch {} finally { setLoading(false); }
+      const data = await api.getContentSituations(election.id);
+      setSituations(data.situations || []);
+    } catch {} finally { setSituationsLoading(false); }
   };
 
-  const handleCopy = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedTag(text);
-    setTimeout(() => setCopiedTag(''), 2000);
+  const loadLawToc = async () => {
+    try {
+      const data = await api.getElectionLawToc();
+      setLawToc(data.sections || []);
+    } catch {}
   };
 
-  const handleCopyAll = (tags: string[]) => {
-    navigator.clipboard.writeText(tags.join(' '));
-    setCopiedTag('all');
-    setTimeout(() => setCopiedTag(''), 2000);
+
+
+  const loadQuadrantItems = async () => {
+    if (!election) return;
+    try {
+      const d = await api.getStrategicQuadrant(election.id, 'all', 10);
+      const items: any[] = [];
+      for (const [key, q] of Object.entries(d.quadrants || {})) {
+        for (const it of (q as any).items || []) {
+          items.push({ ...it, quadrant: key, label: (q as any).label });
+        }
+      }
+      setQuadrantItems(items);
+    } catch {}
+  };
+
+  const handleGenerate = async () => {
+    if (!election || !genTopic.trim()) return;
+    setGenerating(true);
+    setGenResult(null);
+    // 폼 데이터를 context에 통합 전달
+    const purposeLabel: Record<string, string> = { promote: '홍보/강점 확산', attack: '공격/경쟁자 약점 활용', defend: '방어/해명', policy: '정책 소개' };
+    const targetLabel: Record<string, string> = { all: '전체 유권자', youth: '2030 청년층', senior: '5060 장년층', rural: '농촌/면 단위' };
+    const lengthLabel: Record<string, string> = { short: 'SNS용 짧게 (200자 이내)', medium: '보통 (500자)', long: '블로그 길게 (1500자+)' };
+    const enrichedContext = [
+      genContext,
+      `[목적] ${purposeLabel[genPurpose] || genPurpose}`,
+      `[타겟] ${targetLabel[genTarget] || genTarget}`,
+      `[분량] ${lengthLabel[genLength] || genLength}`,
+      genDirection ? `[사용자 요청] ${genDirection}` : '',
+    ].filter(Boolean).join('\n');
+    try {
+      const data = await api.generateContent(election.id, genType, genTopic.trim(), genStyle, enrichedContext);
+      setGenResult(data);
+    } catch (e: any) {
+      setGenResult({ error: e?.message || 'AI 생성 실패' });
+    } finally { setGenerating(false); }
   };
 
   const handleCompliance = async () => {
@@ -48,138 +105,296 @@ export default function ContentToolsPage() {
     try {
       const r = await api.checkCompliance(election.id, complianceText, complianceType);
       setComplianceResult(r);
+    } catch (e: any) {
+      alert('선거법 체크 실패: ' + (e?.message || ''));
+    }
+  };
+
+  const handleLawSearch = async () => {
+    if (!lawSearch.trim()) return;
+    try {
+      const data = await api.searchElectionLaw(lawSearch.trim());
+      setLawSearchResults(data.results || []);
     } catch {}
   };
 
-  if (elLoading) return <div className="flex items-center justify-center h-64"><div className="animate-spin h-8 w-8 border-4 border-primary-500 border-t-transparent rounded-full" /></div>;
-  if (!election) return <div className="card text-center py-12 text-gray-500">선거를 먼저 설정해주세요.</div>;
+  const loadLawDetail = async (id: string) => {
+    try {
+      const data = await api.getElectionLawSection(id);
+      setLawDetail(data);
+    } catch {}
+  };
 
-  const tabs: { key: Tab; label: string; icon: string }[] = [
-    { key: 'hashtags', label: '해시태그', icon: '#' },
-    { key: 'blog', label: '블로그 태그', icon: '📝' },
-    { key: 'suggestions', label: '콘텐츠 제안', icon: '💡' },
-    { key: 'compliance', label: '선거법 체크', icon: '⚖️' },
-  ];
+  const handleCopy = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedTag(text.substring(0, 20));
+    setTimeout(() => setCopiedTag(''), 2000);
+  };
+
+  if (elLoading) return <div className="flex items-center justify-center h-64"><div className="animate-spin h-8 w-8 border-4 border-primary-500 border-t-transparent rounded-full" /></div>;
+  if (!election) return <div className="card text-center py-12 text-[var(--muted)]">선거를 먼저 설정해주세요.</div>;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold">콘텐츠 도구</h1>
-        <p className="text-gray-500 mt-1">해시태그 추천, 블로그 태그, 콘텐츠 제안, 선거법 검증</p>
+        <p className="text-sm text-[var(--muted)]">AI 콘텐츠 생성 · 선거법 검증 · 법규 열람</p>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-        {tabs.map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)}
-            className={`flex-1 py-2 rounded-md text-sm font-medium transition-colors ${
-              tab === t.key ? 'bg-white shadow text-primary-700' : 'text-gray-500 hover:text-gray-700'
-            }`}>
-            {t.icon} {t.label}
+      {/* 탭 */}
+      <div className="flex gap-1 bg-[var(--muted-bg)] rounded-lg p-1">
+        {([
+          ['generate', 'AI 콘텐츠 생성'],
+          ['compliance', '선거법 검증'],
+          ['law', '선거법 보기'],
+        ] as [Tab, string][]).map(([key, label]) => (
+          <button key={key} onClick={() => setTab(key)}
+            className={`flex-1 py-2 text-sm rounded-md transition ${tab === key ? 'bg-[var(--card-bg)] shadow font-semibold' : 'text-[var(--muted)]'}`}>
+            {label}
           </button>
         ))}
       </div>
 
-      {/* ── 해시태그 탭 ── */}
-      {tab === 'hashtags' && hashtags && (
-        <div className="space-y-4">
-          {Object.entries(hashtags).filter(([k]) => ['campaign','issue_based','sns_trending','blog_seo','youtube'].includes(k)).map(([category, tags]: [string, any]) => {
-            const labels: Record<string, string> = {
-              campaign: '🏛 캠페인 (필수)', issue_based: '📋 이슈 기반',
-              sns_trending: '📱 SNS 트렌딩', blog_seo: '🔍 블로그 SEO', youtube: '▶️ 유튜브',
-            };
-            return (
-              <div key={category} className="card">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-semibold">{labels[category] || category}</h3>
-                  <button onClick={() => handleCopyAll(tags as string[])}
-                    className="text-xs text-primary-600 hover:underline">
-                    {copiedTag === 'all' ? '복사됨!' : '전체 복사'}
+      {/* ═══ AI 콘텐츠 생성 ═══ */}
+      {tab === 'generate' && (
+        <>
+          {/* 상황 추천 */}
+          <div className="card">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="font-bold">지금 만들어야 할 콘텐츠</h3>
+                <p className="text-xs text-[var(--muted)]">수집된 데이터 기반 자동 추천 — 클릭하면 AI가 초안을 생성합니다</p>
+              </div>
+              <button onClick={loadSituations} className="text-xs text-[var(--muted)] hover:text-[var(--foreground)]">
+                {situationsLoading ? '분석중...' : '새로고침'}
+              </button>
+            </div>
+
+            {situations.length > 0 ? (
+              <div className="space-y-2">
+                {situations.map((s: any, i: number) => (
+                  <button key={i} onClick={() => {
+                    setGenTopic(s.topic);
+                    setGenContext(s.context || '');
+                  }}
+                    className={`w-full text-left p-3 rounded-xl border transition hover:border-blue-500/30 hover:bg-blue-500/5 ${
+                      genTopic === s.topic ? 'border-blue-500/50 bg-blue-500/10' : 'border-[var(--card-border)]'
+                    }`}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-lg">{s.icon}</span>
+                      <span className="font-semibold text-sm flex-1">{s.title}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                        s.priority === 'high' ? 'bg-red-500/10 text-red-500' : 'bg-[var(--muted-bg)] text-[var(--muted)]'
+                      }`}>{s.priority === 'high' ? '긴급' : '추천'}</span>
+                    </div>
+                    <p className="text-xs text-[var(--muted)] ml-8">{s.reason}</p>
                   </button>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {(tags as string[]).map((tag: string, i: number) => (
-                    <button key={i} onClick={() => handleCopy(tag)}
-                      className={`text-sm px-3 py-1.5 rounded-full border transition-all cursor-pointer ${
-                        copiedTag === tag
-                          ? 'bg-green-100 border-green-300 text-green-700'
-                          : 'bg-white border-gray-200 text-gray-700 hover:bg-primary-50 hover:border-primary-300'
-                      }`}>
-                      {copiedTag === tag ? '✓ 복사됨' : tag}
+                ))}
+              </div>
+            ) : situationsLoading ? (
+              <div className="flex items-center justify-center py-6">
+                <div className="animate-spin h-5 w-5 border-2 border-blue-500 border-t-transparent rounded-full" />
+                <span className="ml-2 text-sm text-[var(--muted)]">데이터 분석 중...</span>
+              </div>
+            ) : (
+              <p className="text-sm text-[var(--muted)] text-center py-4">추천 상황이 없습니다. 데이터를 먼저 수집하세요.</p>
+            )}
+          </div>
+
+          {/* 생성 폼 v2 */}
+          <div className="card">
+            <h3 className="font-bold mb-4">📝 콘텐츠 생성</h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              {/* 유형 */}
+              <div>
+                <label className="text-xs font-semibold text-[var(--muted)] mb-1.5 block">콘텐츠 유형</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {[['blog','블로그'],['sns','SNS'],['card','카드뉴스'],['press','보도자료'],['defense','해명문']].map(([v,l]) => (
+                    <button key={v} onClick={() => setGenType(v)}
+                      className={`px-3 py-1.5 text-xs rounded-lg border transition ${genType === v ? 'bg-purple-600 text-white border-purple-600' : 'border-[var(--card-border)] text-[var(--muted)] hover:border-purple-500'}`}>
+                      {l}
                     </button>
                   ))}
                 </div>
               </div>
-            );
-          })}
-        </div>
-      )}
 
-      {/* ── 블로그 태그 탭 ── */}
-      {tab === 'blog' && blogTags && (
-        <div className="space-y-4">
-          {Object.entries(blogTags.categories || {}).map(([cat, tags]: [string, any]) => (
-            <div key={cat} className="card">
-              <h3 className="font-semibold mb-3">{cat} ({tags.length}개)</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {tags.map((t: any, i: number) => (
-                  <div key={i} className="bg-gray-50 rounded-lg p-3">
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium text-sm">{t.tag}</span>
-                      <button onClick={() => handleCopy(t.variations.join(', '))}
-                        className="text-xs text-primary-500">복사</button>
-                    </div>
-                    <div className="flex flex-wrap gap-1 mt-1.5">
-                      {t.variations.map((v: string, j: number) => (
-                        <span key={j} className="text-xs bg-white border rounded px-1.5 py-0.5 text-gray-500">{v}</span>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* ── 콘텐츠 제안 탭 ── */}
-      {tab === 'suggestions' && suggestions && (
-        <div className="space-y-3">
-          {suggestions.suggestions?.map((s: any, i: number) => {
-            const typeIcon: Record<string, string> = { blog: '📝', sns: '📱', youtube: '▶️' };
-            const priorityColor: Record<string, string> = { high: 'bg-red-100 text-red-700', medium: 'bg-amber-100 text-amber-700', low: 'bg-gray-100 text-gray-600' };
-            return (
-              <div key={i} className="card p-4 hover:shadow-md transition-shadow">
-                <div className="flex items-start gap-3">
-                  <span className="text-2xl">{typeIcon[s.type] || '📌'}</span>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h4 className="font-semibold text-sm">{s.title}</h4>
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${priorityColor[s.priority]}`}>
-                        {s.priority === 'high' ? '높음' : s.priority === 'medium' ? '보통' : '낮음'}
-                      </span>
-                    </div>
-                    <p className="text-sm text-gray-500">{s.description}</p>
-                    <div className="flex flex-wrap gap-1 mt-2">
-                      {s.tags.map((t: string, j: number) => (
-                        <span key={j} className="text-xs bg-blue-50 text-blue-600 rounded px-2 py-0.5">#{t}</span>
-                      ))}
-                    </div>
-                  </div>
+              {/* 목적 */}
+              <div>
+                <label className="text-xs font-semibold text-[var(--muted)] mb-1.5 block">목적</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {[['promote','✨ 홍보/강점 확산'],['attack','🔥 공격/경쟁자 약점'],['defend','🛡️ 방어/해명'],['policy','📋 정책 소개']].map(([v,l]) => (
+                    <button key={v} onClick={() => setGenPurpose(v)}
+                      className={`px-3 py-1.5 text-xs rounded-lg border transition ${genPurpose === v ? 'bg-violet-600 text-white border-violet-600' : 'border-[var(--card-border)] text-[var(--muted)] hover:border-violet-500'}`}>
+                      {l}
+                    </button>
+                  ))}
                 </div>
               </div>
-            );
-          })}
-        </div>
+            </div>
+
+            {/* 주제/소재 */}
+            <div className="mb-4">
+              <label className="text-xs font-semibold text-[var(--muted)] mb-1.5 block">주제/소재</label>
+              <div className="flex gap-2 mb-2">
+                <input className="input-field flex-1" value={genTopic}
+                  onChange={e => setGenTopic(e.target.value)}
+                  placeholder="직접 입력 또는 아래 4사분면에서 선택..." />
+                <button onClick={() => { setShowQuadrant(!showQuadrant); if (!showQuadrant && quadrantItems.length === 0) loadQuadrantItems(); }}
+                  className="px-3 py-1.5 text-xs rounded-lg border border-[var(--card-border)] text-[var(--muted)] hover:border-violet-500 whitespace-nowrap">
+                  {showQuadrant ? '접기' : '4사분면에서 가져오기'}
+                </button>
+              </div>
+              {showQuadrant && (
+                <div className="bg-[var(--muted-bg)] rounded-xl p-3 max-h-48 overflow-y-auto space-y-1">
+                  {quadrantItems.length === 0 ? (
+                    <p className="text-xs text-[var(--muted)] text-center py-2">4사분면 데이터 로딩 중...</p>
+                  ) : quadrantItems.map((it: any, i: number) => (
+                    <button key={i} onClick={() => {
+                      setGenTopic(it.title);
+                      setGenContext(`[4사분면: ${it.label}] ${it.action_summary || ''} | 후보: ${it.candidate || ''}`);
+                      setGenPurpose(it.quadrant === 'opportunity' ? 'attack' : it.quadrant === 'strength' ? 'promote' : it.quadrant === 'weakness' ? 'defend' : 'promote');
+                      setShowQuadrant(false);
+                    }}
+                      className="w-full text-left p-2 rounded-lg hover:bg-[var(--card-bg)] transition flex items-center gap-2">
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                        it.quadrant === 'opportunity' ? 'bg-orange-500 text-white' :
+                        it.quadrant === 'strength' ? 'bg-blue-500 text-white' :
+                        it.quadrant === 'weakness' ? 'bg-red-500 text-white' :
+                        'bg-amber-500 text-white'
+                      }`}>{it.label}</span>
+                      <span className="text-xs flex-1 line-clamp-1">{it.title}</span>
+                      {it.candidate && <span className="text-[10px] text-[var(--muted)]">{it.candidate}</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 원하는 방향/요청 */}
+            <div className="mb-4">
+              <label className="text-xs font-semibold text-[var(--muted)] mb-1.5 block">원하는 방향/요청 <span className="font-normal">(선택)</span></label>
+              <textarea className="input-field w-full" rows={2} value={genDirection}
+                onChange={e => setGenDirection(e.target.value)}
+                placeholder="예: 서승우의 30년 행정 경험을 강조해줘 / 이범석 측근비리를 부각하되 직접 비방은 피해줘 / 청년층 대상으로 친근하게..." />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+              {/* 타겟 */}
+              <div>
+                <label className="text-xs font-semibold text-[var(--muted)] mb-1.5 block">타겟</label>
+                <select className="input-field w-full" value={genTarget} onChange={e => setGenTarget(e.target.value)}>
+                  <option value="all">전체 유권자</option>
+                  <option value="youth">2030 청년층</option>
+                  <option value="senior">5060 장년층</option>
+                  <option value="rural">농촌/면 단위</option>
+                </select>
+              </div>
+              {/* 분량 */}
+              <div>
+                <label className="text-xs font-semibold text-[var(--muted)] mb-1.5 block">분량</label>
+                <select className="input-field w-full" value={genLength} onChange={e => setGenLength(e.target.value)}>
+                  <option value="short">짧게 (SNS, 200자)</option>
+                  <option value="medium">보통 (500자)</option>
+                  <option value="long">길게 (블로그, 1500자+)</option>
+                </select>
+              </div>
+              {/* 톤 */}
+              <div>
+                <label className="text-xs font-semibold text-[var(--muted)] mb-1.5 block">톤/스타일</label>
+                <select className="input-field w-full" value={genStyle} onChange={e => setGenStyle(e.target.value)}>
+                  <option value="formal">공식적/신뢰감</option>
+                  <option value="casual">친근한/편안한</option>
+                  <option value="aggressive">강한/공격적</option>
+                  <option value="emotional">감성적/호소</option>
+                </select>
+              </div>
+            </div>
+
+            {genContext && (
+              <div className="text-xs text-[var(--muted)] bg-[var(--muted-bg)] rounded-lg p-2 mb-3">
+                <span className="font-bold">📌 컨텍스트:</span> {genContext.substring(0, 150)}{genContext.length > 150 && '...'}
+              </div>
+            )}
+
+            <button onClick={handleGenerate} disabled={generating || !genTopic.trim()}
+              className="w-full px-4 py-3 bg-purple-600 text-white rounded-xl text-sm font-bold hover:bg-purple-700 disabled:opacity-50 transition">
+              {generating ? '✨ AI 생성 중... (최대 90초)' : '✨ AI 콘텐츠 생성'}
+            </button>
+          </div>
+
+          {genResult && !genResult.error && (
+            <div className="card">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-bold">📄 생성된 콘텐츠</h3>
+                <div className="flex gap-2">
+                  <button onClick={() => handleCopy(genResult.content)}
+                    className="text-xs px-3 py-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
+                    {copiedTag ? '✅ 복사됨!' : '📋 복사'}
+                  </button>
+                  <button onClick={handleGenerate} disabled={generating}
+                    className="text-xs px-3 py-1.5 bg-gray-500 text-white rounded-lg hover:bg-gray-600 disabled:opacity-50">
+                    🔄 다시 생성
+                  </button>
+                </div>
+              </div>
+              <div className="prose prose-sm max-w-none whitespace-pre-wrap text-sm leading-relaxed bg-[var(--muted-bg)] rounded-xl p-4">
+                {genResult.content}
+              </div>
+
+              {/* 수정 요청 — 대화형 */}
+              <div className="mt-4 flex gap-2">
+                <input className="input-field flex-1" value={genDirection}
+                  onChange={e => setGenDirection(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleGenerate()}
+                  placeholder="수정 요청: 좀 더 공격적으로 / 이범석 측근비리 추가 / 분량 줄여줘..." />
+                <button onClick={handleGenerate} disabled={generating}
+                  className="px-4 py-2 bg-violet-600 text-white rounded-xl text-sm hover:bg-violet-700 disabled:opacity-50 whitespace-nowrap">
+                  ✏️ 수정 생성
+                </button>
+              </div>
+
+              {/* 선거법 체크 결과 */}
+              {genResult.compliance && (
+                <div className={`mt-4 p-3 rounded-xl border ${
+                  genResult.compliance.compliant
+                    ? 'border-green-500/30 bg-green-500/5'
+                    : 'border-red-500/30 bg-red-500/5'
+                }`}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className={`font-bold text-sm ${genResult.compliance.compliant ? 'text-green-500' : 'text-red-500'}`}>
+                      ⚖️ {genResult.compliance.compliant ? '선거법 적합' : '선거법 위반 소지'}
+                    </span>
+                    <span className="text-xs text-[var(--muted)]">점수: {genResult.compliance.score}/100</span>
+                  </div>
+                  {genResult.compliance.violations?.map((v: any, i: number) => (
+                    <div key={i} className="text-xs text-red-500 mt-1">
+                      <span className="font-bold">{v.rule}</span> — {v.detail} (벌칙: {v.penalty})
+                    </div>
+                  ))}
+                  {genResult.compliance.warnings?.map((w: any, i: number) => (
+                    <div key={i} className="text-xs text-amber-500 mt-1">
+                      <span className="font-bold">{w.rule}</span> — {w.detail}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {genResult?.error && (
+            <div className="card text-center py-8 text-red-500">{genResult.error}</div>
+          )}
+        </>
       )}
 
-      {/* ── 선거법 체크 탭 ── */}
+      {/* ═══ 선거법 검증 ═══ */}
       {tab === 'compliance' && (
         <div className="space-y-4">
           <div className="card">
-            <h3 className="font-semibold mb-3">콘텐츠 선거법 사전 검증</h3>
-            <p className="text-sm text-gray-500 mb-4">
-              게시 전에 선거법 위반 여부를 확인하세요. AI 생성물 표기, 비방, 금품 제공 등을 자동 검사합니다.
+            <h3 className="font-bold mb-3">콘텐츠 선거법 사전 검증</h3>
+            <p className="text-xs text-[var(--muted)] mb-4">
+              게시 전에 공직선거법 위반 여부를 확인하세요. 실제 법 조항 기반으로 검사합니다.
             </p>
 
             <div className="mb-3">
@@ -193,34 +408,34 @@ export default function ContentToolsPage() {
               </select>
             </div>
 
-            <textarea className="input-field" rows={6} value={complianceText}
+            <textarea className="input-field w-full" rows={6} value={complianceText}
               onChange={e => setComplianceText(e.target.value)}
               placeholder="검증할 콘텐츠를 붙여넣으세요..." />
 
             <button onClick={handleCompliance} disabled={!complianceText.trim()}
-              className="btn-primary mt-3">⚖️ 선거법 검증하기</button>
+              className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm mt-3 hover:bg-blue-700 disabled:opacity-50">
+              선거법 검증하기
+            </button>
           </div>
 
           {complianceResult && (
-            <div className={`card border-2 ${complianceResult.compliant ? 'border-green-300' : 'border-red-300'}`}>
+            <div className={`card border-2 ${complianceResult.compliant ? 'border-green-500/30' : 'border-red-500/30'}`}>
               <div className="flex items-center gap-3 mb-4">
-                <span className="text-3xl">{complianceResult.compliant ? '✅' : '⚠️'}</span>
-                <div>
-                  <h3 className="font-bold text-lg">
-                    {complianceResult.compliant ? '적합' : '위반 사항 발견'}
-                  </h3>
-                  <p className="text-sm text-gray-500">점수: {complianceResult.score}/100</p>
-                </div>
+                <span className={`text-2xl font-bold ${complianceResult.compliant ? 'text-green-500' : 'text-red-500'}`}>
+                  {complianceResult.compliant ? '적합' : '위반 소지'}
+                </span>
+                <span className="text-sm text-[var(--muted)]">점수: {complianceResult.score}/100</span>
               </div>
 
               {complianceResult.violations?.length > 0 && (
                 <div className="mb-4">
-                  <h4 className="font-semibold text-red-600 mb-2">위반 사항</h4>
+                  <h4 className="font-semibold text-red-500 mb-2 text-sm">위반 사항</h4>
                   {complianceResult.violations.map((v: any, i: number) => (
-                    <div key={i} className="bg-red-50 rounded p-3 mb-2">
-                      <p className="font-medium text-sm text-red-800">{v.rule}</p>
-                      <p className="text-sm text-red-600">{v.detail}</p>
-                      <p className="text-xs text-red-500 mt-1">수정 방법: {v.fix}</p>
+                    <div key={i} className="bg-red-500/5 border border-red-500/20 rounded-xl p-3 mb-2">
+                      <p className="font-bold text-sm text-red-500">{v.rule}</p>
+                      <p className="text-sm mt-1">{v.detail}</p>
+                      {v.penalty && <p className="text-xs text-red-400 mt-1">벌칙: {v.penalty}</p>}
+                      {v.fix && <p className="text-xs text-[var(--muted)] mt-1">수정: {v.fix}</p>}
                     </div>
                   ))}
                 </div>
@@ -228,11 +443,12 @@ export default function ContentToolsPage() {
 
               {complianceResult.warnings?.length > 0 && (
                 <div className="mb-4">
-                  <h4 className="font-semibold text-amber-600 mb-2">주의 사항</h4>
+                  <h4 className="font-semibold text-amber-500 mb-2 text-sm">주의 사항</h4>
                   {complianceResult.warnings.map((w: any, i: number) => (
-                    <div key={i} className="bg-amber-50 rounded p-3 mb-2">
-                      <p className="font-medium text-sm text-amber-800">{w.rule}</p>
-                      <p className="text-sm text-amber-600">{w.detail}</p>
+                    <div key={i} className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-3 mb-2">
+                      <p className="font-bold text-sm text-amber-500">{w.rule}</p>
+                      <p className="text-sm mt-1">{w.detail}</p>
+                      {w.penalty && <p className="text-xs text-amber-400 mt-1">벌칙: {w.penalty}</p>}
                     </div>
                   ))}
                 </div>
@@ -240,10 +456,121 @@ export default function ContentToolsPage() {
 
               {complianceResult.suggestions?.length > 0 && (
                 <div>
-                  <h4 className="font-semibold text-blue-600 mb-2">개선 제안</h4>
+                  <h4 className="font-semibold text-blue-500 mb-2 text-sm">개선 제안</h4>
                   {complianceResult.suggestions.map((s: string, i: number) => (
-                    <p key={i} className="text-sm text-blue-600 py-1">💡 {s}</p>
+                    <p key={i} className="text-sm text-blue-400 py-1">{s}</p>
                   ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ═══ 선거법 보기 ═══ */}
+      {tab === 'law' && (
+        <div className="space-y-4">
+          {/* 검색 */}
+          <div className="card">
+            <h3 className="font-bold mb-3">공직선거법규 운용자료</h3>
+            <p className="text-xs text-[var(--muted)] mb-3">2026 중앙선거관리위원회 발행 — 조항/운용기준/사례 검색</p>
+            <div className="flex gap-2">
+              <input className="input-field flex-1" value={lawSearch}
+                onChange={e => setLawSearch(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleLawSearch()}
+                placeholder="검색어 입력 (예: 행사, 홍보물, 금품, 교육감...)" />
+              <button onClick={handleLawSearch}
+                className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm hover:bg-blue-700">
+                검색
+              </button>
+            </div>
+          </div>
+
+          {/* 검색 결과 */}
+          {lawSearchResults.length > 0 && (
+            <div className="card">
+              <h4 className="font-semibold mb-3 text-sm">검색 결과 ({lawSearchResults.length}건)</h4>
+              <div className="space-y-2">
+                {lawSearchResults.map((r: any) => (
+                  <button key={r.id} onClick={() => loadLawDetail(r.id)}
+                    className="w-full text-left p-3 rounded-xl border border-[var(--card-border)] hover:border-blue-500/30 hover:bg-blue-500/5 transition">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-xs bg-blue-500/10 text-blue-500 px-2 py-0.5 rounded">{r.article}</span>
+                      <span className="font-semibold text-sm">{r.chapter}</span>
+                    </div>
+                    {r.content_preview && <p className="text-xs text-[var(--muted)] line-clamp-2">{r.content_preview}</p>}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 목차 */}
+          {!lawDetail && lawSearchResults.length === 0 && (
+            <div className="card">
+              <h4 className="font-semibold mb-3 text-sm">목차</h4>
+              <div className="space-y-2">
+                {lawToc.map((s: any) => (
+                  <div key={s.id} className="flex items-center gap-2">
+                    <button onClick={() => loadLawDetail(s.id)}
+                      className="flex-1 text-left p-3 rounded-xl border border-[var(--card-border)] hover:border-blue-500/30 hover:bg-blue-500/5 transition flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs bg-[var(--muted-bg)] text-[var(--muted)] px-2 py-0.5 rounded">{s.article}</span>
+                        <span className="font-semibold text-sm">{s.chapter}</span>
+                      </div>
+                      <span className="text-xs text-[var(--muted)]">p.{s.page_start}-{s.page_end}</span>
+                    </button>
+                    <a href={`/election-law-2026.pdf#page=${s.page_start}`} target="_blank" rel="noopener noreferrer"
+                      className="text-[10px] px-2 py-1 bg-[var(--muted-bg)] text-[var(--muted)] rounded hover:bg-blue-500/10 hover:text-blue-500 shrink-0">
+                      PDF
+                    </a>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 상세 보기 */}
+          {lawDetail && (
+            <div className="card">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <span className="text-xs bg-blue-500/10 text-blue-500 px-2 py-0.5 rounded">{lawDetail.article_number}</span>
+                  <h3 className="font-bold mt-1">{lawDetail.chapter}</h3>
+                  <p className="text-xs text-[var(--muted)]">p.{lawDetail.page_start}-{lawDetail.page_end}</p>
+                </div>
+                <div className="flex gap-2">
+                  <a href={`/election-law-2026.pdf#page=${lawDetail.page_start}`} target="_blank" rel="noopener noreferrer"
+                    className="text-xs px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700">PDF 원문 보기 (p.{lawDetail.page_start})</a>
+                  <button onClick={() => setLawDetail(null)}
+                    className="text-xs text-[var(--muted)] hover:text-[var(--foreground)]">목차로 돌아가기</button>
+                </div>
+              </div>
+
+              {lawDetail.content && (
+                <div className="mb-4">
+                  <h4 className="font-semibold text-sm mb-2 text-blue-500">관계 법규</h4>
+                  <div className="whitespace-pre-wrap text-sm bg-[var(--muted-bg)] rounded-xl p-4 leading-relaxed max-h-96 overflow-y-auto">
+                    {lawDetail.content}
+                  </div>
+                </div>
+              )}
+
+              {lawDetail.guidelines && (
+                <div className="mb-4">
+                  <h4 className="font-semibold text-sm mb-2 text-green-500">운용기준</h4>
+                  <div className="whitespace-pre-wrap text-sm bg-green-500/5 border border-green-500/10 rounded-xl p-4 leading-relaxed max-h-96 overflow-y-auto">
+                    {lawDetail.guidelines}
+                  </div>
+                </div>
+              )}
+
+              {lawDetail.examples && (
+                <div>
+                  <h4 className="font-semibold text-sm mb-2 text-amber-500">사례예시</h4>
+                  <div className="whitespace-pre-wrap text-sm bg-amber-500/5 border border-amber-500/10 rounded-xl p-4 leading-relaxed max-h-96 overflow-y-auto">
+                    {lawDetail.examples}
+                  </div>
                 </div>
               )}
             </div>
@@ -253,7 +580,7 @@ export default function ContentToolsPage() {
 
       {loading && (
         <div className="flex items-center justify-center py-8">
-          <div className="animate-spin h-6 w-6 border-4 border-primary-500 border-t-transparent rounded-full" />
+          <div className="animate-spin h-6 w-6 border-4 border-blue-500 border-t-transparent rounded-full" />
         </div>
       )}
     </div>
