@@ -146,14 +146,25 @@ async def get_strategic_quadrant(
             # 관점 일치 — 뒤집을 필요 없음
             return item
 
-        # 관점 불일치 — 뒤집기
+        # 관점 불일치 — 뒤집기 (strategic_value + action_summary 모두)
         orig_sval = item.get("strategic_value", "")
         flipped_sval = FLIP.get(orig_sval, orig_sval)
+
+        # action_summary도 관점 전환 (원본은 다른 캠프 시선)
+        ACTION_FLIP = {
+            "weakness": "즉시 방어/해명 대응 필요",
+            "opportunity": "공격/활용 콘텐츠 기회",
+            "strength": "확산/홍보 활용",
+            "threat": "견제/대응 전략 필요",
+        }
+        flipped_action = ACTION_FLIP.get(flipped_sval, "확인 필요")
 
         return {
             **item,
             "strategic_value": flipped_sval,
             "is_about_our_candidate": is_about_ours_now,
+            "action_summary": flipped_action,
+            "action_type": {"weakness": "defend", "opportunity": "attack", "strength": "promote", "threat": "monitor"}.get(flipped_sval, item.get("action_type")),
         }
 
     # 모든 사분면 items 가져온 후 뒤집기 적용
