@@ -32,7 +32,7 @@ export default function HistorySummaryCards({ summary }: { summary: Summary }) {
     {
       label: isNonPartisan ? '선거 유형' : '우세 정당',
       value: isNonPartisan ? '무정당' : summary.dominant_party,
-      sub: isNonPartisan ? '교육감 등 정당 무관' : `${summary.dominant_pct}% 당선`,
+      sub: isNonPartisan ? '교육감 등 정당 무관' : (summary.dominant_pct === 100 ? '전 지역 석권' : `${summary.dominant_pct}% 지역 승리`),
       tone: partyColor,
     },
     {

@@ -61,7 +61,7 @@ export default function RawPartyHeatmap({
             >
               <div className="font-bold text-sm truncate">{c.district}</div>
               <div className="text-[11px] opacity-95 mt-1 truncate">우세: {c.dominant_party}</div>
-              <div className="text-[11px] opacity-90">{c.dominant_pct}% 당선</div>
+              <div className="text-[11px] opacity-90">{c.dominant_pct === 100 ? '전 회차 석권' : `${c.dominant_pct}% 회차 승리`}</div>
               <div className="text-[11px] mt-1 font-semibold opacity-95">
                 최근 {c.latest_party} {c.latest_rate.toFixed(1)}%
               </div>
