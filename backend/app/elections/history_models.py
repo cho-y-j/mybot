@@ -305,6 +305,68 @@ class AnalysisCache(Base):
     )
 
 
+class ElectionResultDong(Base):
+    """역대 선거 개표 결과 — 읍·면·동 단위.
+
+    NEC 공공 OpenAPI엔 없고, data.go.kr fileData (XLSX)에서만 제공되는 동 단위 데이터.
+    Phase 2: 시·군·구보다 더 작은 단위 강세 분석용.
+    """
+    __tablename__ = "election_results_dong"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), nullable=True, comment="null=공공")
+
+    election_number = Column(Integer, nullable=False)
+    election_type = Column(String(50), nullable=False)
+    election_year = Column(Integer, nullable=False)
+    region_sido = Column(String(50), nullable=False)
+    region_sigungu = Column(String(50), nullable=True, comment="청주시상당구 등")
+    eup_myeon_dong = Column(String(80), nullable=False, comment="낭성면, 성안동, 등")
+
+    candidate_name = Column(String(100), nullable=False)
+    party = Column(String(100), nullable=True)
+    votes = Column(Integer, nullable=True)
+    vote_rate = Column(Float, nullable=True)
+    is_winner = Column(Boolean, default=False)
+
+    # 추가: 사전·거소 분리 (data.go.kr 데이터에 있음)
+    early_votes = Column(Integer, nullable=True, comment="관외+거소 사전투표")
+    election_day_votes = Column(Integer, nullable=True, comment="선거일 투표")
+
+    __table_args__ = (
+        Index("ix_dong_lookup", "election_year", "election_type", "region_sido", "region_sigungu", "eup_myeon_dong"),
+        Index("ix_dong_sigungu", "region_sigungu", "election_year"),
+    )
+
+
+class HistoricalCandidateCamp(Base):
+    """역대 후보자 진영 매핑 — 정당이 없거나(교육감) raw 정당명을 진영으로 분류해야 할 때.
+
+    조회 우선순위:
+      1. (candidate_name + election_type + region_sido + election_year) 정확 매칭
+      2. (candidate_name + election_type + region_sido) 연도 무관
+      3. (candidate_name + election_type) 지역 무관
+    """
+    __tablename__ = "historical_candidate_camps"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    candidate_name = Column(String(100), nullable=False)
+    election_type = Column(String(50), nullable=False, comment="superintendent|mayor|governor|...")
+    region_sido = Column(String(50), nullable=True, comment="null=전국 공통")
+    election_year = Column(Integer, nullable=True, comment="null=후보 인생 전반")
+
+    camp = Column(String(20), nullable=False, comment="진보|보수|중도|기타")
+    source = Column(String(20), default="manual", comment="manual|ai|verified")
+    notes = Column(Text, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        Index("ix_hcc_lookup", "candidate_name", "election_type", "region_sido"),
+        Index("ix_hcc_region_type", "election_type", "region_sido"),
+    )
+
+
 class ImportLog(Base):
     """데이터 임포트 기록."""
     __tablename__ = "import_logs"

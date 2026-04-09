@@ -4,8 +4,8 @@ ElectionPulse - Strategy API
 모든 콘텐츠는 우리 후보 관점에서 분류됨:
 - strength: 우리 후보 강점 (긍정 + 본인) → 확산
 - weakness: 우리 후보 약점 (부정 + 본인) → 방어/해명
-- opportunity: 공격 기회 (부정 + 경쟁자) → 활용
-- threat: 경쟁 위협 (긍정 + 경쟁자) → 견제
+- opportunity: 경쟁자 리스크 (부정 + 경쟁자) → 활용/공격 콘텐츠
+- threat: 경쟁자 위협 (긍정 + 경쟁자) → 견제
 """
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
@@ -22,8 +22,8 @@ router = APIRouter()
 QUADRANT_LABELS = {
     "strength": {"label": "우리 강점", "icon": "✨", "color": "blue", "action": "확산", "priority": 3},
     "weakness": {"label": "우리 위기", "icon": "🚨", "color": "red", "action": "방어", "priority": 1},
-    "opportunity": {"label": "공격 기회", "icon": "🔥", "color": "orange", "action": "활용", "priority": 2},
-    "threat": {"label": "경쟁 위협", "icon": "⚠️", "color": "amber", "action": "견제", "priority": 4},
+    "opportunity": {"label": "경쟁자 리스크", "icon": "🔥", "color": "orange", "action": "활용", "priority": 2},
+    "threat": {"label": "경쟁자 위협", "icon": "⚠️", "color": "amber", "action": "견제", "priority": 4},
     "neutral": {"label": "중립/참고", "icon": "📄", "color": "gray", "action": "관찰", "priority": 5},
 }
 

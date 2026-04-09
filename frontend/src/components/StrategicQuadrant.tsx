@@ -33,18 +33,22 @@ const QUADRANT_ORDER: Array<keyof typeof QUADRANT_STYLES> = ['weakness', 'opport
 
 interface Props {
   electionId: string;
-  itemsPerQuadrant?: number;
+  /** 사분면당 기본 표시 개수 (더보기 누르기 전) */
+  defaultVisible?: number;
+  /** 백엔드에서 페치할 사분면당 최대 개수 */
+  fetchLimit?: number;
 }
 
-export default function StrategicQuadrant({ electionId, itemsPerQuadrant = 4 }: Props) {
+export default function StrategicQuadrant({ electionId, defaultVisible = 2, fetchLimit = 50 }: Props) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const load = async () => {
     setLoading(true);
     try {
-      const d = await api.getStrategicQuadrant(electionId, 'all', itemsPerQuadrant);
+      const d = await api.getStrategicQuadrant(electionId, 'all', fetchLimit);
       setData(d);
     } catch (e) {
       console.error(e);
@@ -130,7 +134,7 @@ export default function StrategicQuadrant({ electionId, itemsPerQuadrant = 4 }: 
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {q.items.slice(0, itemsPerQuadrant).map((it: any) => (
+                  {q.items.slice(0, expanded[key] ? q.items.length : defaultVisible).map((it: any) => (
                     <div key={it.id} className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-100 dark:border-gray-800">
                       <div className="flex items-start gap-2">
                         {it.action_priority === 'high' && (
@@ -170,6 +174,17 @@ export default function StrategicQuadrant({ electionId, itemsPerQuadrant = 4 }: 
                       )}
                     </div>
                   ))}
+                  {/* 더보기/접기 — 사분면당 */}
+                  {q.items.length > defaultVisible && (
+                    <button
+                      onClick={() => setExpanded(prev => ({ ...prev, [key]: !prev[key] }))}
+                      className={`w-full text-xs py-2 rounded-lg border ${style.border} ${style.text} bg-white/40 dark:bg-gray-900/40 hover:bg-white dark:hover:bg-gray-900 font-semibold transition`}
+                    >
+                      {expanded[key]
+                        ? `▲ 접기`
+                        : `▼ 더보기 (+${q.items.length - defaultVisible}건${(counts[key] || 0) > q.items.length ? ` / 전체 ${counts[key]}건` : ''})`}
+                    </button>
+                  )}
                 </div>
               )}
             </div>

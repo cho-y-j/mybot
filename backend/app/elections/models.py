@@ -149,6 +149,13 @@ class NewsArticle(Base):
     sentiment_score = Column(Float, nullable=True, comment="-1.0 ~ 1.0")
     relevance_score = Column(Float, nullable=True, comment="0.0 ~ 1.0")
 
+    # AI 분석
+    ai_summary = Column(Text, nullable=True)
+    ai_reason = Column(Text, nullable=True)
+    ai_topics = Column(JSONB, default=list)
+    ai_threat_level = Column(String(20), nullable=True)
+    ai_analyzed_at = Column(DateTime(timezone=True), nullable=True)
+
     published_at = Column(DateTime(timezone=True), nullable=True)
     collected_at = Column(DateTime(timezone=True), default=utcnow)
     platform = Column(String(50), default="naver", comment="naver|daum|google")
@@ -186,6 +193,13 @@ class CommunityPost(Base):
     engagement = Column(JSONB, default=dict, comment='{"views": 0, "comments": 0, "likes": 0}')
     platform = Column(String(50), default="naver_blog", comment="naver_blog|naver_cafe|dcinside|community")
 
+    # AI 분석
+    ai_summary = Column(Text, nullable=True)
+    ai_reason = Column(Text, nullable=True)
+    ai_topics = Column(JSONB, default=list)
+    ai_threat_level = Column(String(20), nullable=True)
+    ai_analyzed_at = Column(DateTime(timezone=True), nullable=True)
+
     published_at = Column(DateTime(timezone=True), nullable=True)
     collected_at = Column(DateTime(timezone=True), default=utcnow)
 
@@ -219,6 +233,13 @@ class YouTubeVideo(Base):
 
     sentiment = Column(String(20), nullable=True)
     sentiment_score = Column(Float, nullable=True)
+
+    # AI 분석
+    ai_summary = Column(Text, nullable=True)
+    ai_reason = Column(Text, nullable=True)
+    ai_topics = Column(JSONB, default=list)
+    ai_threat_level = Column(String(20), nullable=True)
+    ai_analyzed_at = Column(DateTime(timezone=True), nullable=True)
 
     published_at = Column(DateTime(timezone=True), nullable=True)
     collected_at = Column(DateTime(timezone=True), default=utcnow)
@@ -279,6 +300,30 @@ class SentimentDaily(Base):
     )
 
 
+# ──────────────── 선거법 문서 ──────────────────────────────────────────────
+
+class ElectionLawSection(Base):
+    """선거법규 운용자료 파싱 저장."""
+    __tablename__ = "election_law_sections"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    document_title = Column(String(500), nullable=False, comment="문서명")
+    chapter = Column(String(200), nullable=True, comment="장 (Ⅰ. 각종 행사의 개최·후원행위)")
+    section_title = Column(String(500), nullable=True, comment="절/항 제목")
+    article_number = Column(String(100), nullable=True, comment="법 조항 번호 (제86조 등)")
+    content = Column(Text, nullable=True, comment="조항 본문")
+    guidelines = Column(Text, nullable=True, comment="운용기준")
+    examples = Column(Text, nullable=True, comment="사례예시")
+    page_start = Column(Integer, nullable=True)
+    page_end = Column(Integer, nullable=True)
+    keywords = Column(JSONB, default=list, comment="검색 키워드")
+    section_order = Column(Integer, default=0, comment="목차 순서")
+
+    __table_args__ = (
+        Index("ix_law_article", "article_number"),
+    )
+
+
 # ──────────────── 여론조사 ─────────────────────────────────────────────────
 
 class Survey(Base):
@@ -306,12 +351,39 @@ class Survey(Base):
     # 지역/선거유형 (공공데이터 필터용)
     election_type = Column(String(50), nullable=True)
     region_sido = Column(String(50), nullable=True)
+    region_sigungu = Column(String(50), nullable=True, comment="청주시·옥천군 등 (시·군·구 단위 surveys)")
 
     # Relationships
     crosstabs = relationship("SurveyCrosstab", back_populates="survey", cascade="all, delete-orphan")
+    questions = relationship("SurveyQuestion", back_populates="survey", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("ix_surveys_tenant_date", "tenant_id", "survey_date"),
+        UniqueConstraint("tenant_id", "survey_org", "survey_date", "election_id",
+                         name="uq_survey_org_date_election"),
+    )
+
+
+class SurveyQuestion(Base):
+    """여론조사 질문지 — 같은 조사에 여러 질문, 각각 다른 결과."""
+    __tablename__ = "survey_questions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    survey_id = Column(UUID(as_uuid=True), ForeignKey("surveys.id", ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(UUID(as_uuid=True), nullable=False)
+
+    question_number = Column(Integer, nullable=False, default=1)
+    question_type = Column(String(50), default="simple", comment="simple|conditional|issue_based|matchup")
+    question_text = Column(Text, nullable=False)
+    condition_text = Column(Text, nullable=True, comment="조건부 질문인 경우 조건")
+    results = Column(JSONB, nullable=True, comment='{"김진균": 25.3, "윤건영": 30.1}')
+    sample_size = Column(Integer, nullable=True)
+    notes = Column(Text, nullable=True)
+
+    survey = relationship("Survey", back_populates="questions")
+
+    __table_args__ = (
+        Index("ix_sq_survey", "survey_id"),
     )
 
 

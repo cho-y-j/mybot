@@ -409,6 +409,18 @@ class ApiClient {
     return this.request<any>(`/analysis/${electionId}/history-deep-analysis`);
   }
 
+  generateHistoryAIStrategy(electionId: string) {
+    return this.request<any>(`/analysis/${electionId}/history-ai-strategy`, { method: 'POST' });
+  }
+
+  getDongResults(electionId: string, sigungu?: string, year?: number) {
+    const qs = new URLSearchParams();
+    if (sigungu) qs.set('sigungu', sigungu);
+    if (year) qs.set('year', String(year));
+    const q = qs.toString();
+    return this.request<any>(`/analysis/${electionId}/dong-results${q ? '?' + q : ''}`);
+  }
+
   getSurveyDeepAnalysis(electionId: string) {
     return this.request<any>(`/analysis/${electionId}/survey-deep-analysis`);
   }
