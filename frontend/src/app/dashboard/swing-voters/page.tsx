@@ -27,19 +27,13 @@ export default function SwingVotersPage() {
   if (elLoading) return <div className="p-6 text-gray-500">로딩 중...</div>;
   if (!election) return <div className="p-6 text-red-500">선거를 선택하세요</div>;
 
-  const riskColors: Record<string, string> = {
-    high: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
-    medium: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300',
-    low: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
-  };
-
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">스윙보터 분석</h1>
+          <h1 className="text-2xl font-bold">스윙보터 이슈 발굴</h1>
           <p className="text-gray-500 dark:text-gray-400 text-sm">
-            지역 민감 이슈 + 커뮤니티 부정 감성 교차 분석으로 이탈 위험 유권자 키워드를 감지합니다.
+            커뮤니티에서 찬반이 갈리는 뜨거운 이슈를 찾아 행동 유도를 제공합니다.
           </p>
         </div>
         <select value={days} onChange={e => setDays(Number(e.target.value))}
@@ -59,94 +53,166 @@ export default function SwingVotersPage() {
 
       {data && !loading && (
         <>
-          {/* 전체 위험도 */}
-          <div className={`p-4 rounded-lg ${riskColors[data.overall_risk] || riskColors.low}`}>
-            <div className="text-lg font-bold">
-              전체 이탈 위험도: {data.overall_risk === 'high' ? '높음' : data.overall_risk === 'medium' ? '보통' : '낮음'}
+          {/* 요약 카드 */}
+          <div className="grid grid-cols-3 gap-4">
+            <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-4 text-center">
+              <div className="text-3xl font-bold text-red-500">{data.hot_count || 0}</div>
+              <div className="text-sm text-gray-500">뜨거운 이슈</div>
             </div>
-            <div className="text-sm mt-1">
-              분석 이슈 {data.total_issues_analyzed}개 중 위험 이슈 {data.swing_issues?.length || 0}개
+            <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-4 text-center">
+              <div className="text-3xl font-bold">{data.total_issues || 0}</div>
+              <div className="text-sm text-gray-500">전체 분석 이슈</div>
+            </div>
+            <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-4 text-center">
+              <div className="text-3xl font-bold text-blue-500">{data.recommendations?.length || 0}</div>
+              <div className="text-sm text-gray-500">AI 행동 지침</div>
             </div>
           </div>
 
-          {/* 스윙 이슈 목록 */}
-          {data.swing_issues?.length > 0 && (
-            <div className="space-y-3">
-              <h2 className="text-lg font-bold">이탈 위험 이슈</h2>
-              {data.swing_issues.map((issue: any, i: number) => (
-                <div key={i} className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-lg">{issue.issue}</span>
-                      <span className={`text-xs px-2 py-0.5 rounded ${
-                        issue.risk_score >= 50 ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
-                          : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300'
-                      }`}>
-                        위험도 {issue.risk_score}%
-                      </span>
-                      {issue.trend === 'rising' && (
-                        <span className="text-xs text-red-500">📈 상승세</span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-4 text-sm mb-2">
-                    <div>
-                      <span className="text-gray-500">지역 관심도</span>
-                      <div className="font-medium">{issue.regional_boost > 0 ? `+${issue.regional_boost}` : issue.regional_boost}</div>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">부정 감성률</span>
-                      <div className="font-medium text-red-600">{issue.negative_ratio}%</div>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">게시글 수</span>
-                      <div className="font-medium">{issue.total_posts}건</div>
-                    </div>
-                  </div>
-                  {/* 위험도 바 */}
-                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mb-2">
-                    <div className={`h-2 rounded-full ${issue.risk_score >= 50 ? 'bg-red-500' : 'bg-yellow-500'}`}
-                      style={{ width: `${Math.min(issue.risk_score, 100)}%` }} />
-                  </div>
-                  <div className="text-sm text-blue-600 dark:text-blue-400">
-                    {issue.recommendation}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* AI 추천 */}
+          {/* AI 행동 유도 (최상단) */}
           {data.recommendations?.length > 0 && (
-            <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800 p-4">
-              <h3 className="font-bold mb-2">AI 대응 전략 추천</h3>
-              <div className="space-y-2">
+            <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-300 dark:border-blue-800 p-5">
+              <h2 className="text-lg font-bold mb-3">AI 행동 지침</h2>
+              <div className="space-y-4">
                 {data.recommendations.map((r: any, i: number) => (
-                  <div key={i} className="text-sm">
-                    <span className="font-medium">{r.issue}:</span> {r.strategy}
+                  <div key={i} className="bg-white dark:bg-gray-800 rounded-lg p-4 border dark:border-gray-700">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-xs font-bold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 px-2 py-0.5 rounded">
+                        {r.issue}
+                      </span>
+                    </div>
+                    <div className="text-sm text-orange-600 dark:text-orange-400 mb-1">
+                      {r.situation}
+                    </div>
+                    <div className="font-medium mb-2">
+                      {r.action}
+                    </div>
+                    {r.message_example && (
+                      <div className="bg-gray-50 dark:bg-gray-700 rounded p-3 text-sm italic flex items-center justify-between">
+                        <span>&ldquo;{r.message_example}&rdquo;</span>
+                        <button onClick={() => { navigator.clipboard.writeText(r.message_example); }}
+                          className="text-xs text-blue-500 hover:underline ml-2 flex-shrink-0">복사</button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
             </div>
           )}
 
-          {/* 안전 이슈 */}
-          {data.safe_issues?.length > 0 && (
+          {/* 뜨거운 이슈 */}
+          {data.hot_issues?.length > 0 && (
+            <div className="space-y-3">
+              <h2 className="text-lg font-bold">뜨거운 이슈 (찬반 대립)</h2>
+              {data.hot_issues.map((issue: any, i: number) => (
+                <IssueCard key={i} issue={issue} />
+              ))}
+            </div>
+          )}
+
+          {/* 뜨거운 이슈 없을 때 */}
+          {data.hot_issues?.length === 0 && (
+            <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-8 text-center">
+              <p className="text-lg mb-2">현재 찬반이 갈리는 뜨거운 이슈가 없습니다</p>
+              <p className="text-sm text-gray-500">커뮤니티 데이터가 더 수집되면 자동으로 감지됩니다</p>
+            </div>
+          )}
+
+          {/* 안정 이슈 */}
+          {data.cold_issues?.length > 0 && (
             <details className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700">
-              <summary className="p-4 cursor-pointer font-medium text-green-700 dark:text-green-300">
-                안전 이슈 ({data.safe_issues.length}개)
+              <summary className="p-4 cursor-pointer font-medium text-gray-500">
+                안정 이슈 ({data.cold_issues.length}개) — 한쪽 의견 우세
               </summary>
               <div className="px-4 pb-4 space-y-2">
-                {data.safe_issues.map((issue: any, i: number) => (
-                  <div key={i} className="flex items-center justify-between text-sm py-1 border-b dark:border-gray-700 last:border-0">
-                    <span>{issue.issue}</span>
-                    <span className="text-gray-500">위험도 {issue.risk_score}%</span>
+                {data.cold_issues.map((issue: any, i: number) => (
+                  <div key={i} className="flex items-center justify-between text-sm py-2 border-b dark:border-gray-700 last:border-0">
+                    <div className="flex items-center gap-3">
+                      <span className="font-medium">{issue.issue}</span>
+                      <span className="text-xs text-gray-400">{issue.total_posts}건</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-green-600">긍정 {issue.positive}</span>
+                      <span className="text-xs text-red-600">부정 {issue.negative}</span>
+                      <span className="text-xs text-gray-400">{issue.verdict}</span>
+                    </div>
                   </div>
                 ))}
               </div>
             </details>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+function IssueCard({ issue }: { issue: any }) {
+  const [open, setOpen] = useState(false);
+  const total = issue.positive + issue.negative;
+  const posPercent = total > 0 ? Math.round(issue.positive / total * 100) : 50;
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <span className="text-lg font-bold">{issue.issue}</span>
+          <span className={`text-xs px-2 py-0.5 rounded font-medium ${
+            issue.split_ratio >= 40
+              ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+              : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300'
+          }`}>
+            찬반 {issue.split_ratio}% 대립
+          </span>
+          <span className="text-xs text-gray-400">{issue.total_posts}건</span>
+        </div>
+        <span className="text-xs text-gray-400">{issue.latest}</span>
+      </div>
+
+      {/* 찬반 비율 바 */}
+      <div className="mb-2">
+        <div className="flex justify-between text-xs mb-1">
+          <span className="text-green-600">긍정 {issue.positive}건 ({posPercent}%)</span>
+          <span className="text-red-600">부정 {issue.negative}건 ({100 - posPercent}%)</span>
+        </div>
+        <div className="w-full h-3 rounded-full overflow-hidden flex">
+          <div className="bg-green-500 h-full" style={{ width: `${posPercent}%` }} />
+          <div className="bg-gray-300 dark:bg-gray-600 h-full" style={{ width: `${Math.round(issue.neutral / issue.total_posts * 100)}%` }} />
+          <div className="bg-red-500 h-full" style={{ width: `${100 - posPercent - Math.round(issue.neutral / issue.total_posts * 100)}%` }} />
+        </div>
+      </div>
+
+      <div className="text-sm text-orange-600 dark:text-orange-400 mb-2">
+        {issue.verdict}
+      </div>
+
+      {/* 샘플 게시글 */}
+      {issue.sample_posts?.length > 0 && (
+        <div>
+          <button onClick={() => setOpen(!open)} className="text-xs text-blue-500 hover:underline">
+            {open ? '접기' : `관련 게시글 ${issue.sample_posts.length}건 보기`}
+          </button>
+          {open && (
+            <div className="mt-2 space-y-1">
+              {issue.sample_posts.map((p: any, j: number) => (
+                <div key={j} className="flex items-center gap-2 text-xs py-1">
+                  <span className={
+                    p.sentiment === 'positive' ? 'text-green-500' :
+                    p.sentiment === 'negative' ? 'text-red-500' : 'text-gray-400'
+                  }>
+                    {p.sentiment === 'positive' ? '🟢' : p.sentiment === 'negative' ? '🔴' : '⚪'}
+                  </span>
+                  <span className="text-gray-400">[{p.source}]</span>
+                  {p.url ? (
+                    <a href={p.url} target="_blank" rel="noopener noreferrer" className="hover:underline truncate">{p.title}</a>
+                  ) : (
+                    <span className="truncate">{p.title}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
