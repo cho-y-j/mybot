@@ -828,3 +828,50 @@ async def collect_ads(
     """Meta 광고 수동 수집 트리거."""
     from app.collectors.meta_ads import collect_meta_ads
     return await collect_meta_ads(db, user["tenant_id"], str(election_id))
+
+
+@router.post("/{election_id}/reclassify-issues")
+async def reclassify_community_issues(
+    election_id: UUID,
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """커뮤니티 게시글 이슈 재분류 (미태깅 + 기존 태깅 모두)."""
+    from app.common.election_access import get_election_tenant_ids
+    from app.collectors.community_collector import classify_issue
+
+    all_tids = await get_election_tenant_ids(db, election_id)
+
+    election = (await db.execute(select(Election).where(Election.id == election_id))).scalar_one_or_none()
+    e_type = election.election_type if election else None
+
+    # 해당 tenant들의 모든 커뮤니티 게시글
+    posts = (await db.execute(
+        select(CommunityPost).where(CommunityPost.tenant_id.in_(all_tids))
+    )).scalars().all()
+
+    updated = 0
+    newly_tagged = 0
+    changed = 0
+
+    for p in posts:
+        text = f"{p.title or ''} {p.content_snippet or ''}"
+        new_issue = classify_issue(text, election_type=e_type)
+
+        if new_issue and new_issue != p.issue_category:
+            if p.issue_category is None:
+                newly_tagged += 1
+            else:
+                changed += 1
+            p.issue_category = new_issue
+            updated += 1
+
+    await db.commit()
+
+    return {
+        "total_posts": len(posts),
+        "updated": updated,
+        "newly_tagged": newly_tagged,
+        "changed": changed,
+        "election_type": e_type,
+    }

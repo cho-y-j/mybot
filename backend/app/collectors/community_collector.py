@@ -23,26 +23,80 @@ HEADERS = {
     "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.3",
 }
 
-# 교육/학부모 관련 이슈 카테고리 분류 키워드
-ISSUE_CATEGORIES = {
-    "급식": ["급식", "점심", "식단", "영양", "친환경급식"],
-    "돌봄": ["돌봄", "방과후", "늘봄", "아이돌봄", "초등돌봄"],
-    "학폭": ["학교폭력", "학폭", "왕따", "집단따돌림", "사이버폭력"],
-    "교권": ["교권", "교사", "교원", "교직원", "교장"],
-    "입시": ["입시", "수능", "대입", "고교학점제", "학력"],
-    "예산": ["예산", "교육재정", "교육비", "재정", "특별교부금"],
-    "안전": ["안전", "통학", "스쿨존", "학교안전", "어린이보호"],
-    "혁신교육": ["혁신", "혁신학교", "자유학기제", "IB교육"],
-    "유아교육": ["유치원", "어린이집", "유아", "보육", "누리과정"],
+# ── 이슈 분류 사전: 선거 유형별 자동 로딩 + 동의어 확장 ──
+# korea_data.py의 ELECTION_ISSUES를 기반으로 카테고리별 키워드 매핑
+_ISSUE_SYNONYMS = {
+    # 교육감
+    "급식": ["급식", "점심", "식단", "영양", "친환경급식", "무상급식", "학교급식", "잔반", "식중독", "급식비", "로컬푸드"],
+    "돌봄": ["돌봄", "방과후", "늘봄", "아이돌봄", "초등돌봄", "방과후학교", "돌봄교실", "종일돌봄", "긴급돌봄", "방학돌봄"],
+    "학폭": ["학교폭력", "학폭", "왕따", "집단따돌림", "사이버폭력", "괴롭힘", "따돌림", "학폭위", "폭행", "가해자", "피해학생"],
+    "교권": ["교권", "교사", "교원", "교직원", "교장", "교감", "교권보호", "기간제교사", "악성민원", "교사폭행", "교원노조", "교사처우", "교원평가", "담임"],
+    "입시": ["입시", "수능", "대입", "고교학점제", "학력", "기초학력", "학력저하", "내신", "수시", "정시", "학력격차", "성적", "학업"],
+    "예산": ["예산", "교육재정", "교육비", "재정", "특별교부금", "지방교육재정", "교부금", "교육세", "예산낭비", "결산"],
+    "안전": ["안전", "통학", "스쿨존", "학교안전", "어린이보호", "통학버스", "학교시설", "석면", "내진", "학교환경", "급식안전"],
+    "혁신교육": ["혁신", "혁신학교", "자유학기제", "IB교육", "혁신교육", "IB", "미래교육", "교육혁신", "교육과정"],
+    "유아교육": ["유치원", "어린이집", "유아", "보육", "누리과정", "유아교육", "유치원비", "보육료", "유보통합"],
+    "디지털교육": ["디지털교육", "AI교육", "코딩교육", "에듀테크", "스마트교육", "태블릿", "디지털교과서", "온라인수업", "원격수업", "메타버스"],
+    "특수교육": ["특수교육", "장애학생", "특수학교", "특수학급", "통합교육", "장애인교육", "발달장애"],
+    "사교육": ["사교육", "학원", "사교육비", "과외", "학원비", "선행학습", "사교육경감", "사교육걱정", "입시학원"],
+    "과밀학급": ["학급당학생수", "과밀학급", "학급편성", "소규모학교", "학교통폐합", "분교", "폐교", "농촌학교"],
+    "학생인권": ["학생인권", "정신건강", "위기학생", "심리상담", "자살", "자해", "우울", "상담교사", "Wee센터", "인권"],
+    "다문화교육": ["다문화", "다문화교육", "다문화가정", "다문화학생", "이중언어", "대안학교", "학교밖청소년", "탈북학생"],
+    # 기초단체장(시장/군수) 공통
+    "도시개발": ["도시개발", "재개발", "재건축", "신도시", "택지개발", "도시재생", "아파트", "공공임대", "주거환경", "집값", "전세", "청년주거", "분양"],
+    "교통": ["교통", "대중교통", "도로", "BRT", "버스노선", "주차", "주차장", "자전거도로", "교통체증", "도로확장", "정체", "출퇴근"],
+    "일자리": ["일자리", "기업유치", "산업단지", "창업", "소상공인", "자영업", "전통시장", "상권", "청년일자리", "투자유치", "지역경제", "고용"],
+    "복지": ["복지", "노인복지", "아동복지", "장애인복지", "기초생활", "어린이집", "보육", "출산", "저출생", "인구감소", "경로당", "노인돌봄"],
+    "의료": ["병원", "응급의료", "보건소", "공공의료", "요양병원", "의료원", "소아과", "산부인과", "의료공백"],
+    "환경": ["환경", "미세먼지", "폐기물", "쓰레기", "분리수거", "상수도", "하수도", "공원", "하천", "악취", "소음", "매립지"],
+    "문화관광": ["관광", "축제", "문화센터", "도서관", "체육시설", "청소년센터", "생활체육", "문화행사"],
+    # 광역단체장
+    "지역경제": ["지역경제", "기업유치", "투자유치", "산업유치", "균형발전", "지역소멸", "인구유출", "메가시티"],
+    "광역교통": ["광역교통", "KTX", "고속도로", "공항", "철도", "광역버스", "GTX"],
 }
 
 
-def classify_issue(text: str) -> Optional[str]:
-    """게시물 텍스트에서 이슈 카테고리 분류."""
-    for category, keywords in ISSUE_CATEGORIES.items():
-        if any(kw in text for kw in keywords):
-            return category
-    return None
+def _build_issue_categories(election_type: str = None) -> dict[str, list[str]]:
+    """선거 유형에 맞는 이슈 카테고리 사전 빌드."""
+    if not election_type:
+        return _ISSUE_SYNONYMS
+
+    from app.elections.korea_data import ELECTION_ISSUES
+    type_issues = ELECTION_ISSUES.get(election_type, {}).get("issues", [])
+    if not type_issues:
+        return _ISSUE_SYNONYMS
+
+    # 해당 선거 유형의 이슈 키워드를 카테고리에 매핑
+    result = {}
+    for category, synonyms in _ISSUE_SYNONYMS.items():
+        # 카테고리 이름이나 동의어가 해당 선거 유형 이슈에 포함되면 활성화
+        if category in type_issues or any(s in type_issues for s in synonyms):
+            result[category] = synonyms
+
+    # ELECTION_ISSUES에 있는데 _ISSUE_SYNONYMS에 없는 키워드 → 자체 카테고리로 추가
+    covered = set()
+    for syns in result.values():
+        covered.update(syns)
+    for issue in type_issues:
+        if issue not in covered and issue not in result:
+            result[issue] = [issue]
+
+    return result if result else _ISSUE_SYNONYMS
+
+
+def classify_issue(text: str, election_type: str = None) -> Optional[str]:
+    """게시물 텍스트에서 이슈 카테고리 분류. 선거 유형별 최적화."""
+    categories = _build_issue_categories(election_type)
+    best_match = None
+    best_count = 0
+
+    for category, keywords in categories.items():
+        count = sum(1 for kw in keywords if kw in text)
+        if count > best_count:
+            best_count = count
+            best_match = category
+
+    return best_match if best_count > 0 else None
 
 
 def calculate_relevance(text: str, candidates: list[str], region_terms: list[str] = None) -> float:
@@ -120,6 +174,7 @@ class CommunityCollector:
         candidate_names: list[str],
         region_terms: list[str] = None,
         max_per_keyword: int = 10,
+        election_type: str = None,
     ) -> list[dict]:
         """
         모든 소스에서 수집 + 관련도/감성 분석.
@@ -150,8 +205,8 @@ class CommunityCollector:
                 # 감성 분석
                 sentiment, score = analyzer.analyze(text)
 
-                # 이슈 분류
-                issue = classify_issue(text)
+                # 이슈 분류 (선거 유형별 최적화)
+                issue = classify_issue(text, election_type=election_type)
 
                 # 관련도
                 relevance = calculate_relevance(text, candidate_names, region_terms)

@@ -426,7 +426,7 @@ def collect_news_comments(self, tenant_id: str, election_id: str, schedule_id: s
                 NewsArticle.tenant_id == tenant_id,
                 NewsArticle.collected_at >= cutoff,
             )
-            .order_by(NewsArticle.collected_at.desc())
+            .order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.collected_at.desc())
             .limit(20)
         ).all()
 
@@ -493,6 +493,13 @@ def collect_community_enhanced(self, tenant_id: str, election_id: str, schedule_
         cand_names = [c.name for c in candidates]
         total = 0
 
+        # 선거 유형 가져오기 (이슈 분류용)
+        from app.elections.models import Election
+        election = session.execute(
+            select(Election).where(Election.id == election_id)
+        ).scalar_one_or_none()
+        e_type = election.election_type if election else None
+
         for cand in candidates:
             keywords = cand.search_keywords or [cand.name]
             search_keywords = []
@@ -505,6 +512,7 @@ def collect_community_enhanced(self, tenant_id: str, election_id: str, schedule_
                 keywords=search_keywords,
                 candidate_names=cand_names,
                 max_per_keyword=8,
+                election_type=e_type,
             ))
 
             for post in posts:
@@ -833,6 +841,24 @@ def morning_briefing(self, tenant_id: str, election_id: str):
     return _run_briefing(tenant_id, election_id, "morning")
 
 
+@celery_app.task(bind=True, name="collect.full_with_briefing")
+def full_collection_with_briefing(self, tenant_id: str, election_id: str, briefing_type: str = "daily"):
+    """
+    수집 + AI 분석 + 브리핑 한 번에 (수집 직후 즉시 보고서 생성).
+    스케줄러에서 호출 — full_with_briefing 타입.
+    """
+    # 1. 수집 (동기 호출)
+    collect_result = full_collection(tenant_id, election_id) if not hasattr(full_collection, 'delay') else full_collection.run(tenant_id, election_id)
+
+    # 2. 수집 직후 브리핑
+    briefing_result = _run_briefing(tenant_id, election_id, briefing_type)
+
+    return {
+        "collected": collect_result if isinstance(collect_result, dict) else {},
+        "briefing": briefing_result,
+    }
+
+
 @celery_app.task(bind=True, name="briefing.afternoon")
 def afternoon_briefing(self, tenant_id: str, election_id: str):
     """
@@ -1031,6 +1057,11 @@ def check_and_run_schedules():
             if stype == "full_collection":
                 # Full collection: news + community + youtube + trends + comments
                 full_collection.delay(tid, eid)
+                triggered += 1
+
+            elif stype == "full_with_briefing":
+                # 수집 + AI 분석 + 보고서 + 텔레그램 한번에
+                full_collection_with_briefing.delay(tid, eid, config.get("briefing_type", "daily"))
                 triggered += 1
 
             elif stype == "briefing":
