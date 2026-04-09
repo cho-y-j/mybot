@@ -21,7 +21,13 @@ export default function LoginPage() {
     try {
       const data = await api.login(email, password, totpCode || undefined);
       api.setTokens(data);
-      router.push('/dashboard');
+      // 슈퍼관리자는 관리자 페이지로
+      if (data?.user?.is_superadmin) {
+        router.push('/admin');
+      } else {
+        // 일반 사용자는 / 로 보내서 라우팅 결정 (tenant/elections 체크)
+        router.push('/');
+      }
     } catch (err: any) {
       const msg = err.message || '';
       if (msg.includes('2FA')) {
@@ -96,8 +102,8 @@ export default function LoginPage() {
 
           <div className="mt-6 text-center text-sm text-gray-500">
             계정이 없으신가요?{' '}
-            <Link href="/register" className="text-primary-600 hover:underline font-medium">
-              회원가입
+            <Link href="/apply" className="text-primary-600 hover:underline font-medium">
+              가입 신청
             </Link>
           </div>
         </div>

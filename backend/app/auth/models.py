@@ -50,6 +50,20 @@ class User(Base):
     totp_secret = Column(String(32), nullable=True)
     totp_enabled = Column(Boolean, default=False)
 
+    # Approval flow
+    approval_status = Column(String(20), default="pending", comment="pending|approved|rejected")
+    approval_note = Column(Text, nullable=True, comment="관리자 승인 메모")
+    applied_at = Column(DateTime(timezone=True), nullable=True)
+    approved_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Application info
+    organization = Column(String(200), nullable=True, comment="소속 캠프/조직")
+    election_type_applied = Column(String(50), nullable=True)
+    region_applied = Column(String(100), nullable=True)
+    candidate_name_applied = Column(String(100), nullable=True)
+    position_in_camp = Column(String(50), nullable=True, comment="캠프 내 직책")
+    apply_reason = Column(Text, nullable=True)
+
     # Timestamps
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)

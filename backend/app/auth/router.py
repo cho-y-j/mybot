@@ -23,7 +23,7 @@ from app.auth.schemas import (
     RegisterRequest, VerifyEmailRequest, LoginRequest,
     TokenResponse, RefreshRequest, ForgotPasswordRequest,
     ResetPasswordRequest, UserProfile, Enable2FAResponse,
-    MessageResponse,
+    MessageResponse, ApplyRequest,
 )
 from app.config import get_settings
 
@@ -50,6 +50,46 @@ def _user_profile(u) -> UserProfile:
 def _select_user():
     """User + tenant eager loading."""
     return select(User).options(selectinload(User.tenant))
+
+
+@router.post("/apply", response_model=MessageResponse, status_code=201)
+async def apply_for_account(req: ApplyRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    """가입 신청 — 관리자 승인 필요."""
+    existing = await db.execute(select(User).where(User.email == req.email))
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail="이미 등록된 이메일입니다")
+
+    valid, msg = validate_password_strength(req.password)
+    if not valid:
+        raise HTTPException(status_code=400, detail=msg)
+
+    user = User(
+        email=req.email,
+        password_hash=hash_password(req.password),
+        name=req.name,
+        phone=req.phone,
+        is_active=False,
+        email_verified=False,
+        approval_status="pending",
+        applied_at=datetime.now(timezone.utc),
+        organization=req.organization,
+        election_type_applied=req.election_type,
+        region_applied=req.region,
+        candidate_name_applied=req.candidate_name,
+        position_in_camp=req.position,
+        apply_reason=req.reason,
+        role="admin",
+    )
+    db.add(user)
+    db.add(AuditLog(
+        user_id=user.id, action="apply", resource_type="user",
+        ip_address=request.client.host if request.client else None,
+    ))
+    await db.flush()
+
+    return MessageResponse(
+        message="가입 신청이 접수되었습니다. 관리자 승인 후 이용 가능합니다.",
+    )
 
 
 @router.post("/register", response_model=MessageResponse, status_code=201)
@@ -131,6 +171,10 @@ async def login(req: LoginRequest, request: Request, db: AsyncSession = Depends(
         raise HTTPException(status_code=401, detail="이메일 또는 비밀번호가 올바르지 않습니다")
 
     if not user.is_active:
+        if hasattr(user, 'approval_status') and user.approval_status == "pending":
+            raise HTTPException(status_code=403, detail="가입 신청이 아직 승인되지 않았습니다. 관리자 승인을 기다려주세요.")
+        elif hasattr(user, 'approval_status') and user.approval_status == "rejected":
+            raise HTTPException(status_code=403, detail="가입 신청이 거절되었습니다.")
         raise HTTPException(status_code=403, detail="이메일 인증을 완료해주세요")
 
     if user.totp_enabled:

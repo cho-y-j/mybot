@@ -106,3 +106,31 @@ class MessageResponse(BaseModel):
     """일반 메시지 응답."""
     message: str
     success: bool = True
+
+
+class ApplyRequest(BaseModel):
+    """가입 신청 요청."""
+    email: EmailStr
+    password: str
+    name: str
+    phone: str
+    organization: str
+    election_type: str
+    region: Optional[str] = None
+    candidate_name: str
+    position: Optional[str] = None
+    reason: Optional[str] = None
+
+    @field_validator("password")
+    @classmethod
+    def password_strength(cls, v):
+        if len(v) < 8:
+            raise ValueError("비밀번호는 8자 이상이어야 합니다")
+        return v
+
+    @field_validator("name")
+    @classmethod
+    def name_not_empty(cls, v):
+        if not v.strip():
+            raise ValueError("이름을 입력해주세요")
+        return v.strip()
