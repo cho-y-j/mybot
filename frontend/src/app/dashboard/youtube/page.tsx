@@ -67,8 +67,8 @@ export default function YouTubePage() {
   const ytCandidates = data?.candidates || [];
   const channelAnalysis = data?.channel_analysis || [];
   const dangerVideos = data?.danger_videos || [];
-  const ourCrisisVideos = dangerVideos.filter((v: any) => v.is_ours);
-  const rivalRiskVideos = dangerVideos.filter((v: any) => !v.is_ours);
+  const ourCrisisVideos = dangerVideos.filter((v: any) => v.is_ours === true);
+  const rivalRiskVideos = dangerVideos.filter((v: any) => v.is_ours === false);
   const maxViews = Math.max(...ytCandidates.map((d: any) => d.total_views || 0), 1);
   const totalAll = ytCandidates.reduce((s: number, c: any) => s + (c.total_videos || 0), 0);
 
@@ -414,9 +414,9 @@ export default function YouTubePage() {
           {/* 후보별 카드 */}
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {ytCandidates.map((d: any) => {
-              const sentTotal = (d.sentiment?.positive || 0) + (d.sentiment?.negative || 0) + (d.sentiment?.neutral || 0);
-              const posRate = sentTotal ? Math.round((d.sentiment?.positive || 0) / sentTotal * 100) : 0;
-              const negRate = sentTotal ? Math.round((d.sentiment?.negative || 0) / sentTotal * 100) : 0;
+              const sentEffective = (d.sentiment?.positive || 0) + (d.sentiment?.negative || 0);
+              const posRate = sentEffective > 0 ? Math.round((d.sentiment?.positive || 0) / sentEffective * 100) : 0;
+              const negRate = sentEffective > 0 ? Math.round((d.sentiment?.negative || 0) / sentEffective * 100) : 0;
               const cmtTotal = (d.comment_sentiment?.positive || 0) + (d.comment_sentiment?.negative || 0) + (d.comment_sentiment?.neutral || 0);
               const cmtPosRate = cmtTotal ? Math.round((d.comment_sentiment?.positive || 0) / cmtTotal * 100) : 0;
 
@@ -465,7 +465,7 @@ export default function YouTubePage() {
                   <div className="mb-3">
                     <p className="text-xs font-semibold mb-1">영상 감성</p>
                     <div className="h-3 rounded-full overflow-hidden flex bg-[var(--muted-bg)]">
-                      {sentTotal > 0 && <>
+                      {sentEffective > 0 && <>
                         <div className="bg-green-500 h-full" style={{ width: `${posRate}%` }} />
                         <div className="bg-red-500 h-full" style={{ width: `${negRate}%` }} />
                       </>}
@@ -781,9 +781,9 @@ export default function YouTubePage() {
             {/* 후보별 커뮤니티 분석 */}
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {cmCands.map((c: any) => {
-                const sentTotal = (c.sentiment?.positive || 0) + (c.sentiment?.negative || 0) + (c.sentiment?.neutral || 0);
-                const posRate = sentTotal ? Math.round((c.sentiment?.positive || 0) / sentTotal * 100) : 0;
-                const negRate = sentTotal ? Math.round((c.sentiment?.negative || 0) / sentTotal * 100) : 0;
+                const sentEffective = (c.sentiment?.positive || 0) + (c.sentiment?.negative || 0);
+                const posRate = sentEffective > 0 ? Math.round((c.sentiment?.positive || 0) / sentEffective * 100) : 0;
+                const negRate = sentEffective > 0 ? Math.round((c.sentiment?.negative || 0) / sentEffective * 100) : 0;
 
                 return (
                   <div key={c.name} className={`card ${c.is_ours ? 'ring-1 ring-blue-500/30 bg-blue-500/5' : ''}`}>
@@ -797,7 +797,7 @@ export default function YouTubePage() {
                     </div>
 
                     {/* 감성 분포 */}
-                    {sentTotal > 0 && (
+                    {sentEffective > 0 && (
                       <div className="mb-3">
                         <div className="h-2.5 rounded-full overflow-hidden flex bg-[var(--muted-bg)]">
                           <div className="bg-green-500 h-full" style={{ width: `${posRate}%` }} />
