@@ -471,7 +471,6 @@ class ApiClient {
 
   // ─── Content Tools ──────────────────────────────────────────
   getHashtags(electionId: string) { return this.request<any>(`/content/hashtags/${electionId}`); }
-  getBlogTags(electionId: string) { return this.request<any>(`/content/blog-tags/${electionId}`); }
   getContentSuggestions(electionId: string) { return this.request<any>(`/content/suggestions/${electionId}`); }
   checkCompliance(electionId: string, text: string, contentType: string = 'general') {
     return this.request<any>(`/content/check-compliance/${electionId}`, {

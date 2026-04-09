@@ -90,7 +90,7 @@ export default function NewsAnalysisPage() {
   const defaultNames = ['윤건영', '김진균', '김성근', '신문규', '조동욱'];
   const allCandNames = orderedNames.length > 0 ? orderedNames : defaultNames;
   // 뉴스에만 있는 후보도 추가
-  const newsOnlyNames = [...new Set(allNews.map((n: any) => n.candidate).filter(Boolean))].filter(n => !allCandNames.includes(n));
+  const newsOnlyNames = (Array.from(new Set(allNews.map((n: any) => n.candidate).filter(Boolean))) as string[]).filter(n => !allCandNames.includes(n));
   const newsNames = [...allCandNames, ...newsOnlyNames];
   const candComparison = newsNames.map(name => {
     const cNews = periodNews.filter((n: any) => n.candidate === name);

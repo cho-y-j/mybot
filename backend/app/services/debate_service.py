@@ -12,7 +12,9 @@ from app.elections.models import (
     Election, Candidate, NewsArticle, Survey,
 )
 from app.services.ai_service import call_claude
-from app.content.compliance import check_content
+from app.content.compliance import ComplianceChecker
+
+_compliance = ComplianceChecker()
 
 logger = structlog.get_logger()
 
@@ -29,8 +31,9 @@ async def generate_debate_script(
     토론 대본 생성.
     Returns: {opening, key_points[], rebuttals[], closing, compliance, ai_generated}
     """
-    from app.common.election_access import get_election_tenant_ids
+    from app.common.election_access import get_election_tenant_ids, get_our_candidate_id
     all_tids = await get_election_tenant_ids(db, election_id)
+    our_cand_id = await get_our_candidate_id(db, tenant_id, election_id)
 
     # 데이터 수집
     election = (await db.execute(
@@ -46,6 +49,11 @@ async def generate_debate_script(
             Candidate.enabled == True,
         )
     )).scalars().all()
+
+    # 멀티테넌트: 우리 후보 동적 설정
+    for c in candidates:
+        if our_cand_id:
+            c.is_our_candidate = (str(c.id) == our_cand_id)
 
     our = next((c for c in candidates if c.is_our_candidate), None)
     if not our:
@@ -149,7 +157,7 @@ async def generate_debate_script(
         full_text = result.get("opening", "") + " " + result.get("closing", "")
         for kp in result.get("key_points", []):
             full_text += " " + kp.get("attack_question", "") + " " + kp.get("our_position", "")
-        compliance = check_content(full_text, election)
+        compliance = _compliance.check_content(full_text, election_date=election.election_date.isoformat() if election.election_date else None)
 
         return {
             "opening": result.get("opening", ""),
@@ -226,8 +234,9 @@ def _generate_fallback_script(our, opponent, opp_neg_news, topics, election) -> 
             "attack_question": f"'{n.title[:30]}' 보도에 대한 입장을 물어보세요",
         })
 
-    compliance = check_content(
-        " ".join(kp["attack_question"] for kp in key_points), election
+    compliance = _compliance.check_content(
+        " ".join(kp["attack_question"] for kp in key_points),
+        election_date=election.election_date.isoformat() if election.election_date else None,
     )
 
     return {

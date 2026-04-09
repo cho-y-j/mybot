@@ -7,7 +7,9 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.ai_service import call_claude_text
-from app.content.compliance import check_content
+from app.content.compliance import ComplianceChecker
+
+_compliance = ComplianceChecker()
 
 logger = structlog.get_logger()
 
@@ -43,8 +45,20 @@ async def generate_multi_tone_content(
     platforms = platforms or ["instagram", "blog"]
     tones = tones or ["formal", "friendly"]
 
+    from app.elections.models import Candidate
+
     election = (await db.execute(
         select(Election).where(Election.id == election_id)
+    )).scalar_one_or_none()
+    if not election:
+        return {"error": "선거 정보 없음", "results": []}
+
+    our = (await db.execute(
+        select(Candidate).where(
+            Candidate.election_id == election_id,
+            Candidate.tenant_id == tenant_id,
+            Candidate.is_our_candidate == True,
+        )
     )).scalar_one_or_none()
 
     # 해시태그 생성
@@ -52,7 +66,8 @@ async def generate_multi_tone_content(
     hashtags = generate_hashtags(
         election.election_type or "superintendent",
         election.region_sido or "",
-        "후보",
+        our.name if our else "후보",
+        candidate_party=our.party if our else None,
     )
 
     # 조합별 병렬 생성
@@ -101,7 +116,7 @@ async def generate_multi_tone_content(
             if len(content) > max_chars:
                 content = content[:max_chars - 3] + "..."
 
-            compliance = check_content(content, election)
+            compliance = _compliance.check_content(content, election_date=election.election_date.isoformat() if election and election.election_date else None)
 
         results.append({
             "platform": combo["platform"],

@@ -1,10 +1,11 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useElection } from '@/hooks/useElection';
 import { api } from '@/services/api';
 
 export default function DebatePage() {
   const { election, loading: elLoading } = useElection();
+  const [candidates, setCandidates] = useState<any[]>([]);
   const [topics, setTopics] = useState('');
   const [opponent, setOpponent] = useState('');
   const [style, setStyle] = useState('balanced');
@@ -13,6 +14,16 @@ export default function DebatePage() {
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     opening: true, key_points: true, rebuttals: true, closing: true,
   });
+
+  // 후보 목록 로드
+  useEffect(() => {
+    if (!election) return;
+    api.getCandidates(election.id).then(data => {
+      const competitors = (data || []).filter((c: any) => !c.is_our_candidate && c.enabled !== false);
+      setCandidates(competitors);
+      if (competitors.length > 0 && !opponent) setOpponent(competitors[0].name);
+    }).catch(() => {});
+  }, [election]);
 
   const generate = async () => {
     if (!election) return;
@@ -65,12 +76,21 @@ export default function DebatePage() {
       {/* 입력 폼 */}
       <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-5 space-y-4">
         <div>
-          <label className="block text-sm font-medium mb-1">상대 후보 (빈칸 시 자동 선택)</label>
-          <input
-            value={opponent} onChange={e => setOpponent(e.target.value)}
-            placeholder="예: 홍길동"
-            className="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600"
-          />
+          <label className="block text-sm font-medium mb-1">상대 후보</label>
+          {candidates.length > 0 ? (
+            <select value={opponent} onChange={e => setOpponent(e.target.value)}
+              className="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600">
+              {candidates.map((c: any) => (
+                <option key={c.id || c.name} value={c.name}>{c.name} ({c.party || '무소속'})</option>
+              ))}
+            </select>
+          ) : (
+            <input
+              value={opponent} onChange={e => setOpponent(e.target.value)}
+              placeholder="예: 홍길동 (후보 등록 후 자동 선택됩니다)"
+              className="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600"
+            />
+          )}
         </div>
         <div>
           <label className="block text-sm font-medium mb-1">토론 주제 (쉼표 구분, 빈칸 시 자동)</label>

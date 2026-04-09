@@ -153,7 +153,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── [전략 4사분면] AI 분류 — 액션 가능 콘텐츠 ── */}
-      {election && <StrategicQuadrant electionId={election.id} itemsPerQuadrant={4} />}
+      {election && <StrategicQuadrant electionId={election.id} defaultVisible={4} />}
 
       {/* ── [1] 미디어 활동 현황 ── */}
       <div className="card">
@@ -196,11 +196,10 @@ export default function DashboardPage() {
                     <td className={`py-3 px-2 text-center font-bold ${isTop('news') ? 'text-blue-500' : ''}`}>{s.news}</td>
                     <td className={`py-3 px-2 text-center font-bold ${s.sentiment_rate >= 50 ? 'text-green-500' : s.sentiment_rate < 30 ? 'text-red-500' : ''}`}>{s.sentiment_rate}%</td>
                     <td className="py-3 px-2 text-center">
-                      {(() => {
-                        const neg = (scoreBoard.find((x: any) => x.name === s.name) as any);
-                        const negCount = neg ? (neg.news - Math.round(neg.news * neg.sentiment_rate / 100)) : 0;
-                        return negCount > 0 ? <span className="text-red-500 font-bold">{negCount}</span> : <span className="text-[var(--muted)]">0</span>;
-                      })()}
+                      {s.negative_count != null && s.negative_count > 0
+                        ? <span className="text-red-500 font-bold">{s.negative_count}</span>
+                        : <span className="text-[var(--muted)]">0</span>
+                      }
                     </td>
                     <td className={`py-3 px-2 text-center font-bold ${isTop('community') ? 'text-blue-500' : ''}`}>{s.community}</td>
                     <td className={`py-3 px-2 text-center font-bold ${isTop('youtube_views') ? 'text-blue-500' : ''}`}>{(s.youtube_views || 0).toLocaleString()}</td>
