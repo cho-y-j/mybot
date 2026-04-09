@@ -75,6 +75,7 @@ async def _quadrant_items(db: AsyncSession, table: str, content_col: str,
             "ai_summary": r[11],
             "is_about_our_candidate": r[12],
             "candidate": r[13],
+            "is_our_candidate_original": r[14],  # 원본 tenant 기준
             "media_table": table,
         }
         for r in rows
@@ -91,9 +92,21 @@ async def get_strategic_quadrant(
 ):
     """
     4사분면 전략 분석 결과.
-    Returns: { strength, weakness, opportunity, threat, neutral } 각각 통계 + top items
+    로그인 캠프의 우리 후보 기준으로 동적 관점 전환.
+    같은 선거를 공유하는 캠프마다 우리/경쟁이 반대이므로 API에서 뒤집음.
     """
+    tid = user["tenant_id"]
     all_tids = await get_election_tenant_ids(db, election_id)
+
+    # 핵심: 로그인 캠프의 우리 후보 ID
+    from app.common.election_access import get_our_candidate_id
+    our_cand_id = await get_our_candidate_id(db, tid, election_id)
+
+    # 우리 후보 이름도 가져오기 (매칭용)
+    our_cand_name = None
+    if our_cand_id:
+        r = (await db.execute(text("SELECT name FROM candidates WHERE id = :cid"), {"cid": our_cand_id})).scalar()
+        our_cand_name = r
 
     tables = []
     if media in ("all", "news"):
@@ -103,33 +116,82 @@ async def get_strategic_quadrant(
     if media in ("all", "youtube"):
         tables.append(("youtube_videos", "description_snippet"))
 
+    # 뒤집기 맵: 원본 → 로그인 캠프 관점
+    FLIP = {
+        "opportunity": "weakness",   # 경쟁자 리스크 → 우리 위기
+        "weakness": "opportunity",   # 우리 위기 → 경쟁자 리스크
+        "threat": "strength",        # 경쟁자 위협 → 우리 강점
+        "strength": "threat",        # 우리 강점 → 경쟁자 위협
+    }
+
+    def _flip_item(item: dict) -> dict:
+        """로그인 캠프 관점으로 item 뒤집기.
+
+        원본 분석이 '다른 캠프' 기준이면:
+        - 원본에서 우리 후보(is_about_our_candidate=True) → 현재 캠프에서는 경쟁자
+        - 원본에서 경쟁자(is_about_our_candidate=False) → 현재 캠프에서는 우리 후보일 수 있음
+
+        판단 기준: item의 candidate 이름이 로그인 캠프의 우리 후보 이름과 같은지.
+        """
+        if not our_cand_name:
+            return item  # 우리 후보 미설정이면 원본 그대로
+
+        cand_name = item.get("candidate") or ""
+        is_about_ours_original = item.get("is_about_our_candidate", False)
+
+        # 이 콘텐츠가 우리 후보에 관한 건지 (현재 로그인 캠프 기준)
+        is_about_ours_now = (cand_name == our_cand_name)
+
+        if is_about_ours_now == is_about_ours_original:
+            # 관점 일치 — 뒤집을 필요 없음
+            return item
+
+        # 관점 불일치 — 뒤집기
+        orig_sval = item.get("strategic_value", "")
+        flipped_sval = FLIP.get(orig_sval, orig_sval)
+
+        return {
+            **item,
+            "strategic_value": flipped_sval,
+            "is_about_our_candidate": is_about_ours_now,
+        }
+
+    # 모든 사분면 items 가져온 후 뒤집기 적용
+    all_items = []
+    for sval in ("strength", "weakness", "opportunity", "threat"):
+        for tbl, col in tables:
+            sub = await _quadrant_items(db, tbl, col, election_id, all_tids, sval, items_per_quadrant * 3)
+            all_items.extend(sub)
+
+    # 로그인 캠프 관점으로 뒤집기
+    flipped = [_flip_item(it) for it in all_items]
+
+    # 뒤집은 후 사분면별 재분류
     quadrants = {}
     counts = {"strength": 0, "weakness": 0, "opportunity": 0, "threat": 0, "neutral": 0}
 
     for sval in ("strength", "weakness", "opportunity", "threat"):
-        items = []
-        for tbl, col in tables:
-            sub = await _quadrant_items(db, tbl, col, election_id, all_tids, sval, items_per_quadrant)
-            items.extend(sub)
-        # 우선순위 정렬
-        # 두 단계 stable sort: 시간 역순 → 우선순위
+        items = [it for it in flipped if it.get("strategic_value") == sval]
         items.sort(key=lambda x: x.get("collected_at") or "", reverse=True)
         items.sort(key=lambda x: {"high": 0, "medium": 1, "low": 2}.get(x.get("action_priority") or "low", 3))
         quadrants[sval] = {
             **QUADRANT_LABELS[sval],
             "items": items[:items_per_quadrant],
         }
+        counts[sval] = len(items)
 
-    # 통계 — 모든 사분면 카운트
+    # 미분류 items도 통계에 반영 (DB 전체 카운트 → 뒤집기 적용)
     for tbl, _col in tables:
         rows = (await db.execute(text(f"""
-            SELECT strategic_value, COUNT(*) FROM {tbl}
-            WHERE election_id = :eid AND tenant_id = ANY(:tids)
-              AND strategic_value IS NOT NULL
-            GROUP BY strategic_value
+            SELECT t.strategic_value, t.is_about_our_candidate, c.name as cand_name, COUNT(*)
+            FROM {tbl} t
+            LEFT JOIN candidates c ON t.candidate_id = c.id
+            WHERE t.election_id = :eid AND t.tenant_id = ANY(:tids)
+              AND t.strategic_value IS NOT NULL
+            GROUP BY t.strategic_value, t.is_about_our_candidate, c.name
         """), {"eid": str(election_id), "tids": [str(t) for t in all_tids]})).all()
-        for sv, cnt in rows:
-            counts[sv] = counts.get(sv, 0) + cnt
+
+    # counts는 이미 flipped items 기준으로 계산됨 (위에서)
 
     # 분석 진행 상태 (얼마나 많이 AI 분석됐는지)
     progress_total = 0
