@@ -60,32 +60,6 @@ const features = [
   },
 ];
 
-const plans = [
-  {
-    name: '무료 체험',
-    price: '0',
-    period: '14일',
-    features: ['미디어 모니터링 (일 50건)', 'AI 브리핑 (일 1회)', '기본 대시보드', '후보 1명'],
-    cta: '무료로 시작',
-    highlighted: false,
-  },
-  {
-    name: '프로',
-    price: '290,000',
-    period: '월',
-    features: ['미디어 모니터링 (무제한)', 'AI 브리핑 (일 3회)', '4사분면 전략 분석', '토론 대본 생성', 'SNS 콘텐츠 자동 생성', '후보 3명', '텔레그램 알림'],
-    cta: '가입 신청',
-    highlighted: true,
-  },
-  {
-    name: '엔터프라이즈',
-    price: '별도 협의',
-    period: '',
-    features: ['프로 플랜 전체 기능', '전담 매니저 배정', '맞춤 보고서', '후보 무제한', 'API 연동', 'SLA 보장'],
-    cta: '문의하기',
-    highlighted: false,
-  },
-];
 
 export default function LandingPage() {
   return (
@@ -97,7 +71,7 @@ export default function LandingPage() {
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm">
               C
             </div>
-            <span className="text-xl font-bold text-white tracking-tight">캠프AI</span>
+            <span className="text-xl font-bold text-white tracking-tight">CampAI</span>
           </div>
           <div className="flex items-center gap-4">
             <Link
@@ -129,7 +103,7 @@ export default function LandingPage() {
 
           <h1 className="text-5xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight leading-tight">
             <span className="bg-gradient-to-r from-blue-400 via-purple-400 to-blue-400 bg-clip-text text-transparent">
-              캠프AI
+              CampAI
             </span>
           </h1>
           <p className="mt-6 text-xl sm:text-2xl text-gray-300 max-w-2xl mx-auto leading-relaxed font-medium">
@@ -168,7 +142,7 @@ export default function LandingPage() {
               <div style={{ transform: 'rotateX(2deg) rotateY(-1deg)' }}>
                 <Image
                   src="/landing/dashboard.png"
-                  alt="캠프AI 대시보드"
+                  alt="CampAI 대시보드"
                   width={1920}
                   height={1080}
                   className="w-full h-auto"
@@ -209,66 +183,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Pricing */}
-      <section className="py-24 border-t border-white/5">
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl sm:text-4xl font-bold text-white">요금제</h2>
-            <p className="mt-4 text-gray-400 text-lg">캠프 규모에 맞는 플랜을 선택하세요</p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
-            {plans.map((plan, i) => (
-              <div
-                key={i}
-                className={`relative p-8 rounded-2xl border transition-all duration-300 ${
-                  plan.highlighted
-                    ? 'border-blue-500/40 bg-gradient-to-b from-blue-600/10 to-purple-600/5 shadow-lg shadow-blue-900/20'
-                    : 'border-white/5 bg-white/[0.02] hover:border-white/10'
-                }`}
-              >
-                {plan.highlighted && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-gradient-to-r from-blue-600 to-purple-600 text-xs font-semibold text-white">
-                    추천
-                  </div>
-                )}
-                <h3 className="text-lg font-semibold text-white">{plan.name}</h3>
-                <div className="mt-4 flex items-baseline gap-1">
-                  {plan.price === '별도 협의' ? (
-                    <span className="text-2xl font-bold text-white">{plan.price}</span>
-                  ) : (
-                    <>
-                      <span className="text-4xl font-extrabold text-white">{plan.price}</span>
-                      <span className="text-gray-400 text-sm">원 / {plan.period}</span>
-                    </>
-                  )}
-                </div>
-                <ul className="mt-6 space-y-3">
-                  {plan.features.map((feat, j) => (
-                    <li key={j} className="flex items-start gap-2 text-sm text-gray-300">
-                      <svg className="w-4 h-4 mt-0.5 text-blue-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                      </svg>
-                      {feat}
-                    </li>
-                  ))}
-                </ul>
-                <Link
-                  href="/apply"
-                  className={`mt-8 block text-center py-3 rounded-xl font-medium text-sm transition-all ${
-                    plan.highlighted
-                      ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:from-blue-500 hover:to-purple-500 shadow-md shadow-blue-600/20'
-                      : 'border border-white/10 text-gray-300 hover:border-white/20 hover:text-white'
-                  }`}
-                >
-                  {plan.cta}
-                </Link>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* CTA Footer */}
       <section className="py-24 border-t border-white/5">
         <div className="max-w-3xl mx-auto px-6 text-center">
@@ -294,9 +208,9 @@ export default function LandingPage() {
             <div className="w-6 h-6 rounded bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-xs">
               C
             </div>
-            <span className="text-sm font-medium text-gray-400">캠프AI</span>
+            <span className="text-sm font-medium text-gray-400">CampAI</span>
           </div>
-          <p className="text-sm text-gray-600">캠프AI &copy; 2026. All rights reserved.</p>
+          <p className="text-sm text-gray-600">CampAI &copy; 2026. All rights reserved.</p>
         </div>
       </footer>
     </div>

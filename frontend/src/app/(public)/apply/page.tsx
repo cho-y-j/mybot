@@ -148,7 +148,7 @@ export default function ApplyPage() {
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm">
               C
             </div>
-            <span className="text-xl font-bold text-white tracking-tight">캠프AI</span>
+            <span className="text-xl font-bold text-white tracking-tight">CampAI</span>
           </Link>
           <Link href="/login" className="text-sm text-gray-400 hover:text-white transition-colors">
             로그인
