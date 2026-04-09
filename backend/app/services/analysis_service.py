@@ -32,6 +32,13 @@ async def get_analysis_overview(
     days: int = 7,
 ) -> dict:
     """대시보드 종합 데이터 — aggregation 최적화 버전."""
+    from app.services.cache_service import get_cache, set_cache
+
+    cache_key = f"overview_{days}d"
+    cached = await get_cache(db, tenant_id, str(election_id), cache_key, max_age_hours=1)
+    if cached:
+        return cached
+
     today = date.today()
     since = today - timedelta(days=days)
     since_7d = today - timedelta(days=7)
@@ -253,7 +260,7 @@ async def get_analysis_overview(
             alerts.append({"level": "opportunity", "title": f"{n['name']} 약점",
                 "message": f"{n['name']} 부정 뉴스 {n['negative']}건 — 공략 가능"})
 
-    return {
+    result = {
         "election": {
             "name": election.name if election else "",
             "date": election.election_date.isoformat() if election else "",
@@ -275,6 +282,8 @@ async def get_analysis_overview(
         "ai_briefing": ai_briefing,
         "our_candidate": our.name if our else None,
     }
+    await set_cache(db, tenant_id, str(election_id), cache_key, result)
+    return result
 
 
 # ─────────────────────────────────────────────
@@ -288,6 +297,12 @@ async def get_media_overview(
     days: int = 7,
 ) -> dict:
     """통합 미디어 분석 — 뉴스+유튜브+커뮤니티 종합."""
+    from app.services.cache_service import get_cache, set_cache
+    cache_key = f"media_overview_{days}d"
+    cached = await get_cache(db, tenant_id, str(election_id), cache_key, max_age_hours=1)
+    if cached:
+        return cached
+
     all_tids = await get_election_tenant_ids(db, election_id)
     our_cand_id = await get_our_candidate_id(db, tenant_id, election_id)
     since = date.today() - timedelta(days=days)
@@ -377,11 +392,13 @@ async def get_media_overview(
         "community": sum(r["community"]["count"] for r in result),
     }
 
-    return {
+    media_result = {
         "candidates": result,
         "channel_totals": channel_totals,
         "period": f"최근 {days}일",
     }
+    await set_cache(db, tenant_id, str(election_id), cache_key, media_result)
+    return media_result
 
 
 # ─────────────────────────────────────────────
@@ -395,6 +412,11 @@ async def get_community_data(
     days: int = 30,
 ) -> dict:
     """커뮤니티(카페/블로그) 분석 — 후보별 게시글, 감성, 이슈 카테고리, 플랫폼별."""
+    from app.services.cache_service import get_cache, set_cache
+    cache_key = f"community_data_{days}d"
+    cached = await get_cache(db, tenant_id, str(election_id), cache_key, max_age_hours=1)
+    if cached:
+        return cached
     all_tids = await get_election_tenant_ids(db, election_id)
     since = date.today() - timedelta(days=days)
 
@@ -470,12 +492,14 @@ async def get_community_data(
             } for p in hot_posts],
         })
 
-    return {
+    comm_result = {
         "candidates": result,
         "total_issues": dict(all_issues.most_common(15)),
         "platform_summary": dict(platform_totals),
         "period": f"최근 {days}일",
     }
+    await set_cache(db, tenant_id, str(election_id), cache_key, comm_result)
+    return comm_result
 
 
 # ─────────────────────────────────────────────
@@ -489,6 +513,12 @@ async def get_youtube_data(
     days: int = 30,
 ) -> dict:
     """유튜브 데이터 — 후보별 영상 + 감성 + 통계 + 채널분석 + 위험영상."""
+    from app.services.cache_service import get_cache, set_cache
+    cache_key = f"youtube_data_{days}d"
+    cached = await get_cache(db, tenant_id, str(election_id), cache_key, max_age_hours=1)
+    if cached:
+        return cached
+
     all_tids = await get_election_tenant_ids(db, election_id)
     since = date.today() - timedelta(days=days)
 
@@ -609,9 +639,11 @@ async def get_youtube_data(
     for dv in danger_videos:
         dv.pop("_sort_dt", None)
 
-    return {
+    yt_result = {
         "candidates": result,
         "channel_analysis": channel_analysis,
         "danger_videos": danger_videos,
         "period": f"최근 {days}일",
     }
+    await set_cache(db, tenant_id, str(election_id), cache_key, yt_result)
+    return yt_result

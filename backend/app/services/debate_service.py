@@ -31,6 +31,14 @@ async def generate_debate_script(
     토론 대본 생성.
     Returns: {opening, key_points[], rebuttals[], closing, compliance, ai_generated}
     """
+    from app.services.cache_service import get_cache, set_cache
+
+    # 캐시 확인 (12시간 TTL)
+    cache_key = f"debate_{opponent_name or 'auto'}_{style}"
+    cached = await get_cache(db, tenant_id, election_id, cache_key, max_age_hours=12)
+    if cached:
+        return cached
+
     from app.common.election_access import get_election_tenant_ids, get_our_candidate_id
     all_tids = await get_election_tenant_ids(db, election_id)
     our_cand_id = await get_our_candidate_id(db, tenant_id, election_id)
@@ -159,7 +167,7 @@ async def generate_debate_script(
             full_text += " " + kp.get("attack_question", "") + " " + kp.get("our_position", "")
         compliance = _compliance.check_content(full_text, election_date=election.election_date.isoformat() if election.election_date else None)
 
-        return {
+        ai_result = {
             "opening": result.get("opening", ""),
             "key_points": result.get("key_points", [])[:5],
             "rebuttals": result.get("rebuttals", [])[:3],
@@ -171,9 +179,13 @@ async def generate_debate_script(
             "style": style,
             "ai_generated": True,
         }
+        await set_cache(db, tenant_id, election_id, cache_key, ai_result)
+        return ai_result
 
     # Fallback: 규칙 기반 핵심 포인트
-    return _generate_fallback_script(our, opponent, opponent_neg_news, topics, election)
+    fallback = _generate_fallback_script(our, opponent, opponent_neg_news, topics, election)
+    await set_cache(db, tenant_id, election_id, cache_key, fallback)
+    return fallback
 
 
 def _build_debate_factsheet(our, opponent, opp_neg_news, our_pos_news, survey, topics, election) -> str:

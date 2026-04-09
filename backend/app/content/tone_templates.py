@@ -38,7 +38,7 @@ async def generate_multi_tone_content(
     platforms: list[str] = None,
     tones: list[str] = None,
 ) -> dict:
-    """플랫폼 × 톤 조합별 콘텐츠 동시 생성."""
+    """플랫폼 × 톤 조합별 콘텐츠 동시 생성. (매번 새로 생성 — 캐싱 안 함)"""
     from app.elections.models import Election
     from sqlalchemy import select
 

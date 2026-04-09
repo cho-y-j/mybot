@@ -26,6 +26,14 @@ async def detect_swing_indicators(
     스윙보터 이슈 발굴.
     커뮤니티에서 찬반이 갈리는 뜨거운 이슈를 찾아 행동 유도까지 제공.
     """
+    from app.services.cache_service import get_cache, set_cache
+
+    # 캐시 확인 (6시간 TTL)
+    cache_key = f"swing_voter_{days}d"
+    cached = await get_cache(db, tenant_id, election_id, cache_key, max_age_hours=6)
+    if cached:
+        return cached
+
     from app.common.election_access import get_election_tenant_ids, get_our_candidate_id
     all_tids = await get_election_tenant_ids(db, election_id)
     our_cand_id = await get_our_candidate_id(db, tenant_id, election_id)
@@ -139,7 +147,7 @@ async def detect_swing_indicators(
             hot_issues[:5], our.name if our else "우리 후보", election, db, tenant_id
         )
 
-    return {
+    result = {
         "hot_issues": hot_issues,
         "cold_issues": cold_issues,
         "news_controversial": news_controversial,
@@ -149,6 +157,10 @@ async def detect_swing_indicators(
         "period": f"최근 {days}일",
         "our_candidate": our.name if our else None,
     }
+
+    # 캐시 저장
+    await set_cache(db, tenant_id, election_id, cache_key, result)
+    return result
 
 
 def _get_verdict(split_ratio: int, total: int) -> str:
