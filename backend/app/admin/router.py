@@ -119,6 +119,25 @@ async def reject_user(
     return {"message": f"{target.name}님의 가입이 거절되었습니다.", "email": target.email}
 
 
+@router.post("/users/{user_id}/toggle-active")
+async def toggle_user_active(
+    user_id: UUID, user: CurrentUser, db: AsyncSession = Depends(get_db),
+):
+    """사용자 활성/정지 토글."""
+    require_superadmin(user)
+    target = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not target:
+        raise HTTPException(404, "사용자를 찾을 수 없습니다")
+    target.is_active = not target.is_active
+    action = "activate" if target.is_active else "deactivate"
+    db.add(AuditLog(
+        user_id=user["id"], action=f"admin_{action}_user",
+        resource_type="user", resource_id=str(user_id),
+    ))
+    await db.commit()
+    return {"message": f"{target.name} {'활성화' if target.is_active else '정지'} 완료", "is_active": target.is_active}
+
+
 # ──── 시스템 현황 ────
 
 @router.get("/system/health")
