@@ -543,7 +543,8 @@ async def get_youtube_data(
                     "candidate": c.name,
                     "is_ours": bool(c.is_our_candidate),
                     "category": "우리 위기" if c.is_our_candidate else "경쟁자 리스크",
-                    "published_at": v.published_at.strftime("%Y-%m-%d") if v.published_at else None,
+                    "published_at": (v.published_at or v.collected_at).strftime("%Y-%m-%d") if (v.published_at or v.collected_at) else None,
+                    "_sort_dt": v.published_at or v.collected_at,
                     "thumbnail_url": v.thumbnail_url,
                 })
 
@@ -602,6 +603,11 @@ async def get_youtube_data(
             "total": sum(counts.values()),
             "candidates": dict(counts),
         })
+
+    # danger_videos: published_at 역순 정렬 (최신이 위로)
+    danger_videos.sort(key=lambda x: x.get("_sort_dt") or date.min, reverse=True)
+    for dv in danger_videos:
+        dv.pop("_sort_dt", None)
 
     return {
         "candidates": result,
