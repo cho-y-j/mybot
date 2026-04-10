@@ -29,6 +29,8 @@ INTENT_KEYWORDS = {
     "risk": ["위기", "위험", "문제", "약점", "불리", "걱정", "우려"],
     "competitor": ["경쟁자", "갭", "차이", "부족", "격차", "비교분석"],
     "content": ["콘텐츠", "블로그", "해시태그", "키워드", "SEO", "포스팅"],
+    "report": ["보고서", "리포트", "브리핑", "지난", "어제", "이전", "저번"],
+    "history": ["과거", "역대", "지난 선거", "2022", "2018", "2014", "당선", "투표율", "역사"],
 }
 
 
@@ -115,6 +117,14 @@ async def build_chat_context(
     if "content" in intents or "strategy" in intents:
         sections.append(await _build_content_strategy_context(db, tenant_id, election_id))
 
+    # 보고서 히스토리 (이전 보고서 참고)
+    if "report" in intents or "strategy" in intents or not intents:
+        sections.append(await _build_report_history_context(db, tenant_id, election_id))
+
+    # 과거 선거 데이터
+    if "history" in intents:
+        sections.append(await _build_history_context(db, election_id, election))
+
     # 특정 후보 이름이 언급되면 해당 후보 상세 정보 추가
     for cand in candidates:
         if cand.name in question:
@@ -186,7 +196,7 @@ async def _build_news_context(db, tenant_id, election_id, candidates, today) -> 
         select(NewsArticle, Candidate.name)
         .join(Candidate, NewsArticle.candidate_id == Candidate.id)
         .where(NewsArticle.tenant_id == tenant_id)
-        .order_by(NewsArticle.collected_at.desc())
+        .order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.collected_at.desc())
         .limit(10)
     )).all()
 
@@ -353,7 +363,7 @@ async def _build_candidate_detail(db, tenant_id, cand, today) -> str:
     # 최근 뉴스
     recent = (await db.execute(
         select(NewsArticle).where(NewsArticle.candidate_id == cand.id)
-        .order_by(NewsArticle.collected_at.desc()).limit(5)
+        .order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.collected_at.desc()).limit(5)
     )).scalars().all()
     for n in recent:
         lines.append(f"  [{n.sentiment}] {n.title}")
@@ -621,5 +631,80 @@ async def _build_content_strategy_context(db, tenant_id, election_id) -> str:
         lines.append("\n유튜브 추천 주제:")
         for yt in result["youtube_topics"][:2]:
             lines.append(f"  [{yt.get('priority', 'medium')}] {yt['title']}")
+
+    return "\n".join(lines) if len(lines) > 1 else ""
+
+
+async def _build_report_history_context(db, tenant_id, election_id) -> str:
+    """최근 보고서 3건 요약 — 이전 맥락 참고용."""
+    from app.elections.models import Report
+
+    reports = (await db.execute(
+        select(Report).where(
+            Report.tenant_id == tenant_id,
+            Report.election_id == election_id,
+        ).order_by(Report.report_date.desc(), Report.created_at.desc()).limit(3)
+    )).scalars().all()
+
+    if not reports:
+        return ""
+
+    lines = ["=== 최근 보고서 히스토리 ==="]
+    for r in reports:
+        date_str = r.report_date.isoformat() if r.report_date else "날짜 미상"
+        rtype = {"daily": "일일", "morning_brief": "오전", "afternoon_brief": "오후", "weekly": "주간"}.get(r.report_type, r.report_type)
+        title = r.title[:50] if r.title else ""
+
+        content = r.content_text or ""
+        summary = content[:500].replace("\n", " ").strip()
+        if len(content) > 500:
+            summary += "..."
+
+        lines.append(f"\n[{date_str} {rtype} 보고서] {title}")
+        lines.append(f"  {summary}")
+
+    lines.append("\n위 보고서의 이전 전략 추천이 현재 데이터에 어떤 영향을 미쳤는지 참고하세요.")
+
+    return "\n".join(lines)
+
+
+async def _build_history_context(db, election_id, election) -> str:
+    """과거 선거 데이터 — 역대 결과, 투표율, 패턴."""
+    if not election:
+        return ""
+
+    lines = ["=== 역대 선거 데이터 ==="]
+
+    try:
+        from app.elections.history_models import ElectionResult, VoterTurnout
+
+        results = (await db.execute(
+            select(ElectionResult).where(
+                ElectionResult.region_sido == election.region_sido,
+                ElectionResult.election_type == election.election_type,
+                ElectionResult.is_winner == True,
+            ).order_by(ElectionResult.election_year.desc()).limit(6)
+        )).scalars().all()
+
+        if results:
+            lines.append("\n[역대 당선자]")
+            for r in results:
+                lines.append(f"  {r.election_year}년: {r.candidate_name} ({r.party or '무소속'}) {r.vote_rate}%")
+
+        turnouts = (await db.execute(
+            select(VoterTurnout).where(
+                VoterTurnout.election_type == election.election_type,
+                VoterTurnout.region == election.region_sido,
+                VoterTurnout.category == "total",
+            ).order_by(VoterTurnout.election_year.desc()).limit(5)
+        )).scalars().all()
+
+        if turnouts:
+            lines.append("\n[역대 투표율]")
+            for t in turnouts:
+                lines.append(f"  {t.election_year}년: {t.turnout_rate}%")
+
+    except Exception as e:
+        lines.append(f"  (데이터 조회 오류: {str(e)[:100]})")
 
     return "\n".join(lines) if len(lines) > 1 else ""

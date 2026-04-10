@@ -110,6 +110,27 @@ async def generate_ai_report(
     # 2. 데이터 팩트시트 생성
     factsheet = _format_factsheet(data_context)
 
+    # 2.5. 이전 보고서 요약 주입 (연속성)
+    try:
+        from app.elections.models import Report
+        prev_reports = (await db.execute(
+            select(Report).where(
+                Report.tenant_id == tenant_id,
+                Report.election_id == election_id,
+                Report.report_type.in_(["daily", "weekly"]),
+            ).order_by(Report.report_date.desc()).limit(2)
+        )).scalars().all()
+
+        if prev_reports:
+            factsheet += "\n\n=== 이전 보고서 요약 ===\n"
+            for pr in prev_reports:
+                date_str = pr.report_date.isoformat() if pr.report_date else ""
+                content = (pr.content_text or "")[:300].replace("\n", " ")
+                factsheet += f"[{date_str}] {content}...\n"
+            factsheet += "위 이전 보고서의 전략 추천이 오늘 데이터에 반영되었는지 평가하세요.\n"
+    except Exception:
+        pass
+
     # 3. Claude CLI로 AI 분석 (보고서 유형별 프롬프트)
     prompt_map = {
         "daily": REPORT_PROMPT_DAILY,
