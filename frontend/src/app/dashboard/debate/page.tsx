@@ -9,6 +9,8 @@ export default function DebatePage() {
   const [topics, setTopics] = useState('');
   const [opponent, setOpponent] = useState('');
   const [style, setStyle] = useState('balanced');
+  const [format, setFormat] = useState('broadcast');
+  const [speechTime, setSpeechTime] = useState('3');
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
@@ -31,7 +33,7 @@ export default function DebatePage() {
     try {
       const topicList = topics ? topics.split(',').map(t => t.trim()).filter(Boolean) : [];
       const data = await api.generateDebateScript(
-        election.id, topicList, opponent || undefined, style
+        election.id, topicList, opponent || undefined, style, format, parseInt(speechTime)
       );
       setResult(data);
     } catch (e: any) {
@@ -99,6 +101,27 @@ export default function DebatePage() {
             placeholder="예: 교육 정책, 급식, 돌봄"
             className="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600"
           />
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">형식</label>
+            <select value={format} onChange={e => setFormat(e.target.value)}
+              className="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600">
+              <option value="broadcast">방송 토론</option>
+              <option value="speech">합동 연설회</option>
+              <option value="interview">언론 인터뷰</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">발언 시간</label>
+            <select value={speechTime} onChange={e => setSpeechTime(e.target.value)}
+              className="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600">
+              <option value="1">1분 (약 300자)</option>
+              <option value="3">3분 (약 900자)</option>
+              <option value="5">5분 (약 1,500자)</option>
+              <option value="10">10분 (약 3,000자)</option>
+            </select>
+          </div>
         </div>
         <div>
           <label className="block text-sm font-medium mb-1">스타일</label>
@@ -225,6 +248,16 @@ export default function DebatePage() {
               )}
             </div>
           )}
+          {/* AI 생성물 경고 */}
+          <div className="p-4 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-sm">
+            <div className="font-semibold text-amber-800 dark:text-amber-300 mb-1">[AI 생성물] 참고자료 안내</div>
+            <ul className="text-amber-700 dark:text-amber-400 space-y-1 text-xs">
+              <li>- 본 대본은 AI가 수집된 데이터를 기반으로 생성한 <strong>참고자료</strong>입니다.</li>
+              <li>- 사실 관계를 반드시 확인한 후 활용하시기 바랍니다.</li>
+              <li>- 선거법상 허위사실 공표(제250조) 및 후보자 비방(제110조)에 해당하지 않도록 주의하세요.</li>
+              <li>- 공직선거법 제82조의8에 따라 AI 생성 콘텐츠임을 밝혀야 합니다.</li>
+            </ul>
+          </div>
         </div>
       )}
 

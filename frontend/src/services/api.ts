@@ -27,6 +27,9 @@ class ApiClient {
     this.refreshToken = tokens.refresh_token;
     localStorage.setItem('access_token', tokens.access_token);
     localStorage.setItem('refresh_token', tokens.refresh_token);
+    if ((tokens as any).user) {
+      localStorage.setItem('user', JSON.stringify((tokens as any).user));
+    }
   }
 
   clearTokens() {
@@ -34,6 +37,7 @@ class ApiClient {
     this.refreshToken = null;
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
+    localStorage.removeItem('user');
   }
 
   isAuthenticated(): boolean {
@@ -332,10 +336,10 @@ class ApiClient {
     return this.request<any>(`/content/content-situations/${electionId}`);
   }
 
-  generateDebateScript(electionId: string, topics: string[] = [], opponent?: string, style: string = 'balanced') {
+  generateDebateScript(electionId: string, topics: string[] = [], opponent?: string, style: string = 'balanced', format: string = 'broadcast', speech_minutes: number = 3) {
     return this.request<any>(`/content/debate-script/${electionId}`, {
       method: 'POST',
-      body: JSON.stringify({ topics, opponent, style }),
+      body: JSON.stringify({ topics, opponent, style, format, speech_minutes }),
     });
   }
 

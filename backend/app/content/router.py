@@ -412,6 +412,8 @@ class DebateRequest(BaseModel):
     topics: list[str] = []
     opponent: Optional[str] = None
     style: str = "balanced"  # aggressive | defensive | balanced
+    format: str = "broadcast"  # broadcast | speech | interview
+    speech_minutes: int = 3  # 발언 시간 (분)
 
 
 @router.post("/debate-script/{election_id}")
@@ -428,6 +430,8 @@ async def generate_debate_script(
         topics=body.topics or None,
         opponent_name=body.opponent,
         style=body.style,
+        debate_format=body.format,
+        speech_minutes=body.speech_minutes,
     )
 
 

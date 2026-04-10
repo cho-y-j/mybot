@@ -26,6 +26,8 @@ async def generate_debate_script(
     topics: list[str] | None = None,
     opponent_name: str | None = None,
     style: str = "balanced",
+    debate_format: str = "broadcast",
+    speech_minutes: int = 3,
 ) -> dict:
     """
     토론 대본 생성.
@@ -34,7 +36,7 @@ async def generate_debate_script(
     from app.services.cache_service import get_cache, set_cache
 
     # 캐시 확인 (12시간 TTL)
-    cache_key = f"debate_{opponent_name or 'auto'}_{style}"
+    cache_key = f"debate_{opponent_name or 'auto'}_{style}_{debate_format}_{speech_minutes}m"
     cached = await get_cache(db, tenant_id, election_id, cache_key, max_age_hours=12)
     if cached:
         return cached
@@ -133,13 +135,22 @@ async def generate_debate_script(
         "balanced": "균형 잡힌 어조로, 상대 약점 지적과 우리 강점 어필을 적절히 배합하여",
     }.get(style, "균형 잡힌 어조로")
 
+    format_prompt = {
+        "broadcast": f"방송 토론회 형식. 발언 시간 {speech_minutes}분(약 {speech_minutes * 300}자). 간결하고 임팩트 있게.",
+        "speech": f"합동 연설회 형식. 연설 시간 {speech_minutes}분(약 {speech_minutes * 300}자). 청중을 설득하는 웅변 톤.",
+        "interview": f"언론 인터뷰 형식. 답변 시간 {speech_minutes}분(약 {speech_minutes * 300}자). 기자 질문에 답하는 톤.",
+    }.get(debate_format, f"발언 시간 {speech_minutes}분")
+
+    char_limit = speech_minutes * 300
+
     prompt = (
         f"{factsheet}\n\n"
         f"위 데이터를 바탕으로 {our.name} 후보가 {opponent.name} 후보와의 토론/면접에서 사용할 대본을 작성하세요.\n"
+        f"형식: {format_prompt}\n"
         f"스타일: {style_prompt}\n\n"
         f"반드시 아래 JSON 형식으로만 답변하세요:\n"
         f'{{\n'
-        f'  "opening": "1분 오프닝 발언 (자기소개 + 핵심 비전)",\n'
+        f'  "opening": "오프닝 발언 ({min(speech_minutes, 2)}분, {min(char_limit // 3, 600)}자 이내)",\n'
         f'  "key_points": [\n'
         f'    {{"topic": "주제1", "our_position": "우리 입장", "data_point": "근거 데이터", "attack_question": "상대에게 할 질문"}},\n'
         f'    ...\n'
@@ -148,9 +159,10 @@ async def generate_debate_script(
         f'    {{"opponent_claim": "상대가 할 수 있는 주장", "our_response": "반박 대본"}},\n'
         f'    ...\n'
         f'  ],\n'
-        f'  "closing": "1분 마무리 발언"\n'
+        f'  "closing": "마무리 발언 (1분, 300자 이내)"\n'
         f'}}\n\n'
         f"규칙:\n"
+        f"- 전체 대본 합산 {char_limit}자 이내 (발언 {speech_minutes}분 기준)\n"
         f"- key_points: 주제별 공략 포인트 (최대 5개)\n"
         f"- rebuttals: 상대 예상 공격에 대한 반박 (최대 3개)\n"
         f"- 한국어로, 구체적이고 실전 토론에서 바로 사용 가능하게\n"
