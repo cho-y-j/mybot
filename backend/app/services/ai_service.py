@@ -30,6 +30,8 @@ async def call_claude(
     try:
         proc = await asyncio.create_subprocess_exec(
             claude_path, "-p", prompt,
+            "--permission-mode", "plan",
+            "--no-session-persistence",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -72,6 +74,8 @@ async def call_claude_text(
     try:
         proc = await asyncio.create_subprocess_exec(
             claude_path, "-p", prompt,
+            "--permission-mode", "plan",
+            "--no-session-persistence",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
