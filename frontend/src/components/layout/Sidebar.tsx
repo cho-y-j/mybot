@@ -45,7 +45,7 @@ const sections = [
   },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ onClose }: { onClose?: () => void } = {}) {
   const pathname = usePathname();
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
@@ -60,12 +60,12 @@ export default function Sidebar() {
     <aside className="w-64 min-h-screen flex flex-col border-r bg-[var(--card-bg)] border-[var(--card-border)]">
       {/* Logo */}
       <div className="flex items-center gap-2 px-5 py-5 border-b border-[var(--card-border)]">
-        <div className="w-9 h-9 bg-gradient-to-br from-primary-500 to-primary-700 rounded-xl flex items-center justify-center shadow-sm shadow-primary-500/20">
-          <span className="text-white font-bold text-sm">EP</span>
+        <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-sm">
+          <span className="text-white font-bold text-sm">C</span>
         </div>
         <div className="flex-1">
-          <span className="font-bold text-lg leading-none">ElectionPulse</span>
-          <p className="text-[10px] text-[var(--muted)] leading-none mt-0.5">선거 분석 플랫폼</p>
+          <span className="font-bold text-lg leading-none">CampAI</span>
+          <p className="text-[10px] text-[var(--muted)] leading-none mt-0.5">AI 선거 참모</p>
         </div>
         <ThemeToggle />
       </div>
@@ -82,6 +82,7 @@ export default function Sidebar() {
                   <Link
                     key={item.href}
                     href={item.href}
+                    onClick={() => onClose?.()}
                     className={clsx(
                       'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all',
                       active
