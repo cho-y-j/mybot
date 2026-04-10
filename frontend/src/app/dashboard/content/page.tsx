@@ -93,7 +93,7 @@ export default function ContentToolsPage() {
       genDirection ? `[사용자 요청] ${genDirection}` : '',
     ].filter(Boolean).join('\n');
     try {
-      const data = await api.generateContent(election.id, genType, genTopic.trim(), genStyle, enrichedContext);
+      const data = await api.generateContent(election.id, genType, genTopic.trim(), genStyle, enrichedContext, genPurpose, genTarget);
       setGenResult(data);
     } catch (e: any) {
       setGenResult({ error: e?.message || 'AI 생성 실패' });

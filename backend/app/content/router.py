@@ -331,79 +331,124 @@ async def generate_content(
     topic: str = "",
     style: str = "formal",
     context: str = "",
+    purpose: str = "promote",
+    target: str = "all",
 ):
-    """AI 콘텐츠 생성 — Claude CLI로 블로그/SNS/유튜브 초안. context에 상황 데이터 포함."""
-    import asyncio
-    import shutil
+    """AI 콘텐츠 생성 — 실제 수집 데이터 기반 + 목적/대상별 최적화."""
+    from app.services.ai_service import call_claude_text
+    from app.common.election_access import get_election_tenant_ids
 
     election, our, _ = await _load_election_data(db, user["tenant_id"], election_id)
     region_short = _get_short(election.region_sido)
-    type_label = BLOG_TAG_CATEGORIES.get(election.election_type, {})
+    all_tids = await get_election_tenant_ids(db, election_id)
 
-    claude_path = shutil.which("claude")
-    if not claude_path:
-        return {"error": "AI 생성 불가 (Claude CLI 미설치)", "content": None}
+    # ── 실제 데이터 수집하여 프롬프트에 반영 ──
+    from app.elections.models import NewsArticle, CommunityPost
+    from sqlalchemy import func as sqlfunc
+    from datetime import date as dt_date, timedelta
+
+    since = dt_date.today() - timedelta(days=7)
+    data_block = ""
+
+    # 최근 뉴스 요약
+    recent_news = (await db.execute(
+        select(NewsArticle.title, NewsArticle.sentiment, NewsArticle.url)
+        .where(NewsArticle.tenant_id.in_(all_tids), NewsArticle.election_id == election_id,
+               sqlfunc.date(NewsArticle.collected_at) >= since)
+        .order_by(NewsArticle.collected_at.desc()).limit(10)
+    )).all()
+    if recent_news:
+        data_block += "\n[최근 7일 주요 뉴스]\n"
+        for n in recent_news:
+            sent = {"positive": "+", "negative": "-"}.get(n[1], "o")
+            data_block += f"[{sent}] {n[0][:50]}\n"
+
+    # 커뮤니티 이슈
+    hot_issues = (await db.execute(
+        select(CommunityPost.issue_category, sqlfunc.count())
+        .where(CommunityPost.tenant_id.in_(all_tids), CommunityPost.issue_category.isnot(None),
+               sqlfunc.date(CommunityPost.collected_at) >= since)
+        .group_by(CommunityPost.issue_category)
+        .order_by(sqlfunc.count().desc()).limit(5)
+    )).all()
+    if hot_issues:
+        data_block += "\n[커뮤니티 뜨거운 이슈]\n"
+        for issue, cnt in hot_issues:
+            data_block += f"- {issue}: {cnt}건\n"
 
     # 콘텐츠 유형별 프롬프트
     type_prompts = {
-        "blog": f"선거 캠프 블로그 글을 작성해주세요. 1500자 이내.\n- 제목 (클릭 유도)\n- 본문 (서론/본론/결론)\n- 해시태그 5개",
-        "sns": f"선거 SNS 포스트를 작성해주세요. 300자 이내.\n- 간결하고 임팩트 있게\n- 해시태그 5개\n- 이모지 적절히 활용",
-        "youtube": f"유튜브 영상 스크립트를 작성해주세요. 3분 분량.\n- 인트로 (시선 끌기)\n- 본 내용\n- 아웃트로 (구독 유도)\n- 제목 + 설명문 + 태그",
-        "card": f"카드뉴스 콘텐츠를 작성해주세요. 5장 분량.\n- 각 장별 제목 + 본문 (50자 이내)\n- 마지막 장: 후보 소개 + CTA",
+        "blog": "블로그 글. 1500~2000자.\n구조: 제목(SEO 최적화, 클릭 유도) → 서론(문제 제기) → 본론(후보 정책 + 근거 데이터) → 결론(행동 유도) → 해시태그 5개",
+        "sns": "SNS 포스트. 300자 이내.\n구조: 훅(첫 문장으로 스크롤 멈추기) → 핵심 메시지 → 해시태그 5개. 이모지 적절히.",
+        "youtube": "유튜브 영상 스크립트. 3분(900자).\n구조: 인트로(5초 시선 끌기) → 문제 제기 → 해결책(정책) → CTA(구독/좋아요) → 제목+설명문+태그",
+        "card": "카드뉴스 5장.\n각 장: 제목(15자) + 본문(50자). 1장: 훅, 2~4장: 핵심 내용, 5장: 후보 소개+CTA",
+        "press": "보도자료. 1000자.\n구조: 제목 → 부제 → 리드(핵심 1문장) → 본문(배경/내용/의미) → 후보 코멘트(인용) → 문의처",
+        "defense": "해명/대응문. 800자.\n구조: 사안 요약 → 사실 관계 정리 → 우리 입장 → 향후 계획. 감정적 반박 금지, 팩트 중심.",
     }
 
-    style_desc = "공식적이고 신뢰감 있는 톤" if style == "formal" else "친근하고 편안한 톤"
+    purpose_prompts = {
+        "promote": "우리 후보의 강점과 비전을 부각하는 홍보 콘텐츠. 긍정적이고 희망적인 톤.",
+        "attack": "경쟁 후보의 약점을 지적하되 비방이 아닌 팩트 비교 콘텐츠. 선거법 위반하지 않도록 주의.",
+        "defend": "부정적 보도/공격에 대한 방어/해명 콘텐츠. 침착하고 논리적인 톤.",
+        "policy": "후보의 구체적 정책을 설명하는 콘텐츠. 쉬운 용어로 유권자 눈높이에 맞게.",
+    }
 
-    context_block = ""
-    if context:
-        context_block = f"\n[현재 상황 데이터]\n{context}\n위 상황을 반영하여 콘텐츠를 작성하세요.\n"
+    target_prompts = {
+        "all": "전 연령 대상. 보편적 관심사 중심.",
+        "youth": "20~30대 대상. ~요체, 트렌드 용어 사용, 일자리/주거/교육비 등 청년 이슈.",
+        "senior": "50~60대 대상. 격식체, 복지/건강/연금 등 시니어 관심사.",
+        "parents": "학부모 대상. 교육/돌봄/급식/안전 등 자녀 관련 이슈. 맘카페 톤.",
+    }
+
+    style_desc = {"formal": "공식적이고 신뢰감 있는 격식체", "casual": "친근하고 편안한 구어체",
+                  "emotional": "감성적이고 공감을 유도하는 톤", "technical": "전문적이고 정책 중심"}.get(style, "공식 톤")
 
     prompt = (
-        f"당신은 {region_short} {election.election_type} 선거 캠프의 전문 콘텐츠 담당자입니다.\n"
-        f"후보: {our.name if our else '후보'} ({our.party if our else ''})\n"
-        f"지역: {region_short}\n"
+        f"당신은 {region_short} {election.election_type or ''} 선거 캠프의 10년 경력 전문 콘텐츠 라이터입니다.\n\n"
+        f"[후보 정보]\n"
+        f"후보: {our.name if our else '후보'} ({our.party if our else '무소속'})\n"
+        f"지역: {election.region_sido or ''} {election.region_sigungu or ''}\n"
+        f"선거: {election.name}\n\n"
+        f"[콘텐츠 요청]\n"
         f"주제: {topic}\n"
-        f"스타일: {style_desc}\n"
-        f"{context_block}\n"
-        f"{type_prompts.get(content_type, type_prompts['blog'])}\n\n"
-        f"주의사항:\n"
+        f"유형: {type_prompts.get(content_type, type_prompts['blog'])}\n"
+        f"목적: {purpose_prompts.get(purpose, purpose_prompts['promote'])}\n"
+        f"대상: {target_prompts.get(target, target_prompts['all'])}\n"
+        f"톤: {style_desc}\n"
+        f"{data_block}\n"
+        f"{'[추가 맥락] ' + context if context else ''}\n\n"
+        f"[필수 규칙]\n"
+        f"- [AI 활용] 표기를 본문 첫줄에 포함\n"
         f"- 상대 후보 비방 금지 (공직선거법 제110조)\n"
-        f"- 허위사실 금지 (제251조)\n"
+        f"- 허위사실 금지 (제250조)\n"
         f"- 금품 제공 약속 금지 (제112조)\n"
-        f"- AI 생성물은 [AI 활용] 표기 필요\n"
-        f"- 구체적이고 실질적인 내용으로 작성\n\n"
-        f"한국어로 작성해주세요."
+        f"- 위 수집 데이터의 팩트를 근거로 활용하여 구체적으로 작성\n"
+        f"- 추상적 미사여구 금지. 숫자와 사실 중심.\n\n"
+        f"한국어로 작성해주세요. 콘텐츠 본문만 출력하세요."
     )
 
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            claude_path, "-p", prompt,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=90)
-        if proc.returncode == 0 and stdout:
-            generated = stdout.decode("utf-8").strip()
+    generated = await call_claude_text(prompt, timeout=90, context="content_generation", tenant_id=user["tenant_id"], db=db)
 
-            # 생성된 콘텐츠를 선거법 체크
-            from app.content.compliance import ComplianceChecker
-            checker = ComplianceChecker()
-            compliance = checker.check_content(
-                generated, content_type,
-                election.election_date.isoformat() if election.election_date else None,
-            )
+    if not generated:
+        return {"error": "AI 생성 실패", "content": None, "ai_generated": False}
 
-            return {
-                "content": generated,
-                "content_type": content_type,
-                "topic": topic,
-                "compliance": compliance,
-                "ai_generated": True,
-            }
-    except Exception as e:
-        return {"error": str(e), "content": None, "ai_generated": False}
+    # 선거법 체크
+    from app.content.compliance import ComplianceChecker
+    checker = ComplianceChecker()
+    compliance = checker.check_content(
+        generated, content_type,
+        election.election_date.isoformat() if election.election_date else None,
+    )
 
-    return {"error": "AI 생성 실패", "content": None, "ai_generated": False}
+    return {
+        "content": generated,
+        "content_type": content_type,
+        "topic": topic,
+        "purpose": purpose,
+        "target": target,
+        "compliance": compliance,
+        "ai_generated": True,
+    }
 
 
 # ── Debate Script ──

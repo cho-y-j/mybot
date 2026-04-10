@@ -327,8 +327,8 @@ class ApiClient {
     return this.request<any>(`/content/election-law/${sectionId}`);
   }
 
-  generateContent(electionId: string, contentType: string, topic: string, style: string = 'formal', context: string = '') {
-    const params = new URLSearchParams({ content_type: contentType, topic, style, context });
+  generateContent(electionId: string, contentType: string, topic: string, style: string = 'formal', context: string = '', purpose: string = 'promote', target: string = 'all') {
+    const params = new URLSearchParams({ content_type: contentType, topic, style, context, purpose, target });
     return this.request<any>(`/content/generate-content/${electionId}?${params}`, { method: 'POST' });
   }
 
