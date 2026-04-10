@@ -860,6 +860,12 @@ def full_collection_with_briefing(self, tenant_id: str, election_id: str, briefi
     # 3. 수집 직후 브리핑
     briefing_result = _run_briefing(tenant_id, election_id, briefing_type)
 
+    # 4. 대시보드 캐시 프리로드 (다음 접속 시 즉시 로딩)
+    try:
+        _run_async(_preload_dashboard_cache(tenant_id, election_id))
+    except Exception as e:
+        logger.warning("cache_preload_error", error=str(e)[:200])
+
     return {
         "collected": collect_result if isinstance(collect_result, dict) else {},
         "reanalyzed_sentiment": reanalyzed,
@@ -1151,6 +1157,25 @@ def _generate_weekly_fallback(candidates_data: list) -> str:
     lines.append("=" * 30)
     lines.append("CampAI | 주간 전략 보고서")
     return "\n".join(lines)
+
+
+async def _preload_dashboard_cache(tenant_id: str, election_id: str):
+    """대시보드 주요 API 캐시를 미리 채움."""
+    from app.database import async_session_factory
+    from app.services.analysis_service import (
+        get_analysis_overview, get_media_overview,
+        get_community_data, get_youtube_data,
+    )
+
+    async with async_session_factory() as db:
+        try:
+            await get_analysis_overview(db, tenant_id, election_id, days=7)
+            await get_media_overview(db, tenant_id, election_id, days=7)
+            await get_community_data(db, tenant_id, election_id, days=30)
+            await get_youtube_data(db, tenant_id, election_id, days=30)
+            logger.info("dashboard_cache_preloaded", tenant_id=tenant_id)
+        except Exception as e:
+            logger.warning("cache_preload_partial", error=str(e)[:200])
 
 
 async def _batch_reanalyze_sentiment(tenant_id: str, election_id: str) -> int:

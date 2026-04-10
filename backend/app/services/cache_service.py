@@ -61,7 +61,7 @@ async def set_cache(
         await db.execute(text(
             "INSERT INTO analysis_cache (id, tenant_id, election_id, cache_type, data, created_at) "
             "VALUES (:id, :tid, :eid, :ctype, :data, NOW()) "
-            "ON CONFLICT ON CONSTRAINT uq_analysis_cache_v2 "
+            "ON CONFLICT (tenant_id, election_id, cache_type) "
             "DO UPDATE SET data = EXCLUDED.data, created_at = NOW()"
         ), {
             "id": str(uuid.uuid4()),
