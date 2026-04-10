@@ -1,4 +1,5 @@
 'use client';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import clsx from 'clsx';
@@ -46,6 +47,14 @@ const sections = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+
+  useEffect(() => {
+    try {
+      const u = JSON.parse(localStorage.getItem('user') || '{}');
+      setIsSuperAdmin(!!u.is_superadmin);
+    } catch {}
+  }, []);
 
   return (
     <aside className="w-64 min-h-screen flex flex-col border-r bg-[var(--card-bg)] border-[var(--card-border)]">
@@ -63,11 +72,9 @@ export default function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-6 overflow-y-auto">
-        {sections.map((section) => (
+        {sections.map((section, si) => (
           <div key={section.title}>
-            <p className="text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-3 mb-2">
-              {section.title}
-            </p>
+            {si > 0 && <div className="mx-3 my-3 border-t border-[var(--card-border)]" />}
             <div className="space-y-0.5">
               {section.items.map((item) => {
                 const active = pathname === item.href;
@@ -94,15 +101,17 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      {/* Admin */}
-      <div className="p-3 border-t border-[var(--card-border)]">
-        <Link href="/admin" className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--muted-bg)] transition-colors">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-          </svg>
-          관리자 패널
-        </Link>
-      </div>
+      {/* Admin - superadmin only */}
+      {isSuperAdmin && (
+        <div className="p-3 border-t border-[var(--card-border)]">
+          <Link href="/admin" className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--muted-bg)] transition-colors">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+            관리자 패널
+          </Link>
+        </div>
+      )}
     </aside>
   );
 }
