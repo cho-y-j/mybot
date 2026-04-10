@@ -80,8 +80,8 @@ class Settings(BaseSettings):
     RATE_LIMIT_REGISTER: str = "3/hour"
 
     # --- Security ---
-    ACCOUNT_LOCKOUT_ATTEMPTS: int = 5
-    ACCOUNT_LOCKOUT_MINUTES: int = 30
+    ACCOUNT_LOCKOUT_ATTEMPTS: int = 10
+    ACCOUNT_LOCKOUT_MINUTES: int = 10
     PASSWORD_MIN_LENGTH: int = 8
 
     @field_validator("APP_SECRET_KEY")
