@@ -179,6 +179,60 @@ class SentimentAnalyzer:
         return self.analyze(text)
 
 
+    async def analyze_batch(self, items: list[dict]) -> list[dict]:
+        """
+        배치 AI 감성 분석 — 10건씩 한 번에 Claude에 전달.
+        items: [{"id": str, "text": str}, ...]
+        Returns: [{"id": str, "sentiment": str, "score": float}, ...]
+        """
+        if not items:
+            return []
+
+        from app.services.ai_service import call_claude
+
+        # 10건씩 배치
+        results = []
+        for i in range(0, len(items), 10):
+            batch = items[i:i+10]
+            numbered = "\n".join(f"{j+1}. {it['text'][:100]}" for j, it in enumerate(batch))
+
+            prompt = (
+                "다음 선거 관련 뉴스/게시글의 감성을 분석해주세요.\n\n"
+                "규칙:\n"
+                "- 후보에게 유리한 내용(공약, 지지, 성과, 문제해결) → positive\n"
+                "- 후보에게 불리한 내용(비리, 논란, 비판, 의혹) → negative\n"
+                "- 단순 사실보도, 일정, 판단 애매 → neutral\n"
+                "- '학교폭력 방지', '비리 근절' 같은 해결 내용은 positive\n\n"
+                "반드시 JSON 배열로만 답변:\n"
+                '[{"n":1,"s":"positive","c":0.8},{"n":2,"s":"neutral","c":0.5},...]\n'
+                "n=번호, s=sentiment, c=confidence(0~1)\n\n"
+                f"텍스트:\n{numbered}"
+            )
+
+            ai_result = await call_claude(prompt, timeout=45, context="batch_sentiment")
+            if ai_result and "items" in ai_result:
+                for item in ai_result["items"]:
+                    idx = item.get("n", 0) - 1
+                    if 0 <= idx < len(batch):
+                        sentiment = item.get("s", "neutral")
+                        confidence = float(item.get("c", 0.5))
+                        score = confidence if sentiment == "positive" else (-confidence if sentiment == "negative" else 0.0)
+                        results.append({
+                            "id": batch[idx]["id"],
+                            "sentiment": sentiment,
+                            "score": round(score, 3),
+                        })
+
+            # AI 결과에 없는 항목은 키워드 폴백
+            result_ids = {r["id"] for r in results}
+            for it in batch:
+                if it["id"] not in result_ids:
+                    sent, score = self._keyword_analysis_conservative(it["text"])
+                    results.append({"id": it["id"], "sentiment": sent, "score": score})
+
+        return results
+
+
 class TrendDetector:
     """트렌드 변화 감지기."""
 

@@ -850,11 +850,19 @@ def full_collection_with_briefing(self, tenant_id: str, election_id: str, briefi
     # 1. 수집 (동기 호출)
     collect_result = full_collection(tenant_id, election_id) if not hasattr(full_collection, 'delay') else full_collection.run(tenant_id, election_id)
 
-    # 2. 수집 직후 브리핑
+    # 2. AI 감성 재분석 (neutral인 뉴스를 배치로)
+    reanalyzed = 0
+    try:
+        reanalyzed = _run_async(_batch_reanalyze_sentiment(tenant_id, election_id))
+    except Exception as e:
+        logger.warning("batch_sentiment_error", error=str(e)[:200])
+
+    # 3. 수집 직후 브리핑
     briefing_result = _run_briefing(tenant_id, election_id, briefing_type)
 
     return {
         "collected": collect_result if isinstance(collect_result, dict) else {},
+        "reanalyzed_sentiment": reanalyzed,
         "briefing": briefing_result,
     }
 
@@ -1143,6 +1151,49 @@ def _generate_weekly_fallback(candidates_data: list) -> str:
     lines.append("=" * 30)
     lines.append("CampAI | 주간 전략 보고서")
     return "\n".join(lines)
+
+
+async def _batch_reanalyze_sentiment(tenant_id: str, election_id: str) -> int:
+    """neutral 뉴스를 AI 배치로 재분석."""
+    from app.database import async_session_factory
+    from app.analysis.sentiment import SentimentAnalyzer
+    from app.common.election_access import get_election_tenant_ids
+
+    async with async_session_factory() as db:
+        all_tids = await get_election_tenant_ids(db, election_id)
+        since = date.today() - timedelta(days=1)
+
+        # 최근 1일 중립 뉴스 (아직 AI 분석 안 된 것)
+        rows = (await db.execute(
+            select(NewsArticle).where(
+                NewsArticle.tenant_id.in_(all_tids),
+                NewsArticle.election_id == election_id,
+                NewsArticle.sentiment == "neutral",
+                func.date(NewsArticle.collected_at) >= since,
+            ).limit(50)
+        )).scalars().all()
+
+        if not rows:
+            return 0
+
+        analyzer = SentimentAnalyzer()
+        items = [{"id": str(r.id), "text": f"{r.title or ''} {r.content_snippet or ''}"} for r in rows]
+        results = await analyzer.analyze_batch(items)
+
+        updated = 0
+        for r in results:
+            if r["sentiment"] != "neutral":
+                await db.execute(
+                    text("UPDATE news_articles SET sentiment = :s, sentiment_score = :sc WHERE id = :id"),
+                    {"s": r["sentiment"], "sc": r["score"], "id": r["id"]},
+                )
+                updated += 1
+
+        if updated:
+            await db.commit()
+            logger.info("batch_sentiment_done", total=len(rows), updated=updated)
+
+        return updated
 
 
 async def _generate_report_async(tenant_id: str, election_id: str) -> dict:
