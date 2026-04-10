@@ -157,40 +157,44 @@ export default function SurveysPage() {
       {/* ═══ TAB: 지지율 현황 ═══ */}
       {tab === 'overview' && (
         <>
-          {/* 최신 지지율 */}
+          {/* 최신 지지율 — results 그대로 표시 */}
           {latest && (
             <div className="card">
               <h3 className="font-bold mb-1">현재 지지율 ({latest.date})</h3>
               <p className="text-xs text-[var(--muted)] mb-4">{latest.org} | n={latest.sample_size || '?'} | ±{latest.margin_of_error || '?'}%p</p>
               <div className="space-y-3">
-                {allNames.map((name, i) => {
-                  const val = latestR[name] || 0;
-                  const isOurs = name === ourCandidate?.name;
-                  const maxVal = Math.max(...allNames.map(n => latestR[n] || 0));
-                  return (
-                    <div key={name} className={`p-3 rounded-xl ${isOurs ? 'bg-blue-500/10 ring-1 ring-blue-500/30' : 'bg-[var(--muted-bg)]'}`}>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className={`font-semibold ${isOurs ? 'text-blue-500' : ''}`}>{name} {isOurs && '★'}</span>
-                        <span className={`text-2xl font-black ${val === maxVal && val > 0 ? 'text-amber-500' : isOurs ? 'text-blue-500' : 'text-[var(--foreground)]'}`}>{val}%</span>
+                {Object.entries(latestR)
+                  .filter(([k]) => !['모름', '없음', '모름/무응답', '기타', '그외', '없다'].includes(k))
+                  .sort((a, b) => (b[1] as number) - (a[1] as number))
+                  .map(([name, val], i) => {
+                    const v = Number(val) || 0;
+                    const isOurs = ourCandidate?.name && name.includes(ourCandidate.name);
+                    const maxVal = Math.max(...Object.entries(latestR).filter(([k]) => !['모름', '없음', '모름/무응답', '기타', '그외', '없다'].includes(k)).map(([, vv]) => Number(vv) || 0));
+                    return (
+                      <div key={name} className={`p-3 rounded-xl ${isOurs ? 'bg-blue-500/10 ring-1 ring-blue-500/30' : 'bg-[var(--muted-bg)]'}`}>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className={`font-semibold ${isOurs ? 'text-blue-500' : ''}`}>{name} {isOurs && '★'}</span>
+                          <span className={`text-2xl font-black ${v === maxVal && v > 0 ? 'text-amber-500' : isOurs ? 'text-blue-500' : 'text-[var(--foreground)]'}`}>{v}%</span>
+                        </div>
+                        <div className="h-3 bg-[var(--card-border)] rounded-full overflow-hidden">
+                          <div className="h-full rounded-full transition-all duration-500"
+                            style={{ width: `${v / 50 * 100}%`, backgroundColor: CANDIDATE_COLORS[i % CANDIDATE_COLORS.length] }} />
+                        </div>
                       </div>
-                      <div className="h-3 bg-[var(--card-border)] rounded-full overflow-hidden">
-                        <div className="h-full rounded-full transition-all duration-500"
-                          style={{ width: `${val / 50 * 100}%`, backgroundColor: candColorMap[name] }} />
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
                 {/* 부동층 */}
-                {(latestR['모름'] || latestR['없음'] || latestR['모름/무응답']) && (
-                  <div className="p-3 rounded-xl bg-amber-500/5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[var(--muted)]">부동층 (모름+없음)</span>
-                      <span className="text-xl font-bold text-amber-600">
-                        {((latestR['모름'] || 0) + (latestR['없음'] || 0) + (latestR['모름/무응답'] || 0)).toFixed(1)}%
-                      </span>
+                {(() => {
+                  const undecided = (latestR['모름'] || 0) + (latestR['없음'] || 0) + (latestR['모름/무응답'] || 0) + (latestR['없다'] || 0);
+                  return undecided > 0 ? (
+                    <div className="p-3 rounded-xl bg-amber-500/5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[var(--muted)]">부동층 (모름+없음)</span>
+                        <span className="text-xl font-bold text-amber-600">{undecided.toFixed(1)}%</span>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  ) : null;
+                })()}
               </div>
             </div>
           )}
