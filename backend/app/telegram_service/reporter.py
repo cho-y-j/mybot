@@ -137,13 +137,11 @@ async def _build_morning_briefing(
     """
     lines = [
         f"<b>☀️ [D-{d_day}] 오전 브리핑</b>",
-        f"{today.isoformat()} {now.strftime('%H:%M')}",
-        f"{'=' * 25}",
+        f"CampAI | {today.isoformat()} {now.strftime('%H:%M')}",
         "",
     ]
 
-    # ── 1. 핵심 수치 ──
-    lines.append("<b>[1. 오늘의 핵심 수치]</b>")
+    # ── 핵심 수치 먼저 수집 (한 줄 판정용) ──
     cand_data = []
     for cand in candidates:
         today_cnt = (await db.execute(
@@ -185,10 +183,39 @@ async def _build_morning_briefing(
             "today": today_cnt, "yest": yest_cnt, "pos": pos, "neg": neg,
             "id": cand.id,
         })
+
+    # ── 한 줄 판정 ──
+    our_data = next((c for c in cand_data if c["is_ours"]), None)
+    if our_data and cand_data:
+        max_today = max(c["today"] for c in cand_data)
+        our_rank = sorted(cand_data, key=lambda x: -x["today"]).index(our_data) + 1 if our_data in sorted(cand_data, key=lambda x: -x["today"]) else 0
+        our_rank = sum(1 for c in cand_data if c["today"] > our_data["today"]) + 1
+
+        if our_data["neg"] >= 3:
+            verdict = f"⚠️ 부정뉴스 {our_data['neg']}건 감지 — 즉시 대응 필요"
+        elif max_today > 0 and our_data["today"] / max_today < 0.3:
+            verdict = f"🔴 미디어 노출 심각 부족 ({our_rank}위/{len(cand_data)}명)"
+        elif our_data["today"] == 0:
+            verdict = "🔴 오늘 뉴스 노출 0건 — 긴급"
+        elif our_rank == 1:
+            verdict = "✅ 미디어 노출 1위 유지 중"
+        else:
+            verdict = f"📊 미디어 노출 {our_rank}위/{len(cand_data)}명"
+
+        lines.append(f"<b>{verdict}</b>")
+        lines.append("")
+
+    # ── 1. 핵심 수치 ──
+    lines.append("<b>[핵심 수치]</b>")
+    for cd in sorted(cand_data, key=lambda x: -x["today"]):
+        marker = " ⭐" if cd["is_ours"] else ""
+        change = cd["today"] - cd["yest"]
+        arrow = "↑" if change > 0 else ("↓" if change < 0 else "→")
+        lines.append(f"  {cd['name']}{marker}: {cd['today']}건({arrow}{abs(change)}) 긍{cd['pos']}/부{cd['neg']}")
     lines.append("")
 
     # ── 2. 주요 뉴스 + URL ──
-    lines.append("<b>[2. 주요 뉴스]</b>")
+    lines.append("<b>[주요 뉴스]</b>")
     recent_news = (await db.execute(
         select(NewsArticle, Candidate.name)
         .join(Candidate, NewsArticle.candidate_id == Candidate.id)
@@ -196,7 +223,7 @@ async def _build_morning_briefing(
             NewsArticle.tenant_id == tenant_id,
             NewsArticle.election_id == election_id,
         )
-        .order_by(NewsArticle.collected_at.desc())
+        .order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.collected_at.desc())
         .limit(5)
     )).all()
 
@@ -210,7 +237,7 @@ async def _build_morning_briefing(
     lines.append("")
 
     # ── 3. 경쟁자 갭 분석 ──
-    lines.append("<b>[3. 경쟁자 갭]</b>")
+    lines.append("<b>[경쟁자 동향]</b>")
     our_data = next((d for d in cand_data if d["is_ours"]), None)
     if our_data:
         max_news = max((d["today"] for d in cand_data), default=0)
@@ -234,7 +261,7 @@ async def _build_morning_briefing(
     lines.append("")
 
     # ── 4. 위기/기회 경보 ──
-    lines.append("<b>[4. 위기/기회]</b>")
+    lines.append("<b>[위기/기회]</b>")
     neg_news = (await db.execute(
         select(NewsArticle, Candidate.name)
         .join(Candidate, NewsArticle.candidate_id == Candidate.id)
@@ -244,7 +271,7 @@ async def _build_morning_briefing(
             NewsArticle.sentiment == "negative",
             func.date(NewsArticle.collected_at) == today,
         )
-        .order_by(NewsArticle.collected_at.desc())
+        .order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.collected_at.desc())
         .limit(3)
     )).all()
 
@@ -258,7 +285,7 @@ async def _build_morning_briefing(
     lines.append("")
 
     # ── 5. 오전 액션 ──
-    lines.append("<b>[5. 오전 액션]</b>")
+    lines.append("<b>[오늘 할 일]</b>")
     if our_data and our_data["today"] == 0:
         lines.append("  → 뉴스 노출 전무 — 보도자료 배포 시급")
     elif our_data and our_data["neg"] > our_data["pos"]:
@@ -363,7 +390,7 @@ async def _build_afternoon_briefing(
             NewsArticle.election_id == election_id,
             NewsArticle.collected_at >= morning_cutoff,
         )
-        .order_by(NewsArticle.collected_at.desc())
+        .order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.collected_at.desc())
         .limit(5)
     )).all()
 
@@ -387,7 +414,7 @@ async def _build_afternoon_briefing(
             NewsArticle.sentiment == "negative",
             func.date(NewsArticle.collected_at) == today,
         )
-        .order_by(NewsArticle.collected_at.desc())
+        .order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.collected_at.desc())
         .limit(3)
     )).all()
     if neg_news:
@@ -536,7 +563,7 @@ async def _build_daily_report(
             NewsArticle.election_id == election_id,
             func.date(NewsArticle.collected_at) == today,
         )
-        .order_by(NewsArticle.collected_at.desc())
+        .order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.collected_at.desc())
         .limit(5)
     )).all()
 
