@@ -875,6 +875,14 @@ def daily_report(self, tenant_id: str, election_id: str):
     return _run_briefing(tenant_id, election_id, "daily")
 
 
+@celery_app.task(bind=True, name="briefing.weekly")
+def weekly_report(self, tenant_id: str, election_id: str):
+    """
+    주간 전략 보고서 (월요일 09:00): 7일 추이 분석 → PDF → 텔레그램.
+    """
+    return _run_weekly_report(tenant_id, election_id)
+
+
 def _run_briefing(tenant_id: str, election_id: str, briefing_type: str) -> dict:
     """브리핑 공통 로직: AI 보고서 생성 → PDF 생성 → DB 저장 → 텔레그램 발송."""
     import uuid as uuid_mod
@@ -989,6 +997,152 @@ def _run_briefing(tenant_id: str, election_id: str, briefing_type: str) -> dict:
         return {"status": "error", "error": str(e)[:500]}
     finally:
         session.close()
+
+
+def _run_weekly_report(tenant_id: str, election_id: str) -> dict:
+    """주간 보고서: 7일 추이 + AI 전략 + PDF 생성."""
+    import uuid as uuid_mod
+    from app.elections.models import Report, Election
+
+    session = get_sync_session()
+    try:
+        # 1. 주간 데이터 수집
+        candidates_data = _run_async(_collect_candidates_data(tenant_id, election_id))
+
+        # 2. AI 주간 분석 생성
+        report_text = ""
+        ai_generated = False
+        try:
+            report_text = _run_async(_generate_weekly_report_async(tenant_id, election_id, candidates_data))
+            ai_generated = bool(report_text)
+        except Exception as e:
+            logger.warning("weekly_ai_error", error=str(e)[:200])
+
+        if not report_text:
+            report_text = _generate_weekly_fallback(candidates_data)
+
+        # 3. PDF 생성
+        pdf_path = None
+        try:
+            election_obj = session.execute(
+                select(Election).where(Election.id == election_id)
+            ).scalar_one_or_none()
+            e_name = election_obj.name if election_obj else ""
+            e_date = election_obj.election_date if election_obj else None
+            d_day = (e_date - date.today()).days if e_date else 0
+            our_name = next((c["name"] for c in (candidates_data or []) if c.get("is_ours")), "")
+
+            from app.reports.pdf_generator import generate_report_pdf
+            pdf_path = generate_report_pdf(
+                report_text=report_text,
+                election_name=e_name,
+                report_date=date.today().isoformat(),
+                report_type="weekly",
+                our_candidate=our_name,
+                d_day=d_day,
+                candidates_data=candidates_data,
+            )
+        except Exception as e:
+            logger.warning("weekly_pdf_error", error=str(e)[:200])
+
+        # 4. DB 저장
+        report = Report(
+            id=uuid_mod.uuid4(),
+            tenant_id=tenant_id,
+            election_id=election_id,
+            report_type="weekly",
+            title=f"[주간] {report_text.split(chr(10))[0][:50]}" if report_text else "주간 전략 보고서",
+            content_text=report_text,
+            file_path_pdf=pdf_path,
+            report_date=date.today(),
+            sent_via_telegram=False,
+        )
+        session.add(report)
+        session.commit()
+
+        # 5. 텔레그램 발송
+        sent = 0
+        try:
+            sent = _run_async(
+                _send_briefing_telegram(tenant_id, report_text, "weekly")
+            )
+            if sent > 0:
+                report.sent_via_telegram = True
+                report.sent_at = datetime.now(timezone.utc)
+                session.commit()
+        except Exception as e:
+            logger.error("weekly_telegram_error", error=str(e)[:200])
+
+        logger.info("weekly_report_complete", tenant_id=tenant_id, ai=ai_generated, pdf=bool(pdf_path))
+        return {"status": "success", "report_id": str(report.id), "ai_generated": ai_generated}
+
+    except Exception as e:
+        logger.error("weekly_report_error", error=str(e)[:500])
+        return {"status": "error", "error": str(e)[:500]}
+    finally:
+        session.close()
+
+
+async def _generate_weekly_report_async(tenant_id: str, election_id: str, candidates_data: list) -> str:
+    """AI 주간 보고서 텍스트 생성."""
+    from app.services.ai_service import call_claude_text
+    from app.database import async_session_factory
+    from app.elections.models import Election
+
+    async with async_session_factory() as db:
+        election = (await db.execute(
+            select(Election).where(Election.id == election_id)
+        )).scalar_one_or_none()
+        e_name = election.name if election else ""
+        e_date = election.election_date if election else None
+        d_day = (e_date - date.today()).days if e_date else 0
+        our = next((c for c in (candidates_data or []) if c.get("is_ours")), {})
+
+        # 팩트시트
+        factsheet = f"[주간 전략 보고서 팩트시트]\n"
+        factsheet += f"선거: {e_name} | D-{d_day}\n"
+        factsheet += f"우리 후보: {our.get('name', '미지정')}\n"
+        factsheet += f"분석 기간: 최근 7일\n\n"
+
+        factsheet += "[후보별 주간 현황]\n"
+        for c in (candidates_data or []):
+            marker = " (우리)" if c.get("is_ours") else ""
+            pos_rate = round(c['pos'] / max(c['news'], 1) * 100)
+            factsheet += f"- {c['name']}{marker}: 뉴스 {c['news']}건(긍정률 {pos_rate}%), 커뮤니티 {c['community']}건, 유튜브 {c['yt_views']:,}회, 검색 {c['search_vol']:.1f}\n"
+
+        prompt = (
+            f"{factsheet}\n\n"
+            f"위 데이터를 기반으로 주간 전략 보고서를 작성하세요.\n\n"
+            f"[보고서 구조 — 5섹션]\n"
+            f"I. 주간 핵심 요약 — 이번 주 가장 중요한 변화 3가지, 전체 판세 한 줄 판정\n"
+            f"II. 후보 비교 추이 — 후보별 미디어 노출/감성/검색 변화 분석, 상승/하락 원인\n"
+            f"III. 이번 주 주요 이슈 — 뜨거웠던 이슈 TOP 3, 각 이슈의 영향과 대응\n"
+            f"IV. 다음 주 전략 — 구체적 행동 계획 5가지 (채널/주제/일정까지)\n"
+            f"V. 불편한 진실 — 이번 주 우리에게 불리한 데이터 솔직히\n\n"
+            f"[규칙]\n"
+            f"- 각 섹션 5~10줄. 전체 3000자 이내\n"
+            f"- 숫자와 데이터로 근거 제시\n"
+            f"- 추상적 위안 금지. 팩트 중심.\n"
+            f"- 한국어로 작성"
+        )
+
+        return await call_claude_text(prompt, timeout=120, context="weekly_report", tenant_id=tenant_id, db=db)
+
+
+def _generate_weekly_fallback(candidates_data: list) -> str:
+    """AI 불가 시 데이터 기반 주간 요약."""
+    lines = ["주간 전략 보고서 (데이터 기반)", "=" * 30, ""]
+    lines.append("I. 후보별 주간 현황")
+    for c in (candidates_data or []):
+        marker = " *" if c.get("is_ours") else ""
+        lines.append(f"  {c['name']}{marker}: 뉴스 {c['news']}건, 커뮤니티 {c['community']}건, 유튜브 {c['yt_views']:,}회")
+    lines.append("")
+    lines.append("II. 전략 제안")
+    lines.append("  (AI 분석 불가 — Claude CLI 설치 필요)")
+    lines.append("")
+    lines.append("=" * 30)
+    lines.append("CampAI | 주간 전략 보고서")
+    return "\n".join(lines)
 
 
 async def _generate_report_async(tenant_id: str, election_id: str) -> dict:
@@ -1169,6 +1323,12 @@ def check_and_run_schedules():
                 task_fn = briefing_task_map.get(bt, daily_report)
                 task_fn.delay(tid, eid)
                 triggered += 1
+
+            elif stype == "weekly_report":
+                # 주간 보고서 (월요일만)
+                if now.weekday() == 0:  # Monday
+                    weekly_report.delay(tid, eid)
+                    triggered += 1
 
             elif stype in collection_task_map:
                 # Individual collection type
