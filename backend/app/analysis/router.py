@@ -694,6 +694,8 @@ async def search_trends(
     """검색 트렌드 (실데이터)."""
     tid = user["tenant_id"]
     since = date.today() - timedelta(days=days)
+    from app.common.election_access import get_election_tenant_ids
+    all_tids = await get_election_tenant_ids(db, election_id)
 
     result = await db.execute(
         select(SearchTrend).where(

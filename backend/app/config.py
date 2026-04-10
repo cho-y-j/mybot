@@ -87,8 +87,10 @@ class Settings(BaseSettings):
     @field_validator("APP_SECRET_KEY")
     @classmethod
     def secret_key_must_be_changed(cls, v: str) -> str:
-        if v == "CHANGE-THIS" and False:  # Only enforce in production
-            raise ValueError("APP_SECRET_KEY must be changed from default")
+        if v == "CHANGE-THIS":
+            import os
+            if os.getenv("APP_ENV", "development") == "production":
+                raise ValueError("APP_SECRET_KEY must be changed from default in production")
         return v
 
     @property

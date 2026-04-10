@@ -81,7 +81,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         limit = self.default_limit
         path = request.url.path
         if "/auth/login" in path:
-            limit = 30  # 개발환경 여유있게
+            limit = 5  # 브루트포스 방지
         elif "/auth/register" in path:
             limit = 10
 
