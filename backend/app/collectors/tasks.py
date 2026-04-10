@@ -1172,6 +1172,7 @@ async def _generate_weekly_report_async(tenant_id: str, election_id: str, candid
             f"- 각 섹션 5~10줄. 전체 3000자 이내\n"
             f"- 숫자와 데이터로 근거 제시\n"
             f"- 추상적 위안 금지. 팩트 중심.\n"
+            f"- 검색 트렌드는 동명이인 포함 수치. 낮으면 솔직히 낮다고 보고.\n"
             f"- 한국어로 작성"
         )
 
