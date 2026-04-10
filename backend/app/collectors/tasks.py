@@ -876,9 +876,9 @@ def daily_report(self, tenant_id: str, election_id: str):
 
 
 def _run_briefing(tenant_id: str, election_id: str, briefing_type: str) -> dict:
-    """브리핑 공통 로직: AI 보고서 생성 → DB 저장 → 텔레그램 발송."""
+    """브리핑 공통 로직: AI 보고서 생성 → PDF 생성 → DB 저장 → 텔레그램 발송."""
     import uuid as uuid_mod
-    from app.elections.models import Report
+    from app.elections.models import Report, Election
 
     session = get_sync_session()
     try:
@@ -904,7 +904,38 @@ def _run_briefing(tenant_id: str, election_id: str, briefing_type: str) -> dict:
                 logger.error("briefing_fallback_error", error=str(e))
                 report_text = f"보고서 생성 실패: {str(e)[:200]}"
 
-        # 3. DB 저장
+        # 3. PDF 생성 (daily 보고서만)
+        pdf_path = None
+        if briefing_type == "daily":
+            try:
+                candidates_data = _run_async(_collect_candidates_data(tenant_id, election_id))
+                election_obj = session.execute(
+                    select(Election).where(Election.id == election_id)
+                ).scalar_one_or_none()
+                e_name = election_obj.name if election_obj else ""
+                e_date = election_obj.election_date if election_obj else None
+                d_day = (e_date - date.today()).days if e_date else 0
+                our_name = ""
+                for cd in (candidates_data or []):
+                    if cd.get("is_ours"):
+                        our_name = cd["name"]
+                        break
+
+                from app.reports.pdf_generator import generate_report_pdf
+                pdf_path = generate_report_pdf(
+                    report_text=report_text,
+                    election_name=e_name,
+                    report_date=date.today().isoformat(),
+                    report_type="daily",
+                    our_candidate=our_name,
+                    d_day=d_day,
+                    candidates_data=candidates_data,
+                )
+                logger.info("daily_pdf_generated", path=pdf_path)
+            except Exception as e:
+                logger.warning("daily_pdf_error", error=str(e)[:200])
+
+        # 4. DB 저장
         type_map = {
             "morning": "morning_brief",
             "afternoon": "afternoon_brief",
@@ -917,6 +948,7 @@ def _run_briefing(tenant_id: str, election_id: str, briefing_type: str) -> dict:
             report_type=type_map.get(briefing_type, briefing_type),
             title=report_text.split("\n")[0] if report_text else f"{briefing_type} 보고서",
             content_text=report_text,
+            file_path_pdf=pdf_path,
             report_date=date.today(),
             sent_via_telegram=False,
         )
@@ -966,6 +998,73 @@ async def _generate_report_async(tenant_id: str, election_id: str) -> dict:
 
     async with async_session_factory() as db:
         return await generate_ai_report(db, tenant_id, election_id)
+
+
+async def _collect_candidates_data(tenant_id: str, election_id: str) -> list:
+    """PDF 보고서용 후보별 데이터 수집."""
+    from app.database import async_session_factory
+    from app.common.election_access import get_election_tenant_ids, get_our_candidate_id
+    from app.elections.models import Candidate, NewsArticle, CommunityPost, YouTubeVideo, SearchTrend
+    from sqlalchemy import func as sqlfunc, case
+
+    async with async_session_factory() as db:
+        all_tids = await get_election_tenant_ids(db, election_id)
+        our_cand_id = await get_our_candidate_id(db, tenant_id, election_id)
+        since = date.today() - timedelta(days=7)
+
+        candidates = (await db.execute(
+            select(Candidate).where(
+                Candidate.election_id == election_id,
+                Candidate.tenant_id.in_(all_tids),
+                Candidate.enabled == True,
+            ).order_by(Candidate.priority)
+        )).scalars().all()
+
+        result = []
+        for c in candidates:
+            is_ours = (str(c.id) == our_cand_id) if our_cand_id else c.is_our_candidate
+
+            # 뉴스
+            news_row = (await db.execute(
+                select(
+                    sqlfunc.count().label("cnt"),
+                    sqlfunc.sum(case((NewsArticle.sentiment == "positive", 1), else_=0)).label("pos"),
+                    sqlfunc.sum(case((NewsArticle.sentiment == "negative", 1), else_=0)).label("neg"),
+                ).where(NewsArticle.candidate_id == c.id, sqlfunc.date(NewsArticle.collected_at) >= since)
+            )).one()
+
+            # 커뮤니티
+            comm_cnt = (await db.execute(
+                select(sqlfunc.count()).where(CommunityPost.candidate_id == c.id)
+            )).scalar() or 0
+
+            # 유튜브
+            yt_row = (await db.execute(
+                select(sqlfunc.count().label("cnt"), sqlfunc.coalesce(sqlfunc.sum(YouTubeVideo.views), 0).label("views"))
+                .where(YouTubeVideo.candidate_id == c.id)
+            )).one()
+
+            # 검색량
+            search = (await db.execute(
+                select(SearchTrend.relative_volume)
+                .where(SearchTrend.keyword == c.name, SearchTrend.election_id == election_id)
+                .order_by(SearchTrend.checked_at.desc()).limit(1)
+            )).scalar() or 0
+
+            result.append({
+                "name": c.name,
+                "party": c.party,
+                "is_ours": is_ours,
+                "news": news_row.cnt or 0,
+                "pos": news_row.pos or 0,
+                "neg": news_row.neg or 0,
+                "community": comm_cnt,
+                "yt_count": yt_row.cnt or 0,
+                "yt_views": int(yt_row.views or 0),
+                "search_vol": float(search),
+            })
+
+        return result
 
 
 async def _generate_briefing_text(
