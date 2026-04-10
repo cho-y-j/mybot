@@ -119,19 +119,8 @@ async def list_surveys(
     elec_sigungu = election.region_sigungu  # SSW='청주시' 등
     items = []
     for s in surveys:
-        # 본인 선거 판정:
-        # - 같은 election_type AND
-        # - (election의 sigungu가 없으면 광역 → 같은 type 모두 본인) OR
-        # - (election의 sigungu와 survey sigungu 일치) OR
-        # - (survey sigungu가 없으면 광역 단위 — 같은 type이면 본인 참고)
-        is_own = False
-        if s.election_type == etype:
-            if not elec_sigungu:
-                is_own = True  # 광역 (도지사 등)
-            elif not s.region_sigungu:
-                is_own = False  # 광역 단위 survey는 시·군 캠프엔 참고
-            else:
-                is_own = (s.region_sigungu == elec_sigungu)
+        # 본인 선거 판정: 본인 tenant가 직접 등록한 것만 본인 선거
+        is_own = (str(s.tenant_id) == str(tid))
         items.append({
             "id": str(s.id),
             "org": s.survey_org,
