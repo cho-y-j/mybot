@@ -153,7 +153,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── [전략 4사분면] AI 분류 — 액션 가능 콘텐츠 ── */}
-      {election && <StrategicQuadrant electionId={election.id} defaultVisible={4} />}
+      {election && <StrategicQuadrant electionId={election.id} />}
 
       {/* ── [1] 미디어 활동 현황 ── */}
       <div className="card">

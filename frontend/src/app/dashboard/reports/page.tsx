@@ -6,8 +6,13 @@ export default function ReportsPage() {
   const [elections, setElections] = useState<any[]>([]);
   const [reports, setReports] = useState<any[]>([]);
   const [selectedReport, setSelectedReport] = useState<any>(null);
+  const [showPdf, setShowPdf] = useState(false);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+
+  const pdfUrl = selectedReport && elections[0]
+    ? `/api/reports/${elections[0].id}/${selectedReport.id}/download-pdf`
+    : null;
 
   useEffect(() => { loadData(); }, []);
 
@@ -19,7 +24,9 @@ export default function ReportsPage() {
         const rp = await api.getReports(el[0].id);
         setReports(rp);
       }
-    } catch {} finally { setLoading(false); }
+    } catch (e: any) {
+      console.error('reports load error:', e);
+    } finally { setLoading(false); }
   };
 
   const viewReport = async (reportId: string) => {
@@ -27,7 +34,10 @@ export default function ReportsPage() {
     try {
       const rp = await api.getReport(elections[0].id, reportId);
       setSelectedReport(rp);
-    } catch {}
+      setShowPdf(false);
+    } catch (e: any) {
+      console.error('report view error:', e);
+    }
   };
 
   const handleGenerate = async () => {
@@ -36,7 +46,9 @@ export default function ReportsPage() {
     try {
       await api.generateReport(elections[0].id, 'daily');
       loadData();
-    } catch {} finally { setGenerating(false); }
+    } catch (e: any) {
+      alert('보고서 생성 실패: ' + (e?.message || ''));
+    } finally { setGenerating(false); }
   };
 
   const typeLabels: Record<string, string> = {
@@ -62,7 +74,7 @@ export default function ReportsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Report List */}
         <div className="space-y-2">
-          {reports.map((r) => (
+          {[...reports].sort((a, b) => (b.date || '').localeCompare(a.date || '')).map((r) => (
             <button
               key={r.id}
               onClick={() => viewReport(r.id)}
@@ -93,19 +105,34 @@ export default function ReportsPage() {
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-semibold">{selectedReport.title}</h3>
                 <div className="flex gap-2">
-                  {selectedReport.has_pdf && (
-                    <a
-                      href={`/api/reports/${elections[0]?.id}/${selectedReport.id}/download-pdf`}
-                      className="btn-secondary text-sm"
+                  {pdfUrl && (
+                    <button
+                      onClick={() => setShowPdf(!showPdf)}
+                      className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
                     >
-                      PDF 다운로드
-                    </a>
+                      {showPdf ? '텍스트 보기' : 'PDF 미리보기'}
+                    </button>
                   )}
+                  <a
+                    href={pdfUrl || '#'}
+                    className="px-3 py-1.5 bg-violet-600 text-white rounded-lg text-sm hover:bg-violet-700"
+                    target="_blank"
+                  >
+                    PDF 다운로드
+                  </a>
                 </div>
               </div>
-              <pre className="text-sm text-gray-700 whitespace-pre-wrap font-mono bg-gray-50 p-4 rounded-lg max-h-[600px] overflow-y-auto">
-                {selectedReport.content_text || '(내용 없음)'}
-              </pre>
+              {showPdf && pdfUrl ? (
+                <iframe
+                  src={pdfUrl}
+                  className="w-full rounded-lg border"
+                  style={{ height: '700px' }}
+                />
+              ) : (
+                <pre className="text-sm whitespace-pre-wrap font-sans bg-[var(--muted-bg)] p-4 rounded-lg max-h-[600px] overflow-y-auto leading-relaxed">
+                  {selectedReport.content || selectedReport.content_text || '(내용 없음)'}
+                </pre>
+              )}
             </div>
           ) : (
             <div className="card text-center py-12 text-gray-500">
