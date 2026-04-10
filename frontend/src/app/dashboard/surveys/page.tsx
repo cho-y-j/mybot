@@ -235,45 +235,52 @@ export default function SurveysPage() {
             </div>
           )}
 
-          {/* 여론조사 목록 */}
+          {/* 여론조사 목록 — results 원본 그대로 */}
           <div className="card">
             <h3 className="font-bold mb-3">역대 여론조사 ({eduSurveys.length}건)</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-[var(--card-border)]">
-                    <th className="text-left p-2 text-[var(--muted)]">날짜</th>
-                    <th className="text-left p-2 text-[var(--muted)]">조사기관</th>
-                    {allNames.map(n => (
-                      <th key={n} className={`text-right p-2 ${n === ourCandidate?.name ? 'text-blue-500 font-bold' : 'text-[var(--muted)]'}`}>{n}</th>
-                    ))}
-                    <th className="text-right p-2 text-[var(--muted)]">부동층</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {eduSurveys.map((s, i) => {
-                    const r = parseResults(s.results);
-                    const undec = (r['모름'] || 0) + (r['없음'] || 0) + (r['모름/무응답'] || 0);
-                    const maxVal = Math.max(...allNames.map(n => r[n] || 0));
-                    return (
-                      <tr key={i} className="border-b border-[var(--card-border)] hover:bg-[var(--muted-bg)]">
-                        <td className="p-2 font-medium">{s.date}</td>
-                        <td className="p-2 text-[var(--muted)] text-xs">{s.org}</td>
-                        {allNames.map(n => {
-                          const v = r[n];
-                          const isMax = v === maxVal && v > 0;
-                          return (
-                            <td key={n} className={`p-2 text-right font-mono ${isMax ? 'font-bold text-amber-500' : n === ourCandidate?.name ? 'text-blue-500' : ''}`}>
-                              {v !== undefined ? `${v}%` : '-'}
-                            </td>
-                          );
-                        })}
-                        <td className="p-2 text-right text-amber-600">{undec > 0 ? `${undec.toFixed(1)}%` : '-'}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            <div className="space-y-3">
+              {eduSurveys.map((s, i) => {
+                const r = parseResults(s.results);
+                const SKIP = new Set(['모름', '없음', '없다', '모름/무응답', '기타', '그외', '기타 인물']);
+                const entries = Object.entries(r).filter(([k]) => !SKIP.has(k)).sort(([,a],[,b]) => (b as number) - (a as number));
+                const undec = (r['모름'] || 0) + (r['없음'] || 0) + (r['모름/무응답'] || 0) + (r['없다'] || 0);
+                const maxVal = entries.length > 0 ? Math.max(...entries.map(([,v]) => Number(v) || 0)) : 0;
+                return (
+                  <div key={i} className="p-3 rounded-lg bg-[var(--muted-bg)]">
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <span className="font-medium text-sm">{s.org}{s.client_org && s.client_org !== s.org ? `/${s.client_org}` : ''}</span>
+                        <span className="text-xs text-[var(--muted)] ml-2">{s.date}</span>
+                      </div>
+                      <div className="text-xs text-[var(--muted)]">
+                        n={s.sample_size || '?'} | ±{s.margin_of_error || '?'}%p
+                        {undec > 0 && <span className="text-amber-500 ml-2">부동층 {undec.toFixed(1)}%</span>}
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      {entries.map(([name, val], j) => {
+                        const v = Number(val) || 0;
+                        const isOurs = ourCandidate?.name && name.includes(ourCandidate.name);
+                        const isMax = v === maxVal && v > 0;
+                        return (
+                          <div key={name} className="flex items-center gap-2">
+                            <span className={`w-20 text-xs truncate ${isOurs ? 'text-blue-500 font-bold' : ''}`}>
+                              {name}{isOurs ? ' ★' : ''}
+                            </span>
+                            <div className="flex-1 h-2.5 bg-[var(--card-border)] rounded-full overflow-hidden">
+                              <div className="h-full rounded-full"
+                                style={{ width: `${v / 50 * 100}%`, backgroundColor: isOurs ? '#3b82f6' : isMax ? '#f59e0b' : CANDIDATE_COLORS[j % CANDIDATE_COLORS.length] }} />
+                            </div>
+                            <span className={`w-12 text-right text-xs font-mono ${isMax ? 'font-bold text-amber-500' : isOurs ? 'text-blue-500' : ''}`}>
+                              {v}%
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
