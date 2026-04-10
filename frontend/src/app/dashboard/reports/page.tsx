@@ -7,12 +7,32 @@ export default function ReportsPage() {
   const [reports, setReports] = useState<any[]>([]);
   const [selectedReport, setSelectedReport] = useState<any>(null);
   const [showPdf, setShowPdf] = useState(false);
+  const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
+  const [loadingPdf, setLoadingPdf] = useState(false);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
 
   const pdfUrl = selectedReport && elections[0]
     ? `/api/reports/${elections[0].id}/${selectedReport.id}/download-pdf`
     : null;
+
+  const loadPdfPreview = async () => {
+    if (!pdfUrl) return;
+    if (pdfBlobUrl) { setShowPdf(true); return; }
+    setLoadingPdf(true);
+    try {
+      const res = await fetch(pdfUrl, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` },
+      });
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        setPdfBlobUrl(url);
+        setShowPdf(true);
+      }
+    } catch (e) { console.error('PDF load error:', e); }
+    finally { setLoadingPdf(false); }
+  };
 
   useEffect(() => { loadData(); }, []);
 
@@ -35,6 +55,7 @@ export default function ReportsPage() {
       const rp = await api.getReport(elections[0].id, reportId);
       setSelectedReport(rp);
       setShowPdf(false);
+      if (pdfBlobUrl) { URL.revokeObjectURL(pdfBlobUrl); setPdfBlobUrl(null); }
     } catch (e: any) {
       console.error('report view error:', e);
     }
@@ -107,10 +128,11 @@ export default function ReportsPage() {
                 <div className="flex gap-2">
                   {pdfUrl && (
                     <button
-                      onClick={() => setShowPdf(!showPdf)}
-                      className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
+                      onClick={() => showPdf ? setShowPdf(false) : loadPdfPreview()}
+                      disabled={loadingPdf}
+                      className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50"
                     >
-                      {showPdf ? '텍스트 보기' : 'PDF 미리보기'}
+                      {loadingPdf ? '로딩...' : showPdf ? '텍스트 보기' : 'PDF 미리보기'}
                     </button>
                   )}
                   <a
@@ -122,9 +144,9 @@ export default function ReportsPage() {
                   </a>
                 </div>
               </div>
-              {showPdf && pdfUrl ? (
+              {showPdf && pdfBlobUrl ? (
                 <iframe
-                  src={pdfUrl}
+                  src={pdfBlobUrl}
                   className="w-full rounded-lg border"
                   style={{ height: '700px' }}
                 />
