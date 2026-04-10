@@ -298,6 +298,6 @@ def format_alert_message(alerts: list[dict]) -> str:
         lines.append("")
 
     lines.append("━" * 20)
-    lines.append("ElectionPulse 위기감지 시스템")
+    lines.append("CampAI 위기감지 시스템")
 
     return "\n".join(lines)

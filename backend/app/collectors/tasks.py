@@ -787,6 +787,41 @@ def alert_check(self, tenant_id: str, election_id: str):
         ))
         _run_async(monitor.close())
 
+        # 검색량 급등 체크
+        try:
+            from app.elections.models import SearchTrend
+            from sqlalchemy import func as sqlfunc
+            yesterday = date.today() - timedelta(days=1)
+            two_days_ago = date.today() - timedelta(days=2)
+
+            for cand in candidates:
+                today_vol = session.execute(
+                    select(sqlfunc.max(SearchTrend.relative_volume)).where(
+                        SearchTrend.keyword == cand.name,
+                        sqlfunc.date(SearchTrend.checked_at) >= yesterday,
+                    )
+                ).scalar() or 0
+                prev_vol = session.execute(
+                    select(sqlfunc.max(SearchTrend.relative_volume)).where(
+                        SearchTrend.keyword == cand.name,
+                        sqlfunc.date(SearchTrend.checked_at) >= two_days_ago,
+                        sqlfunc.date(SearchTrend.checked_at) < yesterday,
+                    )
+                ).scalar() or 0
+
+                if prev_vol > 0 and today_vol > prev_vol * 2:
+                    is_our = cand.is_our_candidate
+                    alerts.append({
+                        "severity": "critical" if is_our else "warning",
+                        "candidate": cand.name,
+                        "type": "search_spike",
+                        "message": f"{cand.name} 검색량 급등: {prev_vol:.1f} → {today_vol:.1f} ({today_vol/prev_vol:.1f}배)",
+                        "details": {"previous": prev_vol, "current": today_vol},
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    })
+        except Exception as e:
+            logger.warning("search_spike_check_error", error=str(e)[:200])
+
         if alerts:
             # Format and send via Telegram
             message = format_alert_message(alerts)
