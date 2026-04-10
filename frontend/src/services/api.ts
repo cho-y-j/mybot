@@ -210,8 +210,10 @@ class ApiClient {
     return this.request<any>(`/reports/${electionId}/${reportId}`);
   }
 
-  generateReport(electionId: string, type: string = 'daily') {
-    return this.request<any>(`/reports/${electionId}/generate?report_type=${type}`, { method: 'POST' });
+  generateReport(electionId: string, type: string = 'daily', topic?: string) {
+    const params = new URLSearchParams({ report_type: type });
+    if (topic) params.set('topic', topic);
+    return this.request<any>(`/reports/${electionId}/generate?${params}`, { method: 'POST' });
   }
 
   // ─── Telegram ───────────────────────────────────────────────

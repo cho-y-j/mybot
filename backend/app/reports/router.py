@@ -8,6 +8,7 @@ from uuid import UUID
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -156,6 +157,49 @@ async def get_report(
         "content": report.content_text,
         "sent_telegram": report.sent_via_telegram,
     }
+
+
+class ReportUpdateRequest(BaseModel):
+    content_text: str
+    status: str = "confirmed"
+
+
+@router.put("/{election_id}/{report_id}")
+async def update_report(
+    election_id: UUID,
+    report_id: UUID,
+    body: ReportUpdateRequest,
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """보고서 수정/확정 — 사용자가 편집한 내용 저장 + PDF 재생성."""
+    result = await db.execute(
+        select(Report).where(Report.id == report_id, Report.tenant_id == user["tenant_id"])
+    )
+    report = result.scalar_one_or_none()
+    if not report:
+        raise HTTPException(status_code=404)
+
+    report.content_text = body.content_text
+
+    # 확정 시 PDF 재생성
+    if body.status == "confirmed":
+        try:
+            from app.reports.pdf_generator import generate_report_pdf
+            election = (await db.execute(select(Election).where(Election.id == election_id))).scalar_one_or_none()
+            pdf_path = generate_report_pdf(
+                report_text=body.content_text,
+                election_name=election.name if election else "",
+                report_date=report.report_date.isoformat() if report.report_date else "",
+                report_type=report.report_type or "daily",
+            )
+            if pdf_path:
+                report.file_path_pdf = pdf_path
+        except Exception:
+            pass
+
+    await db.commit()
+    return {"message": "보고서 확정 저장 완료", "id": str(report.id)}
 
 
 @router.get("/{election_id}/{report_id}/download-pdf")
