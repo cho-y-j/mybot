@@ -395,7 +395,7 @@ class ApiClient {
   }
 
   // ─── AI Chat (긴 타임아웃) ──────────────────────────────────
-  async sendChat(message: string, electionId?: string) {
+  async sendChat(message: string, electionId?: string, modelTier?: string) {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
@@ -407,7 +407,7 @@ class ApiClient {
       const res = await fetch(`${API_BASE}/chat/send`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ message, election_id: electionId }),
+        body: JSON.stringify({ message, election_id: electionId, model_tier: modelTier }),
         signal: controller.signal,
       });
       if (!res.ok) {

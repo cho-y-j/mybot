@@ -27,6 +27,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [modelTier, setModelTier] = useState<'fast' | 'standard' | 'premium'>('standard');
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // 초기 인사
@@ -63,7 +64,7 @@ export default function ChatPage() {
     setSending(true);
 
     try {
-      const resp = await api.sendChat(msg, election?.id);
+      const resp = await api.sendChat(msg, election?.id, modelTier);
       const aiMsg: Message = {
         id: `a-${Date.now()}`,
         role: 'ai',
@@ -102,10 +103,32 @@ export default function ChatPage() {
             수집된 {election?.name || '선거'} 데이터 기반 맞춤형 대화
           </p>
         </div>
-        {messages.length > 1 && (
-          <button onClick={() => setMessages(messages.slice(0, 1))}
-            className="text-xs text-gray-400 hover:text-gray-600">대화 초기화</button>
-        )}
+        <div className="flex items-center gap-3">
+          {/* 모델 선택 토글 */}
+          <div className="flex bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5 gap-0.5">
+            {([
+              { key: 'fast', icon: '⚡', label: '빠른답변', desc: '~3초' },
+              { key: 'standard', icon: '✦', label: '고품질', desc: '~8초' },
+              { key: 'premium', icon: '◆', label: '최고품질', desc: '~20초' },
+            ] as const).map(m => (
+              <button key={m.key} onClick={() => setModelTier(m.key)}
+                className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${
+                  modelTier === m.key
+                    ? m.key === 'fast' ? 'bg-green-500 text-white shadow-sm'
+                      : m.key === 'standard' ? 'bg-blue-500 text-white shadow-sm'
+                      : 'bg-violet-600 text-white shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                }`}
+                title={`${m.label} (${m.desc})`}>
+                <span className="mr-1">{m.icon}</span>{m.label}
+              </button>
+            ))}
+          </div>
+          {messages.length > 1 && (
+            <button onClick={() => setMessages(messages.slice(0, 1))}
+              className="text-xs text-gray-400 hover:text-gray-600">초기화</button>
+          )}
+        </div>
       </div>
 
       {/* Chat Area */}

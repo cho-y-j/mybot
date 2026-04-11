@@ -50,9 +50,16 @@ async def list_surveys(
     user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
-    """여론조사 목록 — 같은 지역 + 같은 선거 유형 + 후보 이름 매칭."""
-    from sqlalchemy import or_, and_
-    from app.elections.models import Election
+    """
+    여론조사 목록 — 후보 이름 기반 검색.
+    1) 우리 tenant가 등록한 모든 여론조사
+    2) 같은 지역(region_sido)의 모든 여론조사 (election_type 무관)
+    3) 우리 후보 이름이 results에 포함된 모든 여론조사
+    → 각 항목에 match_type 표시: 'candidate'(후보매칭) / 'region'(같은지역) / 'own'(직접등록)
+    """
+    from sqlalchemy import or_, and_, cast, String
+    from app.elections.models import Election, Candidate
+
     election = (await db.execute(select(Election).where(Election.id == election_id))).scalar_one_or_none()
     if not election:
         return {"surveys": [], "total": 0}
@@ -61,69 +68,77 @@ async def list_surveys(
     etype = election.election_type
     region = election.region_sido
 
-    # 조건: (직접 등록) OR (같은 지역의 모든 선거 유형 — 도지사/시장/교육감/도의원 등 정치 지형 공유)
-    # 같은 충북 안에서 도지사 여론조사는 시장 캠프에도 핵심 자료
-    # 미분류(election_type/region NULL)는 전국 정당 지지율 데이터이므로 제외
-    conditions = [and_(
-        Survey.tenant_id == tid,
-        Survey.election_type.is_not(None),
-        Survey.region_sido.is_not(None),
-    )]
-    if region:
-        conditions.append(Survey.region_sido == region)
-    survey_q = select(Survey).where(or_(*conditions))
-
-    # 후보 이름으로 추가 필터 (후보 이름이 results에 포함되어야)
-    from app.elections.models import Candidate
+    # 등록된 후보 이름
     cands = (await db.execute(
         select(Candidate.name).where(Candidate.election_id == election_id, Candidate.enabled == True)
     )).scalars().all()
 
-    all_surveys = (await db.execute(
-        survey_q.order_by(Survey.survey_date.desc()).limit(200)
-    )).scalars().all()
-
-    # 필터 룰:
-    # - 직접 등록한 여론조사: 무조건 통과
-    # - 다른 election_type (참고): 같은 지역이면 무조건 통과
-    # - 같은 election_type:
-    #     · results 비어있음 (NESDC 메타데이터만) → 같은 지역이면 통과
-    #     · results 있음 → 후보 이름 매칭으로 관련성 검증
-    surveys = []
-    for s in all_surveys:
-        if str(s.tenant_id) == str(tid):
-            surveys.append(s)
-        elif s.election_type and s.election_type != etype:
-            surveys.append(s)
+    # 넓게 조회: (우리 tenant) OR (같은 지역) OR (후보이름 포함)
+    # 시장/군수/구청장은 시군구 단위, 도지사/교육감은 시도 단위
+    sigungu = election.region_sigungu
+    local_types = {'mayor', 'gun_head', 'gu_head'}  # 기초단체장
+    conditions = [Survey.tenant_id == tid]
+    if region:
+        if etype in local_types and sigungu:
+            # 기초단체장: 같은 시군구 OR 시군구 미지정(시도 전체 조사)
+            conditions.append(and_(
+                Survey.region_sido == region,
+                or_(Survey.region_sigungu == sigungu, Survey.region_sigungu.is_(None))
+            ))
         else:
-            # 같은 선거 유형
-            results_dict = s.results if isinstance(s.results, dict) else {}
-            if not results_dict:
-                # 결과 미입력(메타만) — 같은 지역이면 표시
-                surveys.append(s)
-            else:
-                r_str = str(results_dict)
-                if cands and any(cn in r_str for cn in cands):
-                    surveys.append(s)
-        if len(surveys) >= 100:
-            break
+            # 광역단체장/교육감: 같은 시도
+            conditions.append(Survey.region_sido == region)
+    # 후보 이름이 results에 포함된 여론조사 (JSONB text search)
+    for cn in cands:
+        conditions.append(cast(Survey.results, String).contains(cn))
+
+    all_surveys = (await db.execute(
+        select(Survey).where(or_(*conditions))
+        .order_by(Survey.survey_date.desc())
+        .limit(500)
+    )).scalars().all()
 
     # 질문 수를 한 번에 조회 (N+1 방지)
     from sqlalchemy import func as sqla_func
-    q_counts_result = await db.execute(
-        select(SurveyQuestion.survey_id, sqla_func.count().label("cnt"))
-        .group_by(SurveyQuestion.survey_id)
-    )
-    q_counts = {str(row.survey_id): row.cnt for row in q_counts_result}
+    survey_ids = [s.id for s in all_surveys]
+    q_counts = {}
+    if survey_ids:
+        q_counts_result = await db.execute(
+            select(SurveyQuestion.survey_id, sqla_func.count().label("cnt"))
+            .where(SurveyQuestion.survey_id.in_(survey_ids))
+            .group_by(SurveyQuestion.survey_id)
+        )
+        q_counts = {str(row.survey_id): row.cnt for row in q_counts_result}
 
-    elec_sigungu = election.region_sigungu  # SSW='청주시' 등
     items = []
-    for s in surveys:
-        # 본인 선거 판정: 본인 tenant가 직접 등록한 것만 본인 선거
+    seen_ids = set()
+    for s in all_surveys:
+        sid = str(s.id)
+        if sid in seen_ids:
+            continue
+        seen_ids.add(sid)
+
+        # match_type 판정
         is_own = (str(s.tenant_id) == str(tid))
+        r_str = str(s.results) if isinstance(s.results, dict) else ""
+        has_our_candidate = bool(cands and any(cn in r_str for cn in cands))
+        same_type = (s.election_type == etype) if s.election_type and etype else False
+
+        if is_own:
+            match_type = "own"
+        elif has_our_candidate and same_type:
+            match_type = "candidate"
+        elif has_our_candidate:
+            match_type = "candidate_other"  # 다른 유형이지만 후보명 포함
+        elif s.election_type == etype:
+            match_type = "same_type"
+        else:
+            match_type = "region"
+
         items.append({
-            "id": str(s.id),
+            "id": sid,
             "org": s.survey_org,
+            "client_org": getattr(s, 'client_org', None),
             "date": s.survey_date.isoformat() if s.survey_date else None,
             "method": s.method,
             "sample_size": s.sample_size,
@@ -131,10 +146,12 @@ async def list_surveys(
             "election_type": s.election_type,
             "region_sido": s.region_sido,
             "region_sigungu": s.region_sigungu,
-            "source_url": s.source_url,
-            "is_own_election": is_own,
+            "source_url": getattr(s, 'source_url', None),
+            "match_type": match_type,
+            "has_our_candidate": has_our_candidate,
+            "is_own_election": is_own or (has_our_candidate and same_type),
             "results": s.results if isinstance(s.results, dict) else {},
-            "question_count": q_counts.get(str(s.id), 0),
+            "question_count": q_counts.get(sid, 0),
         })
 
     return {"count": len(items), "total": len(items), "surveys": items}

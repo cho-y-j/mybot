@@ -124,9 +124,24 @@ async def generate_debate_script(
         issue_list = ELECTION_ISSUES.get(election.election_type or "superintendent", {}).get("issues", [])
         topics = issue_list[:3] if issue_list else ["교육 정책", "지역 발전", "행정 투명성"]
 
+    # 커뮤니티 최근 이슈 수집
+    community_issues = []
+    try:
+        from app.elections.models import CommunityPost
+        recent_posts = (await db.execute(
+            select(CommunityPost.title).where(
+                CommunityPost.tenant_id.in_(all_tids),
+                func.date(CommunityPost.collected_at) >= date.today() - timedelta(days=14),
+            ).order_by(CommunityPost.collected_at.desc()).limit(10)
+        )).scalars().all()
+        community_issues = [t for t in recent_posts if t]
+    except Exception:
+        pass  # 커뮤니티 테이블 없어도 계속 진행
+
     # 팩트시트 구성
     factsheet = _build_debate_factsheet(
         our, opponent, opponent_neg_news, our_pos_news, latest_survey, topics, election,
+        community_issues=community_issues,
     )
 
     style_prompt = {
@@ -143,9 +158,36 @@ async def generate_debate_script(
 
     char_limit = speech_minutes * 300
 
+    # 선거 유형별 핵심 규칙
+    etype = election.election_type or ""
+    election_rules = ""
+    if etype == "superintendent":
+        election_rules = (
+            "\n\n[교육감 선거 핵심 규칙 — 반드시 준수]\n"
+            "1. 교육감은 법적으로 정당 표방이 금지됨. '무소속'이 아니라 '비정당' 선거임.\n"
+            "2. '어느 당 소속이냐', '정당 없이 뭘 할 수 있냐'는 공격에 대한 반박:\n"
+            "   → '교육감은 정치가 아닌 교육 전문성으로 선출하는 자리' + '오히려 정당색을 드러내는 후보가 선거법 위반 소지'\n"
+            "3. 상대가 정당색을 과도하게 드러내면 역공 포인트: '교육의 정치화를 우려하는 학부모/교사 민심을 대변'\n"
+            "4. 절대 우리 후보의 정당/진영을 언급하지 말 것. '진보 교육감', '보수 교육감' 같은 표현 금지.\n"
+            "5. 교육 현장 경험, 전문성, 정책 구체성으로 승부해야 함.\n"
+        )
+    elif etype == "governor":
+        election_rules = (
+            "\n\n[도지사 선거 특성]\n"
+            "1. 광역단체장으로 정당 공천 선거. 정당 정책과 후보 역량 모두 중요.\n"
+            "2. 지역 현안(SOC, 산업, 인구)과 국정 과제 연계가 핵심.\n"
+        )
+    elif etype == "mayor":
+        election_rules = (
+            "\n\n[시장 선거 특성]\n"
+            "1. 기초단체장으로 생활밀착형 정책이 핵심.\n"
+            "2. 도시 개발, 교통, 복지, 일자리 등 구체적 실행 계획 중심.\n"
+        )
+
     prompt = (
-        f"{factsheet}\n\n"
-        f"위 데이터를 바탕으로 {our.name} 후보가 {opponent.name} 후보와의 토론/면접에서 사용할 대본을 작성하세요.\n"
+        f"{factsheet}"
+        f"{election_rules}\n\n"
+        f"위 데이터와 규칙을 바탕으로 {our.name} 후보가 {opponent.name} 후보와의 토론/면접에서 사용할 대본을 작성하세요.\n"
         f"형식: {format_prompt}\n"
         f"스타일: {style_prompt}\n\n"
         f"반드시 아래 JSON 형식으로만 답변하세요:\n"
@@ -167,7 +209,8 @@ async def generate_debate_script(
         f"- rebuttals: 상대 예상 공격에 대한 반박 (최대 3개)\n"
         f"- 한국어로, 구체적이고 실전 토론에서 바로 사용 가능하게\n"
         f"- 선거법 위반 소지가 있는 비방/허위사실은 절대 포함하지 않기\n"
-        f"- 데이터에 근거한 팩트만 사용"
+        f"- 데이터에 근거한 팩트만 사용\n"
+        f"- 수집된 뉴스/커뮤니티 반응을 인용하여 구체적 근거 제시"
     )
 
     result = await call_claude(prompt, timeout=90, context="debate_script", tenant_id=tenant_id, db=db)
@@ -200,14 +243,28 @@ async def generate_debate_script(
     return fallback
 
 
-def _build_debate_factsheet(our, opponent, opp_neg_news, our_pos_news, survey, topics, election) -> str:
+def _build_debate_factsheet(our, opponent, opp_neg_news, our_pos_news, survey, topics, election,
+                            community_issues=None) -> str:
     """토론 대본용 팩트시트 구성."""
     d_day = (election.election_date - date.today()).days
+    etype = election.election_type or ""
+
+    # 교육감은 정당 표기 금지
+    if etype == "superintendent":
+        our_label = f"{our.name} (비정당 — 교육감은 정당 표방 금지)"
+        opp_label = f"{opponent.name}"
+        if opponent.party:
+            opp_label += f" (배경: {opponent.party} 계열로 알려짐 — 역공 포인트 가능)"
+    else:
+        our_label = f"{our.name} ({our.party or '무소속'})"
+        opp_label = f"{opponent.name} ({opponent.party or '무소속'})"
+
     lines = [
         f"[토론 준비 팩트시트]",
         f"선거: {election.name} (D-{d_day})",
-        f"우리 후보: {our.name} ({our.party or '무소속'})",
-        f"상대 후보: {opponent.name} ({opponent.party or '무소속'})",
+        f"선거 유형: {etype}",
+        f"우리 후보: {our_label}",
+        f"상대 후보: {opp_label}",
         f"토론 주제: {', '.join(topics)}",
         "",
     ]
@@ -227,9 +284,16 @@ def _build_debate_factsheet(our, opponent, opp_neg_news, our_pos_news, survey, t
         lines.append("")
 
     if survey and survey.results:
-        lines.append(f"[최근 여론조사: {survey.survey_org}]")
+        lines.append(f"[최근 여론조사: {survey.survey_org} ({survey.survey_date})]")
         for name, rate in (survey.results or {}).items():
-            lines.append(f"  {name}: {rate}%")
+            if isinstance(rate, (int, float)):
+                lines.append(f"  {name}: {rate}%")
+        lines.append("")
+
+    if community_issues:
+        lines.append(f"[최근 커뮤니티/여론 이슈]")
+        for issue in community_issues[:5]:
+            lines.append(f"- {issue}")
         lines.append("")
 
     return "\n".join(lines)

@@ -34,16 +34,25 @@ export default function OnboardingPage() {
   // 결과
   const [result, setResult] = useState<any>(null);
 
-  // 마스터 데이터 로드
+  // 마스터 데이터 로드 (인증/리다이렉트는 / 페이지에서 처리)
   useEffect(() => {
     (async () => {
-      const [r, e, p] = await Promise.all([
-        api.getRegions(), api.getElectionTypes(), api.getParties(),
-      ]);
-      setRegions(r);
-      setElectionTypes(e);
-      setParties(p);
+      if (!api.isAuthenticated()) {
+        router.replace('/login');
+        return;
+      }
+      try {
+        const [r, e, p] = await Promise.all([
+          api.getRegions(), api.getElectionTypes(), api.getParties(),
+        ]);
+        setRegions(r);
+        setElectionTypes(e);
+        setParties(p);
+      } catch (err) {
+        console.error('onboarding init error:', err);
+      }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 선택된 시도의 시군구
@@ -140,14 +149,18 @@ export default function OnboardingPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">시/군/구</label>
-                <select className="input-field" value={form.sigungu}
-                  onChange={e => setForm({ ...form, sigungu: e.target.value })}
-                  disabled={!form.sido}>
-                  <option value="">전체</option>
-                  {districts.map((d: string) => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
+                {['governor', 'superintendent'].includes(form.election_type) ? (
+                  <div className="input-field bg-gray-100 text-gray-400 cursor-not-allowed">광역 선거 — 시/도 전체</div>
+                ) : (
+                  <select className="input-field" value={form.sigungu}
+                    onChange={e => setForm({ ...form, sigungu: e.target.value })}
+                    disabled={!form.sido}>
+                    <option value="">선택하세요</option>
+                    {districts.map((d: string) => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                )}
               </div>
             </div>
 
@@ -156,7 +169,7 @@ export default function OnboardingPage() {
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {electionTypes.map(t => (
                   <button key={t.value} type="button"
-                    onClick={() => setForm({ ...form, election_type: t.value })}
+                    onClick={() => setForm({ ...form, election_type: t.value, sigungu: ['governor', 'superintendent'].includes(t.value) ? '' : form.sigungu })}
                     className={`p-3 rounded-lg border text-sm text-left transition-all ${
                       form.election_type === t.value
                         ? 'border-primary-500 bg-primary-50 text-primary-700 ring-2 ring-primary-200'

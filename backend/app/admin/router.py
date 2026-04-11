@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from app.database import get_db
-from app.auth.models import Tenant, User, AuditLog
+from app.auth.models import Tenant, User, AuditLog, AIAccount
 from app.common.dependencies import CurrentUser
 from app.elections.models import (
     Election, Candidate, NewsArticle, CommunityPost,
@@ -714,3 +714,217 @@ async def data_statistics(user: CurrentUser, db: AsyncSession = Depends(get_db))
         "total": sum(stats.values()),
         "per_tenant": per_tenant,
     }
+
+
+# ──── 스케줄 모니터링 + 제어 ────
+
+@router.get("/schedule-status")
+async def schedule_status(user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    """전체 스케줄 상태 모니터링 — 각 캠프별 스케줄 + 마지막 실행 + 건강 상태."""
+    require_superadmin(user)
+    from app.elections.models import ScheduleConfig, ScheduleRun
+
+    tenants = (await db.execute(select(Tenant).where(Tenant.is_active == True).order_by(Tenant.name))).scalars().all()
+    result = []
+
+    for t in tenants:
+        schedules = (await db.execute(
+            select(ScheduleConfig).where(ScheduleConfig.tenant_id == t.id)
+        )).scalars().all()
+
+        last_run = (await db.execute(
+            select(ScheduleRun).where(ScheduleRun.tenant_id == t.id)
+            .order_by(ScheduleRun.started_at.desc()).limit(1)
+        )).scalar_one_or_none()
+
+        last_news = (await db.execute(
+            select(func.max(NewsArticle.collected_at)).where(NewsArticle.tenant_id == t.id)
+        )).scalar()
+
+        enabled_count = sum(1 for s in schedules if s.enabled)
+        total_count = len(schedules)
+
+        result.append({
+            "tenant_id": str(t.id),
+            "tenant_name": t.name,
+            "schedules_total": total_count,
+            "schedules_enabled": enabled_count,
+            "schedules": [
+                {"name": s.name, "type": s.schedule_type, "times": s.fixed_times, "enabled": s.enabled}
+                for s in schedules
+            ],
+            "last_run": {
+                "status": last_run.status if last_run else None,
+                "items": last_run.items_collected if last_run else None,
+                "at": last_run.started_at.isoformat() if last_run else None,
+                "error": last_run.error_message if last_run else None,
+            } if last_run else None,
+            "last_data_at": last_news.isoformat() if last_news else None,
+        })
+
+    # Celery worker 건강 상태
+    celery_healthy = False
+    try:
+        from app.collectors.tasks import celery_app
+        insp = celery_app.control.inspect()
+        active = insp.active()
+        celery_healthy = active is not None and len(active) > 0
+    except Exception:
+        pass
+
+    return {
+        "celery_healthy": celery_healthy,
+        "tenants": result,
+    }
+
+
+@router.post("/schedule-control/{tenant_id}")
+async def schedule_control(
+    tenant_id: UUID, user: CurrentUser, db: AsyncSession = Depends(get_db),
+    action: str = "pause",  # pause | resume
+):
+    """캠프 스케줄 일괄 정지/재개."""
+    require_superadmin(user)
+    from app.elections.models import ScheduleConfig
+
+    enabled = action == "resume"
+    result = await db.execute(
+        text("UPDATE schedule_configs SET enabled = :e WHERE tenant_id = :tid"),
+        {"e": enabled, "tid": str(tenant_id)},
+    )
+    tenant = (await db.execute(select(Tenant).where(Tenant.id == tenant_id))).scalar_one_or_none()
+    return {
+        "message": f"{tenant.name if tenant else tenant_id} 스케줄 {'재개' if enabled else '정지'}",
+        "action": action,
+        "affected": result.rowcount,
+    }
+
+
+@router.post("/schedule-control-all")
+async def schedule_control_all(
+    user: CurrentUser, db: AsyncSession = Depends(get_db),
+    action: str = "pause",  # pause | resume
+):
+    """전체 캠프 스케줄 일괄 정지/재개."""
+    require_superadmin(user)
+    enabled = action == "resume"
+    result = await db.execute(
+        text("UPDATE schedule_configs SET enabled = :e"), {"e": enabled},
+    )
+    return {
+        "message": f"전체 스케줄 {'재개' if enabled else '정지'}",
+        "affected": result.rowcount,
+    }
+
+
+# ──── AI 계정 풀 관리 ────
+
+class AIAccountCreate(BaseModel):
+    provider: str  # claude | chatgpt
+    name: str
+    config_dir: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class AIAccountUpdate(BaseModel):
+    name: Optional[str] = None
+    config_dir: Optional[str] = None
+    status: Optional[str] = None  # active | blocked | inactive
+    priority: Optional[int] = None
+    notes: Optional[str] = None
+
+
+@router.get("/ai-accounts")
+async def list_ai_accounts(user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    """AI CLI 계정 목록 + 배정된 캠프 수."""
+    require_superadmin(user)
+    accounts = (await db.execute(
+        select(AIAccount).order_by(AIAccount.priority, AIAccount.created_at)
+    )).scalars().all()
+
+    result = []
+    for a in accounts:
+        assigned = (await db.execute(
+            select(func.count()).where(Tenant.ai_account_id == a.id)
+        )).scalar() or 0
+        result.append({
+            "id": str(a.id), "provider": a.provider, "name": a.name,
+            "config_dir": a.config_dir, "status": a.status,
+            "priority": a.priority, "notes": a.notes,
+            "assigned_tenants": assigned,
+            "created_at": a.created_at.isoformat() if a.created_at else None,
+        })
+    return result
+
+
+@router.post("/ai-accounts", status_code=201)
+async def create_ai_account(req: AIAccountCreate, user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    """AI CLI 계정 추가."""
+    require_superadmin(user)
+    import uuid as _uuid
+    account = AIAccount(
+        id=_uuid.uuid4(), provider=req.provider, name=req.name,
+        config_dir=req.config_dir, notes=req.notes,
+    )
+    db.add(account)
+    await db.flush()
+    return {"id": str(account.id), "message": f"{req.provider} 계정 추가 완료"}
+
+
+@router.put("/ai-accounts/{account_id}")
+async def update_ai_account(account_id: UUID, req: AIAccountUpdate, user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    """AI CLI 계정 수정 (상태 변경, 블락 처리 등)."""
+    require_superadmin(user)
+    account = (await db.execute(select(AIAccount).where(AIAccount.id == account_id))).scalar_one_or_none()
+    if not account:
+        raise HTTPException(404)
+    if req.name is not None: account.name = req.name
+    if req.config_dir is not None: account.config_dir = req.config_dir
+    if req.status is not None: account.status = req.status
+    if req.priority is not None: account.priority = req.priority
+    if req.notes is not None: account.notes = req.notes
+    return {"message": "수정 완료"}
+
+
+@router.delete("/ai-accounts/{account_id}", status_code=204)
+async def delete_ai_account(account_id: UUID, user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    """AI CLI 계정 삭제."""
+    require_superadmin(user)
+    account = (await db.execute(select(AIAccount).where(AIAccount.id == account_id))).scalar_one_or_none()
+    if not account:
+        raise HTTPException(404)
+    # 배정된 캠프 해제
+    await db.execute(text("UPDATE tenants SET ai_account_id = NULL WHERE ai_account_id = :aid"), {"aid": str(account_id)})
+    await db.delete(account)
+
+
+@router.post("/ai-accounts/{account_id}/assign")
+async def assign_ai_account(account_id: UUID, user: CurrentUser, db: AsyncSession = Depends(get_db), tenant_ids: list[str] = []):
+    """캠프에 AI 계정 배정."""
+    require_superadmin(user)
+    for tid in tenant_ids:
+        await db.execute(text("UPDATE tenants SET ai_account_id = :aid WHERE id = :tid"), {"aid": str(account_id), "tid": tid})
+    return {"message": f"{len(tenant_ids)}개 캠프에 배정 완료"}
+
+
+# ──── 고객 API 키 관리 (관리자가 대행) ────
+
+class TenantAPIKeyUpdate(BaseModel):
+    anthropic_api_key: Optional[str] = None
+    openai_api_key: Optional[str] = None
+
+
+@router.put("/tenants/{tenant_id}/api-keys")
+async def update_tenant_api_keys(tenant_id: UUID, req: TenantAPIKeyUpdate, user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    """고객의 API 키 설정 (관리자 또는 본인)."""
+    tenant = (await db.execute(select(Tenant).where(Tenant.id == tenant_id))).scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(404)
+    # 권한: 슈퍼관리자 또는 해당 캠프 관리자
+    if not user.get("is_superadmin") and str(tenant_id) != user.get("tenant_id"):
+        raise HTTPException(403)
+    if req.anthropic_api_key is not None:
+        tenant.anthropic_api_key = req.anthropic_api_key or None
+    if req.openai_api_key is not None:
+        tenant.openai_api_key = req.openai_api_key or None
+    return {"message": "API 키 업데이트 완료"}

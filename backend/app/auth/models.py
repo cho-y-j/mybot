@@ -104,6 +104,11 @@ class Tenant(Base):
     setup_completed = Column(Boolean, default=False, comment="관리자 초기 셋팅 완료 여부")
     setup_notes = Column(Text, nullable=True, comment="관리자 셋팅 메모")
 
+    # AI API Keys (고객이 직접 입력, 암호화 저장)
+    anthropic_api_key = Column(String(500), nullable=True, comment="고객 Claude API 키")
+    openai_api_key = Column(String(500), nullable=True, comment="고객 OpenAI API 키")
+    ai_account_id = Column(UUID(as_uuid=True), nullable=True, comment="배정된 CLI 계정 ID")
+
     # Timestamps
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
@@ -111,6 +116,21 @@ class Tenant(Base):
     # Relationships
     members = relationship("User", back_populates="tenant")
     elections = relationship("Election", back_populates="tenant", cascade="all, delete-orphan")
+
+
+class AIAccount(Base):
+    """AI CLI 계정 풀. 관리자가 등록, 캠프에 배정."""
+    __tablename__ = "ai_accounts"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    provider = Column(String(20), nullable=False, comment="claude | chatgpt")
+    name = Column(String(100), nullable=False, comment="계정 식별명 (예: Claude Max #1)")
+    config_dir = Column(String(500), nullable=True, comment="CLI config 디렉토리 경로")
+    status = Column(String(20), default="active", comment="active | blocked | inactive")
+    priority = Column(Integer, default=0, comment="낮을수록 우선 사용")
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
 class RefreshToken(Base):

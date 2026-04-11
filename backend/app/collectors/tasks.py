@@ -13,6 +13,10 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 import structlog
 
+# ORM 모델 사전 로드 (relationship 해소)
+import app.auth.models  # noqa: F401 — Tenant, AIAccount 등
+import app.elections.models  # noqa: F401
+
 logger = structlog.get_logger()
 settings = get_settings()
 
@@ -114,6 +118,20 @@ def collect_news(self, tenant_id: str, election_id: str, schedule_id: str):
                     text = f"{article['title']} {article.get('description', '')}"
                     sentiment, score = analyzer.analyze(text)
 
+                    # 기사 날짜 파싱
+                    pub_at = None
+                    raw_date = article.get("pub_date") or article.get("pubDate")
+                    if raw_date:
+                        try:
+                            from email.utils import parsedate_to_datetime
+                            pub_at = parsedate_to_datetime(raw_date)
+                        except Exception:
+                            try:
+                                from datetime import datetime as _dt
+                                pub_at = _dt.fromisoformat(raw_date.replace("Z", "+00:00"))
+                            except Exception:
+                                pass
+
                     session.add(NewsArticle(
                         tenant_id=tenant_id,
                         election_id=election_id,
@@ -122,6 +140,7 @@ def collect_news(self, tenant_id: str, election_id: str, schedule_id: str):
                         url=article["url"],
                         source=article.get("source", ""),
                         summary=article.get("description", "")[:300],
+                        published_at=pub_at,
                         sentiment=sentiment,
                         sentiment_score=score,
                         platform=article.get("platform", "naver"),
@@ -198,6 +217,20 @@ def collect_community(self, tenant_id: str, election_id: str, schedule_id: str):
                     sentiment, score = analyzer.analyze(text)
                     relevance = calculate_relevance(text, cand_names)
 
+                    # 게시 날짜 파싱
+                    post_pub_at = None
+                    raw_pd = post.get("postdate") or post.get("pub_date") or post.get("pubDate")
+                    if raw_pd:
+                        try:
+                            from datetime import datetime as _dt
+                            if len(raw_pd) == 8:  # "20260411"
+                                post_pub_at = _dt.strptime(raw_pd, "%Y%m%d").replace(tzinfo=timezone.utc)
+                            else:
+                                from email.utils import parsedate_to_datetime
+                                post_pub_at = parsedate_to_datetime(raw_pd)
+                        except Exception:
+                            pass
+
                     session.add(CommunityPost(
                         tenant_id=tenant_id,
                         election_id=election_id,
@@ -206,6 +239,7 @@ def collect_community(self, tenant_id: str, election_id: str, schedule_id: str):
                         url=post["url"],
                         source=post.get("author", ""),
                         content_snippet=post.get("description", "")[:200],
+                        published_at=post_pub_at,
                         sentiment=sentiment,
                         sentiment_score=score,
                         relevance_score=relevance / 100.0,
@@ -688,10 +722,10 @@ def full_collection(self, tenant_id: str, election_id: str):
             select(ScheduleConfig).where(
                 ScheduleConfig.election_id == election_id,
                 ScheduleConfig.tenant_id == tenant_id,
-                ScheduleConfig.schedule_type == "full_collection",
+                ScheduleConfig.schedule_type.in_(["full_collection", "full_with_briefing"]),
                 ScheduleConfig.enabled == True,
             )
-        ).scalar_one_or_none()
+        ).scalars().first()
 
         schedule_id = str(schedule.id) if schedule else None
 

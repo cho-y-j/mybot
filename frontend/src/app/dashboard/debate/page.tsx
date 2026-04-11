@@ -150,9 +150,31 @@ export default function DebatePage() {
           onClick={generate} disabled={loading}
           className="w-full py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50"
         >
-          {loading ? 'AI 분석 중...' : '토론 대본 생성'}
+          {loading ? '토론 대본 생성' : '토론 대본 생성'}
         </button>
       </div>
+
+      {/* 작성 중 표시 */}
+      {loading && (
+        <div className="card bg-gradient-to-br from-blue-500/5 to-violet-500/5 border-blue-500/30">
+          <div className="flex items-center gap-4 py-6">
+            <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full flex-shrink-0" />
+            <div>
+              <div className="font-bold text-lg">토론 대본 작성 중...</div>
+              <p className="text-sm text-[var(--muted)] mt-1">
+                수집된 뉴스·커뮤니티·여론조사 데이터를 분석하여 대본을 작성하고 있습니다.<br/>
+                선거법 검증까지 포함하여 약 30초~1분 소요됩니다.
+              </p>
+            </div>
+          </div>
+          <div className="space-y-2 text-xs text-[var(--muted)]">
+            <div className="flex items-center gap-2"><span className="text-green-500">✓</span> 상대 후보 뉴스 분석</div>
+            <div className="flex items-center gap-2"><span className="text-green-500">✓</span> 커뮤니티 여론 수집</div>
+            <div className="flex items-center gap-2"><span className="text-green-500">✓</span> 여론조사 데이터 반영</div>
+            <div className="flex items-center gap-2"><div className="animate-pulse text-blue-500">●</div> AI 대본 생성 + 선거법 검증</div>
+          </div>
+        </div>
+      )}
 
       {/* 결과 */}
       {result && !result.error && (

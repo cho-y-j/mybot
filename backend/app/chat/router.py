@@ -26,6 +26,7 @@ settings = get_settings()
 class ChatRequest(BaseModel):
     message: str
     election_id: Optional[str] = None
+    model_tier: Optional[str] = None  # fast / standard / premium
 
 
 class ChatResponse(BaseModel):
@@ -84,7 +85,7 @@ async def chat_send(
     context = await build_chat_context(db, tid, election_id, req.message)
 
     # AI 호출 (Claude API 또는 로컬 분석)
-    reply = await _get_ai_response(req.message, context)
+    reply = await _get_ai_response(req.message, context, model_tier=req.model_tier)
 
     # 사용된 컨텍스트 섹션 추출
     sections_used = [
@@ -100,7 +101,7 @@ async def chat_send(
     )
 
 
-async def _get_ai_response(question: str, context: str) -> str:
+async def _get_ai_response(question: str, context: str, model_tier: str | None = None) -> str:
     """
     AI 응답 생성 우선순위:
     1순위: Claude CLI (고객 구독 — 비용 0원)
@@ -112,7 +113,7 @@ async def _get_ai_response(question: str, context: str) -> str:
 
     # 1순위: Claude CLI (고객의 구독 계정)
     try:
-        result = await _call_claude_cli(question, context)
+        result = await _call_claude_cli(question, context, model_tier)
         if result:
             return result
     except Exception as e:
@@ -146,23 +147,29 @@ async def _get_ai_response(question: str, context: str) -> str:
     return _generate_data_response(question, context)
 
 
-async def _call_claude_cli(question: str, context: str) -> str | None:
+async def _call_claude_cli(question: str, context: str, model_tier: str | None = None) -> str | None:
     """
     Claude CLI로 AI 응답 (고객의 구독 계정 사용, 비용 0원).
-    claude -p "프롬프트" 형태로 실행.
+    claude -p "프롬프트" --model <모델> 형태로 실행.
     """
     import asyncio
     import shutil
+    from app.services.ai_service import get_model_for_context
 
     claude_path = shutil.which("claude")
     if not claude_path:
         return None
+
+    # 챗 context에 맞는 모델 선택
+    chat_context = f"chat_{model_tier}" if model_tier else "chat"
+    model = get_model_for_context(chat_context, model_tier)
 
     prompt = f"[수집된 선거 데이터]\n{context}\n\n[질문]\n{question}"
 
     try:
         proc = await asyncio.create_subprocess_exec(
             claude_path, "-p", prompt,
+            "--model", model,
             "--system-prompt", SYSTEM_PROMPT,
             "--permission-mode", "plan",
             "--no-session-persistence",
@@ -174,7 +181,7 @@ async def _call_claude_cli(question: str, context: str) -> str | None:
         if proc.returncode == 0 and stdout:
             result = stdout.decode("utf-8").strip()
             if result:
-                logger.info("claude_cli_success", length=len(result))
+                logger.info("claude_cli_success", model=model, tier=model_tier or "standard", length=len(result))
                 return result
         return None
     except asyncio.TimeoutError:
