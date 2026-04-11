@@ -534,7 +534,13 @@ export default function YouTubePage() {
                   {d.is_ours && <span className="text-xs bg-blue-500/10 text-blue-500 px-2 py-0.5 rounded-full">우리 후보</span>}
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {d.videos.slice(0, 9).map((v: any, i: number) => (
+                  {[...d.videos]
+                    .sort((a: any, b: any) => {
+                      const ta = a.published_at || a.collected_at || '';
+                      const tb = b.published_at || b.collected_at || '';
+                      return tb.localeCompare(ta);
+                    })
+                    .slice(0, 9).map((v: any, i: number) => (
                     <a key={i} href={`https://www.youtube.com/watch?v=${v.video_id}`}
                       target="_blank" rel="noopener noreferrer"
                       className="rounded-xl border border-[var(--card-border)] p-3 hover:border-blue-500/30 transition block">

@@ -2,11 +2,10 @@
 ElectionPulse - AI 미디어 콘텐츠 전략 분석
 모든 콘텐츠를 4사분면(우리 vs 경쟁자 × 긍정 vs 부정)으로 자동 분류.
 Batch 모드: 한 번 호출에 5~10건 처리 → 비용/시간 5배 효율.
+
+AI 호출은 반드시 app.services.ai_service.call_claude() 경유 (고객 API키 → 배정 CLI → 시스템 CLI 자동 전환).
 """
-import asyncio
 import json
-import shutil
-from typing import Optional
 import structlog
 
 logger = structlog.get_logger()
@@ -18,6 +17,8 @@ async def analyze_batch_strategic(
     rival_candidate_names: list[str],
     election_type: str = "시장",
     region: str = "",
+    tenant_id: str | None = None,
+    db = None,
 ) -> list[dict]:
     """
     여러 콘텐츠를 한 번의 Claude 호출로 전략 분석.
@@ -28,8 +29,7 @@ async def analyze_batch_strategic(
                "action_priority": "...", "action_summary": "...",
                "summary": "...", "topics": [...], "threat_level": "..."}]
     """
-    claude_path = shutil.which("claude")
-    if not claude_path or not items:
+    if not items:
         return []
 
     region_clause = f"{region} " if region else ""
@@ -74,10 +74,23 @@ async def analyze_batch_strategic(
 
 ▶ 단순 정보/제3자/지역 일반 뉴스 = neutral
 
+★★ sentiment 감성 분류 규칙 (절대 준수) ★★
+sentiment는 기사의 객관적 톤이다. neutral 남발 금지! 대부분의 선거 기사는 positive 또는 negative다.
+
+- strength (우리 후보 능동 행동) → sentiment = positive (공약발표, 시민면담, 입장표명 등)
+- weakness (우리 후보 위기) → sentiment = negative (의혹, 비판, 논란 등)
+- opportunity (경쟁자 리스크) → sentiment = negative (비판적 보도 톤)
+- threat (경쟁자 위협) → sentiment = positive (성과/동원 긍정 보도 톤)
+- neutral (제3자/일반 뉴스) → sentiment = neutral
+
+★ neutral은 정말 팩트만 나열하고 어떤 판단도 없는 기사에만 써라.
+★ "~를 발표했다", "~를 약속했다" = positive. "~가 논란이다", "~에 반발" = negative.
+★ 의심스러우면 positive 또는 negative 중 하나를 골라라. neutral은 최후의 수단이다.
+
 ★★ 분류 필드 ★★
 1. is_relevant: 동명이인/무관 콘텐츠 검증 (산은캐피탈 사외이사, 야구선수, 군 병장, 다른 지역 정치인 등은 false)
 2. is_about_our_candidate: 우리 후보 본인/우리 캠프 관련이면 true. 경쟁 후보 단독 관련이면 false.
-3. sentiment: 콘텐츠의 객관적 톤 (positive/negative/neutral)
+3. sentiment: 위 감성 규칙에 따라 positive/negative/neutral (neutral 남발 금지!)
 4. strategic_value: 위 사건/행동 구분 룰에 따라 strength/weakness/opportunity/threat/neutral
 5. action_type:
    - strength → promote (확산)
@@ -111,26 +124,21 @@ async def analyze_batch_strategic(
 ]
 JSON array만 출력하세요. 다른 텍스트 절대 금지."""
 
+    from app.services.ai_service import call_claude
+
     try:
-        proc = await asyncio.create_subprocess_exec(
-            claude_path, "-p", prompt,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+        ai_result = await call_claude(
+            prompt,
+            timeout=120,
+            context="media_analyze_batch",
+            tenant_id=tenant_id,
+            db=db,
         )
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
-        if proc.returncode != 0 or not stdout:
+        if not ai_result or "items" not in ai_result:
             logger.warning("ai_batch_no_output", count=len(items))
             return []
 
-        text = stdout.decode("utf-8").strip()
-        # JSON array 추출
-        start = text.find("[")
-        end = text.rfind("]") + 1
-        if start < 0 or end <= start:
-            logger.warning("ai_batch_no_json", text=text[:200])
-            return []
-
-        results = json.loads(text[start:end])
+        results = ai_result["items"]
         if not isinstance(results, list):
             return []
 
@@ -159,6 +167,17 @@ JSON array만 출력하세요. 다른 텍스트 절대 금지."""
                 r["sentiment_score"] = 0.0
             if not isinstance(r.get("topics"), list):
                 r["topics"] = []
+            # ★ strategic_value-sentiment 정합성 보정 (AI가 neutral 남발 시 교정)
+            sval = r["strategic_value"]
+            sent = r["sentiment"]
+            if sval in ("strength", "threat") and sent == "neutral":
+                r["sentiment"] = "positive"
+                if r["sentiment_score"] == 0.0:
+                    r["sentiment_score"] = 0.5
+            elif sval in ("weakness", "opportunity") and sent == "neutral":
+                r["sentiment"] = "negative"
+                if r["sentiment_score"] == 0.0:
+                    r["sentiment_score"] = -0.5
             # 무관 콘텐츠 강제 중립화
             if not r["is_relevant"]:
                 r["sentiment"] = "neutral"
@@ -170,138 +189,11 @@ JSON array만 출력하세요. 다른 텍스트 절대 금지."""
         logger.info("ai_batch_done", input=len(items), output=len(results))
         return results
 
-    except asyncio.TimeoutError:
-        logger.warning("ai_batch_timeout", count=len(items))
-        return []
     except Exception as e:
-        logger.warning("ai_batch_error", error=str(e), count=len(items))
+        logger.error("ai_batch_error", error=str(e), count=len(items))
+        from app.common.ai_alert import fire_and_forget_alert
+        fire_and_forget_alert(e, f"배치 전략분석 실패 ({len(items)}건)")
         return []
-
-
-async def analyze_content_with_ai(
-    title: str,
-    description: str,
-    candidate_name: str,
-    content_type: str = "news",  # news | youtube | community
-    election_type: str = "시장",
-    region: str = "",
-) -> Optional[dict]:
-    """
-    콘텐츠를 Claude로 분석하여 구조화된 인사이트 반환.
-
-    Returns: {
-        "is_relevant": true/false,           # ★ 후보 본인과 관련 있는지 (동명이인 검증)
-        "summary": "1-2문장 요약",
-        "reason": "왜 긍정/부정인지 한 문장 이유",
-        "topics": ["급식", "교권", ...],
-        "threat_level": "none|low|medium|high",
-        "sentiment": "positive|negative|neutral",
-        "sentiment_score": -1.0 ~ 1.0,
-    }
-    """
-    claude_path = shutil.which("claude")
-    if not claude_path:
-        return None
-
-    type_label = {"news": "뉴스 기사", "youtube": "유튜브 영상", "community": "커뮤니티 게시글"}.get(content_type, "콘텐츠")
-    region_clause = f"{region} " if region else ""
-
-    prompt = f"""당신은 {region_clause}{election_type} 선거 캠프의 미디어 분석 전문가입니다.
-분석 대상 후보: {candidate_name} ({region_clause}{election_type} 후보)
-
-다음 {type_label}을 분석하세요:
-제목: {title}
-내용: {description[:800]}
-
-★★ 가장 중요한 첫 번째 판단: 동명이인 검증 ★★
-이 콘텐츠의 "{candidate_name}" 이 정말 {region_clause}{election_type} 후보 본인인가?
-- 산은캐피탈 사외이사, 야구선수, 군 병장, 기업체 임원, 교수, 배우 등 다른 인물이면 false
-- 다른 지역의 정치인, 다른 직책의 동명이인이면 false
-- 우리 후보 본인 또는 우리 후보 캠프/선거 관련 기사이면 true
-
-반드시 아래 JSON 형식으로만 답변하세요 (다른 텍스트 절대 금지):
-{{
-  "is_relevant": true,
-  "relevance_reason": "왜 본인/타인 판단했는지 한 줄",
-  "summary": "핵심 내용 1-2문장 요약",
-  "reason": "{candidate_name}에게 왜 긍정/부정/중립인지 한 문장 이유",
-  "topics": ["주제1", "주제2"],
-  "threat_level": "none|low|medium|high",
-  "sentiment": "positive|negative|neutral",
-  "sentiment_score": 0.5
-}}
-
-분석 기준:
-- is_relevant: 가장 중요. 동명이인이면 false 처리하고 sentiment=neutral, threat_level=none
-- summary: 객관적 요약 (50자 이내)
-- reason: 후보 관점에서 의미 (짧고 명확하게)
-- topics: 다루는 정책/이슈 키워드 (1~3개)
-- threat_level: 위협도 (none/low/medium/high)
-- sentiment: 전반적 톤
-- sentiment_score: -1.0 (매우 부정) ~ 1.0 (매우 긍정)
-
-JSON만 출력하세요."""
-
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            claude_path, "-p", prompt,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=45)
-
-        if proc.returncode != 0 or not stdout:
-            return None
-
-        text = stdout.decode("utf-8").strip()
-
-        # JSON 부분 추출
-        start = text.find("{")
-        end = text.rfind("}") + 1
-        if start < 0 or end <= start:
-            return None
-
-        result = json.loads(text[start:end])
-
-        # 필수 필드 검증
-        if not result.get("summary"):
-            return None
-
-        # 정규화
-        result["threat_level"] = result.get("threat_level", "none").lower()
-        if result["threat_level"] not in ["none", "low", "medium", "high"]:
-            result["threat_level"] = "none"
-
-        result["sentiment"] = result.get("sentiment", "neutral").lower()
-        if result["sentiment"] not in ["positive", "negative", "neutral"]:
-            result["sentiment"] = "neutral"
-
-        try:
-            result["sentiment_score"] = float(result.get("sentiment_score", 0))
-        except:
-            result["sentiment_score"] = 0.0
-
-        if not isinstance(result.get("topics"), list):
-            result["topics"] = []
-
-        # is_relevant 정규화 (default true — AI가 명시하지 않으면 통과)
-        result["is_relevant"] = bool(result.get("is_relevant", True))
-        result["relevance_reason"] = str(result.get("relevance_reason", ""))[:200]
-
-        # 무관 콘텐츠는 강제 중립 처리 (오염된 통계 방지)
-        if not result["is_relevant"]:
-            result["sentiment"] = "neutral"
-            result["sentiment_score"] = 0.0
-            result["threat_level"] = "none"
-
-        return result
-
-    except asyncio.TimeoutError:
-        logger.warning("ai_analysis_timeout", title=title[:50])
-        return None
-    except Exception as e:
-        logger.warning("ai_analysis_error", error=str(e), title=title[:50])
-        return None
 
 
 async def _get_election_context(db_session, election_id: str) -> dict:
@@ -336,11 +228,21 @@ async def _get_election_context(db_session, election_id: str) -> dict:
     }
 
 
+_VALID_TABLES = {
+    "news_articles": "summary",
+    "community_posts": "content_snippet",
+    "youtube_videos": "description_snippet",
+}
+
+
 async def _analyze_table_strategic(
     db_session, tenant_id: str, election_id: str,
     table: str, content_col: str, limit: int = 30, batch_size: int = 8,
 ) -> dict:
     """공통 batch 전략 분석 — news/community/youtube에 재사용."""
+    # SQL Injection 방지
+    if table not in _VALID_TABLES or content_col not in _VALID_TABLES.values():
+        return {"analyzed": 0, "irrelevant": 0, "by_quadrant": {}, "error": "invalid_table"}
     from sqlalchemy import text as sql_text
 
     ctx = await _get_election_context(db_session, election_id)
@@ -378,6 +280,8 @@ async def _analyze_table_strategic(
             rival_candidate_names=ctx["rival_names"],
             election_type=ctx["type_label"],
             region=ctx["region"],
+            tenant_id=tenant_id,
+            db=db_session,
         )
         # id로 매핑
         result_by_id = {r.get("id"): r for r in results if r.get("id")}
@@ -402,6 +306,7 @@ async def _analyze_table_strategic(
                     sentiment = :sentiment,
                     sentiment_score = :score,
                     strategic_value = :sval,
+                    strategic_quadrant = :sval,
                     action_type = :atype,
                     action_priority = :apri,
                     action_summary = :asum,
@@ -427,7 +332,98 @@ async def _analyze_table_strategic(
             analyzed += 1
 
     await db_session.commit()
-    return {"analyzed": analyzed, "irrelevant": irrelevant, "by_quadrant": by_quadrant}
+
+    # ── Opus 검증 단계 ──
+    verified_count, changed_count = await _verify_with_opus(
+        db_session, tenant_id, election_id, table, content_col,
+    )
+
+    return {
+        "analyzed": analyzed,
+        "irrelevant": irrelevant,
+        "by_quadrant": by_quadrant,
+        "verified": verified_count,
+        "changed_by_opus": changed_count,
+    }
+
+
+async def _verify_with_opus(
+    db_session, tenant_id: str, election_id: str,
+    table: str, content_col: str, limit: int = 60,
+) -> tuple[int, int]:
+    """Sonnet 1차 분석 후 positive/negative 항목을 Opus로 검증 + 교정.
+
+    neutral은 스킵 (비용 절약). 검증 완료 시 sentiment_verified=TRUE.
+    Returns: (verified_count, changed_count)
+    """
+    if table not in _VALID_TABLES:
+        return 0, 0
+    from sqlalchemy import text as sql_text
+    from app.analysis.sentiment import SentimentAnalyzer
+
+    rows = (await db_session.execute(sql_text(f"""
+        SELECT t.id, t.title, t.{content_col}, t.sentiment,
+               t.is_about_our_candidate, c.name
+        FROM {table} t
+        LEFT JOIN candidates c ON t.candidate_id = c.id
+        WHERE t.tenant_id = :tid AND t.election_id = :eid
+          AND t.sentiment_verified = FALSE
+          AND t.sentiment IN ('positive', 'negative')
+          AND t.ai_analyzed_at IS NOT NULL
+        ORDER BY t.ai_analyzed_at DESC
+        LIMIT :lim
+    """), {"tid": tenant_id, "eid": election_id, "lim": limit})).all()
+
+    if not rows:
+        return 0, 0
+
+    items = [
+        {
+            "id": str(r[0]),
+            "text": f"{r[1] or ''} {r[2] or ''}".strip(),
+            "current_sentiment": r[3],
+            "is_our_candidate": bool(r[4]),
+            "candidate_name": r[5] or "",
+        }
+        for r in rows
+    ]
+
+    analyzer = SentimentAnalyzer()
+    verified_results = await analyzer.verify_batch_with_opus(
+        items, tenant_id=tenant_id, db=db_session,
+    )
+
+    verified_count = 0
+    changed_count = 0
+    for v in verified_results:
+        quadrant_clause = ""
+        params = {
+            "id": v["id"],
+            "s": v["sentiment"],
+            "score": v["score"],
+        }
+        if v.get("quadrant"):
+            # strategic_value와 strategic_quadrant 동시 업데이트 (프론트 호환)
+            quadrant_clause = ", strategic_value = :q, strategic_quadrant = :q"
+            params["q"] = v["quadrant"]
+
+        await db_session.execute(sql_text(f"""
+            UPDATE {table} SET
+                sentiment = :s,
+                sentiment_score = :score{quadrant_clause},
+                sentiment_verified = TRUE
+            WHERE id = :id
+        """), params)
+        verified_count += 1
+        if v.get("changed"):
+            changed_count += 1
+
+    await db_session.commit()
+    logger.info(
+        "opus_verified",
+        table=table, verified=verified_count, changed=changed_count,
+    )
+    return verified_count, changed_count
 
 
 

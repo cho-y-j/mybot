@@ -55,21 +55,33 @@ async def set_cache(
     cache_type: str,
     data: dict,
 ) -> None:
-    """캐시 저장 (upsert)."""
+    """캐시 저장 (upsert).
+    NOT NULL 컬럼(analysis_type, analysis_date, result_data)도 함께 채움."""
     try:
         clean_data = {k: v for k, v in data.items() if not k.startswith("_cached")}
+        data_json = json.dumps(clean_data, ensure_ascii=False, default=str)
         await db.execute(text(
-            "INSERT INTO analysis_cache (id, tenant_id, election_id, cache_type, data, created_at) "
-            "VALUES (:id, :tid, :eid, :ctype, :data, NOW()) "
+            "INSERT INTO analysis_cache "
+            "  (id, tenant_id, election_id, cache_type, data, "
+            "   analysis_type, analysis_date, result_data, created_at) "
+            "VALUES (:id, :tid, :eid, :ctype, :data, "
+            "        :ctype, CURRENT_DATE, :data, NOW()) "
             "ON CONFLICT (tenant_id, election_id, cache_type) "
-            "DO UPDATE SET data = EXCLUDED.data, created_at = NOW()"
+            "DO UPDATE SET data = EXCLUDED.data, "
+            "              result_data = EXCLUDED.result_data, "
+            "              created_at = NOW()"
         ), {
             "id": str(uuid.uuid4()),
             "tid": str(tenant_id),
             "eid": str(election_id),
             "ctype": cache_type,
-            "data": json.dumps(clean_data, ensure_ascii=False, default=str),
+            "data": data_json,
         })
         await db.commit()
     except Exception as e:
+        # 실패 시 세션 rollback으로 트랜잭션 오염 방지
+        try:
+            await db.rollback()
+        except Exception:
+            pass
         logger.warning("cache_write_error", cache_type=cache_type, error=str(e)[:200])

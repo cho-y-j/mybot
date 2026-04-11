@@ -3,9 +3,7 @@ ElectionPulse - Competitor Gap Analysis (B2)
 우리 후보가 경쟁자 대비 부족한 점을 객관적으로 분석.
 실제 DB 데이터 기반, 모든 수치는 실데이터.
 """
-import asyncio
 import json
-import shutil
 from datetime import date, timedelta
 from typing import Optional
 
@@ -15,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.elections.models import (
     Candidate, NewsArticle, CommunityPost,
-    YouTubeVideo, SearchTrend,
+    YouTubeVideo, SearchTrend, Survey,
 )
 from app.analysis.sentiment import TrendDetector
 
@@ -41,13 +39,27 @@ async def analyze_competitor_gaps(
     """
     since = date.today() - timedelta(days=days)
 
-    candidates = (await db.execute(
+    from app.common.election_access import get_election_tenant_ids, get_our_candidate_id
+    all_tids = await get_election_tenant_ids(db, election_id)
+    our_cand_id = await get_our_candidate_id(db, tenant_id, election_id)
+
+    all_candidates = (await db.execute(
         select(Candidate).where(
             Candidate.election_id == election_id,
-            Candidate.tenant_id == tenant_id,
+            Candidate.tenant_id.in_(all_tids),
             Candidate.enabled == True,
         ).order_by(Candidate.priority)
     )).scalars().all()
+
+    # 중복 제거 + 우리 후보 동적 설정
+    seen = set()
+    candidates = []
+    for c in all_candidates:
+        if c.name not in seen:
+            seen.add(c.name)
+            if our_cand_id:
+                c.is_our_candidate = (str(c.id) == our_cand_id)
+            candidates.append(c)
 
     our = next((c for c in candidates if c.is_our_candidate), None)
     if not our:
@@ -77,10 +89,15 @@ async def analyze_competitor_gaps(
         )
         _categorize(result, gaps, strengths, parity)
 
-    # ── 2. 긍정/부정 비율 비교 ──
+    # ── 2. 긍정/부정 비율 비교 (neutral 제외한 유효 감성 기준) ──
     our_sent = await _get_sentiment_ratio(db, our.id, since)
     for comp in competitors:
         comp_sent = await _get_sentiment_ratio(db, comp.id, since)
+
+        # 유효 감성 건수 경고 (neutral이 너무 많으면 신뢰도 낮음)
+        our_quality = "low" if our_sent["neutral_rate"] > 70 else "good"
+        comp_quality = "low" if comp_sent["neutral_rate"] > 70 else "good"
+
         result = _compare_metric(
             area="긍정 뉴스 비율",
             our_value=round(our_sent["pos_rate"], 1),
@@ -89,6 +106,9 @@ async def analyze_competitor_gaps(
             unit="%",
             higher_is_better=True,
         )
+        result["our_effective"] = our_sent["effective_count"]
+        result["comp_effective"] = comp_sent["effective_count"]
+        result["quality_warning"] = our_quality == "low" or comp_quality == "low"
         _categorize(result, gaps, strengths, parity)
 
         # 부정 비율 (낮을수록 좋음)
@@ -100,6 +120,9 @@ async def analyze_competitor_gaps(
             unit="%",
             higher_is_better=False,  # 낮을수록 좋음
         )
+        result_neg["our_effective"] = our_sent["effective_count"]
+        result_neg["comp_effective"] = comp_sent["effective_count"]
+        result_neg["quality_warning"] = our_quality == "low" or comp_quality == "low"
         _categorize(result_neg, gaps, strengths, parity)
 
     # ── 3. 커뮤니티 언급 비교 ──
@@ -156,7 +179,37 @@ async def analyze_competitor_gaps(
         )
         _categorize(result, gaps, strengths, parity)
 
-    # ── 6. 이슈 커버리지 갭 분석 ──
+    # ── 6. 여론조사 지지율 비교 ──
+    our_support = await _get_latest_support(db, tenant_id, election_id, our.name)
+    for comp in competitors:
+        comp_support = await _get_latest_support(db, tenant_id, election_id, comp.name)
+        if our_support > 0 or comp_support > 0:
+            result = _compare_metric(
+                area="여론조사 지지율",
+                our_value=our_support,
+                comp_value=comp_support,
+                comp_name=comp.name,
+                unit="%p",
+                higher_is_better=True,
+            )
+            _categorize(result, gaps, strengths, parity)
+
+    # ── 7. 유튜브 참여율 비교 ──
+    our_engagement = await _get_youtube_engagement(db, our.id)
+    for comp in competitors:
+        comp_engagement = await _get_youtube_engagement(db, comp.id)
+        if our_engagement > 0 or comp_engagement > 0:
+            result = _compare_metric(
+                area="유튜브 참여율",
+                our_value=our_engagement,
+                comp_value=comp_engagement,
+                comp_name=comp.name,
+                unit="%",
+                higher_is_better=True,
+            )
+            _categorize(result, gaps, strengths, parity)
+
+    # ── 8. 이슈 커버리지 갭 분석 ──
     issue_gaps = await _analyze_issue_gaps(db, our.id, competitors)
     gaps.extend(issue_gaps)
 
@@ -165,7 +218,8 @@ async def analyze_competitor_gaps(
     gaps.sort(key=lambda x: severity_order.get(x.get("severity", "info"), 9))
 
     # ── AI 요약 생성 ──
-    ai_summary = await _generate_ai_summary(gaps, strengths, our.name)
+    # AI 요약은 수동 트리거 시에만 생성 — 기본은 fallback
+    ai_summary = _fallback_summary(gaps, strengths, our.name)
 
     return {
         "gaps": gaps,
@@ -210,12 +264,17 @@ async def _get_sentiment_ratio(db: AsyncSession, candidate_id, since: date) -> d
         )
     )).scalar() or 0
 
+    neutral = total - pos - neg
+    effective = pos + neg  # neutral 제외 — 감성 판단된 건만 비율 계산
     return {
         "total": total,
         "positive": pos,
         "negative": neg,
-        "pos_rate": (pos / total * 100) if total > 0 else 0,
-        "neg_rate": (neg / total * 100) if total > 0 else 0,
+        "neutral": neutral,
+        "effective_count": effective,
+        "pos_rate": (pos / effective * 100) if effective > 0 else 50,
+        "neg_rate": (neg / effective * 100) if effective > 0 else 50,
+        "neutral_rate": (neutral / total * 100) if total > 0 else 0,
     }
 
 
@@ -251,6 +310,49 @@ async def _get_search_volume(
         .limit(1)
     )).scalar()
     return float(result) if result else 0.0
+
+
+async def _get_latest_support(
+    db: AsyncSession, tenant_id: str, election_id: str, candidate_name: str,
+) -> float:
+    """최신 여론조사에서 후보 지지율 가져오기."""
+    import json as _json
+    surveys = (await db.execute(
+        select(Survey).where(
+            Survey.tenant_id == tenant_id,
+            Survey.election_id == election_id,
+        ).order_by(Survey.survey_date.desc()).limit(3)
+    )).scalars().all()
+
+    for s in surveys:
+        results = s.results
+        if isinstance(results, str):
+            try:
+                results = _json.loads(results)
+            except:
+                continue
+        if isinstance(results, dict) and candidate_name in results:
+            val = results[candidate_name]
+            if isinstance(val, (int, float)) and val > 0:
+                return float(val)
+    return 0.0
+
+
+async def _get_youtube_engagement(db: AsyncSession, candidate_id) -> float:
+    """유튜브 참여율 (좋아요+댓글)/조회수 %."""
+    stats = await _get_youtube_stats(db, candidate_id)
+    likes = (await db.execute(
+        select(func.coalesce(func.sum(YouTubeVideo.likes), 0))
+        .where(YouTubeVideo.candidate_id == candidate_id)
+    )).scalar() or 0
+    comments = (await db.execute(
+        select(func.coalesce(func.sum(YouTubeVideo.comments_count), 0))
+        .where(YouTubeVideo.candidate_id == candidate_id)
+    )).scalar() or 0
+    views = stats["views"]
+    if views > 0:
+        return round((int(likes) + int(comments)) / views * 100, 2)
+    return 0.0
 
 
 async def _analyze_issue_gaps(
@@ -359,6 +461,8 @@ def _compare_metric(
             category = "parity"
             rec = f"{area}에서 {comp_name}과 비슷한 수준"
 
+    detail = f"{area}: {our_value}{unit} vs {comp_name} {comp_value}{unit}"
+
     return {
         "area": area,
         "our_value": our_value,
@@ -367,6 +471,7 @@ def _compare_metric(
         "severity": severity,
         "category": category,
         "recommendation": rec,
+        "detail": detail,
         "unit": unit,
     }
 
@@ -383,6 +488,8 @@ def _generate_recommendation(
         "유튜브 영상 수": f"유튜브 콘텐츠 {comp_name} 대비 부족 — 숏폼/설명 영상 제작 확대 필요",
         "유튜브 총 조회수": f"유튜브 조회수 {comp_name} 대비 부족 — 콘텐츠 홍보 및 SEO 최적화 필요",
         "검색량": f"검색량 {comp_name} 대비 부족 — 브랜드 인지도 향상 캠페인 필요",
+        "여론조사 지지율": f"지지율 {comp_name} 대비 열세 — 핵심 공약 어필 및 표적 유권자 공략 필요",
+        "유튜브 참여율": f"유튜브 참여율 {comp_name} 대비 부족 — 댓글 유도, 공유 이벤트 등 인게이지먼트 강화",
     }
     return recommendations.get(area, f"{area}에서 {comp_name} 대비 개선 필요")
 
@@ -400,11 +507,10 @@ def _categorize(result: dict, gaps: list, strengths: list, parity: list):
 
 async def _generate_ai_summary(
     gaps: list, strengths: list, our_name: str,
+    tenant_id: str | None = None, db=None,
 ) -> str:
-    """Claude CLI로 갭 분석 AI 요약."""
-    claude_path = shutil.which("claude")
-    if not claude_path:
-        return _fallback_summary(gaps, strengths, our_name)
+    """갭 분석 AI 요약. ai_service.call_claude_text 경유 — 고객 API키 자동 사용."""
+    from app.services.ai_service import call_claude_text
 
     prompt = (
         f"선거 경쟁자 대비 갭 분석 결과를 3줄로 요약해주세요.\n"
@@ -419,14 +525,13 @@ async def _generate_ai_summary(
     prompt += "\n객관적으로, 구체적으로, 한국어로 답변."
 
     try:
-        proc = await asyncio.create_subprocess_exec(
-            claude_path, "-p", prompt,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+        text = await call_claude_text(
+            prompt, timeout=60,
+            context="competitor_gap_summary",
+            tenant_id=tenant_id, db=db,
         )
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=60)
-        if proc.returncode == 0 and stdout:
-            return stdout.decode("utf-8").strip()
+        if text:
+            return text
     except Exception as e:
         logger.warning("ai_summary_error", error=str(e))
 

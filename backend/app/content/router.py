@@ -350,18 +350,39 @@ async def generate_content(
     since = dt_date.today() - timedelta(days=7)
     data_block = ""
 
-    # 최근 뉴스 요약
-    recent_news = (await db.execute(
-        select(NewsArticle.title, NewsArticle.sentiment, NewsArticle.url)
-        .where(NewsArticle.tenant_id.in_(all_tids), NewsArticle.election_id == election_id,
-               sqlfunc.date(NewsArticle.collected_at) >= since)
-        .order_by(NewsArticle.collected_at.desc()).limit(10)
-    )).all()
+    # 최근 AI 분석 뉴스 — 4사분면별 팩트
+    from sqlalchemy import text as sql_text
+    recent_news = (await db.execute(sql_text("""
+        SELECT n.title, n.strategic_quadrant, n.ai_summary, n.ai_reason,
+               n.action_summary, n.ai_threat_level, n.sentiment
+        FROM news_articles n
+        WHERE n.tenant_id = ANY(:tids) AND n.election_id = :eid
+          AND DATE(n.collected_at) >= :since
+          AND n.ai_analyzed_at IS NOT NULL
+        ORDER BY
+          CASE n.strategic_quadrant
+            WHEN 'weakness' THEN 1
+            WHEN 'opportunity' THEN 2
+            WHEN 'strength' THEN 3
+            WHEN 'threat' THEN 4
+            ELSE 5
+          END,
+          n.published_at DESC NULLS LAST
+        LIMIT 15
+    """), {
+        "tids": [str(t) for t in all_tids],
+        "eid": str(election_id),
+        "since": since,
+    })).all()
     if recent_news:
-        data_block += "\n[최근 7일 주요 뉴스]\n"
-        for n in recent_news:
-            sent = {"positive": "+", "negative": "-"}.get(n[1], "o")
-            data_block += f"[{sent}] {n[0][:50]}\n"
+        data_block += "\n[최근 7일 AI 분석 팩트 (4사분면 기반)]\n"
+        for r in recent_news:
+            sq = f"[{r.strategic_quadrant}]" if r.strategic_quadrant else "[-]"
+            data_block += f"{sq} {r.title[:70]}\n"
+            if r.ai_summary:
+                data_block += f"   요약: {r.ai_summary[:140]}\n"
+            if r.action_summary:
+                data_block += f"   액션: {r.action_summary[:100]}\n"
 
     # 커뮤니티 이슈
     hot_issues = (await db.execute(
@@ -440,6 +461,27 @@ async def generate_content(
         election.election_date.isoformat() if election.election_date else None,
     )
 
+    # ── 생성 결과 DB 저장 (Report 테이블 재사용 — 챗/히스토리에서 활용) ──
+    saved_id = None
+    try:
+        from app.elections.models import Report
+        from datetime import date as _date
+        report = Report(
+            tenant_id=user["tenant_id"],
+            election_id=election_id,
+            report_type=content_type,  # blog | sns | youtube | card | press | defense
+            title=f"[{content_type}] {topic[:200]}",
+            content_text=generated,
+            report_date=_date.today(),
+        )
+        db.add(report)
+        await db.flush()
+        saved_id = str(report.id)
+        await db.commit()
+    except Exception as save_err:
+        import structlog
+        structlog.get_logger().warning("content_save_failed", error=str(save_err)[:200])
+
     return {
         "content": generated,
         "content_type": content_type,
@@ -448,6 +490,7 @@ async def generate_content(
         "target": target,
         "compliance": compliance,
         "ai_generated": True,
+        "saved_id": saved_id,
     }
 
 
@@ -478,6 +521,97 @@ async def generate_debate_script(
         debate_format=body.format,
         speech_minutes=body.speech_minutes,
     )
+
+
+# ── Content History (생성된 콘텐츠/토론 재사용) ──
+
+@router.get("/history/{election_id}")
+async def get_content_history(
+    election_id: str,
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+    content_types: Optional[str] = None,  # "blog,sns,debate_script" 형식
+    limit: int = 30,
+    offset: int = 0,
+):
+    """캠프가 이전에 생성한 콘텐츠/토론 대본 목록.
+    report_type(content_type)으로 필터 가능. 챗/재사용/카드뉴스 재활용용.
+    """
+    from app.elections.models import Report
+    from sqlalchemy import text as sql_text
+
+    type_filter_sql = ""
+    params = {
+        "tid": user["tenant_id"],
+        "eid": election_id,
+        "limit": limit,
+        "offset": offset,
+    }
+    if content_types:
+        types = [t.strip() for t in content_types.split(",") if t.strip()]
+        if types:
+            type_filter_sql = "AND report_type = ANY(:types)"
+            params["types"] = types
+
+    # 일일/주간 브리핑 자동 생성물은 히스토리에서 제외 (사용자 수동 생성만)
+    rows = (await db.execute(sql_text(f"""
+        SELECT id, report_type, title, content_text, report_date, created_at
+        FROM reports
+        WHERE tenant_id = :tid AND election_id = :eid
+          AND report_type NOT ILIKE '%brief%'
+          AND report_type NOT ILIKE '%daily%'
+          AND report_type NOT ILIKE '%weekly%'
+          {type_filter_sql}
+        ORDER BY created_at DESC
+        LIMIT :limit OFFSET :offset
+    """), params)).all()
+
+    return {
+        "items": [
+            {
+                "id": str(r.id),
+                "content_type": r.report_type,
+                "title": r.title,
+                "preview": (r.content_text or "")[:300],
+                "body": r.content_text or "",
+                "date": r.report_date.isoformat() if r.report_date else None,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ],
+        "total": len(rows),
+        "has_more": len(rows) == limit,
+    }
+
+
+@router.get("/history-detail/{report_id}")
+async def get_content_history_detail(
+    report_id: str,
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """히스토리 1건 상세 — 재편집용 전체 본문 반환."""
+    from app.elections.models import Report
+    from sqlalchemy import text as sql_text
+
+    row = (await db.execute(sql_text("""
+        SELECT id, report_type, title, content_text, report_date, created_at, election_id
+        FROM reports
+        WHERE id = :rid AND tenant_id = :tid
+    """), {"rid": report_id, "tid": user["tenant_id"]})).first()
+
+    if not row:
+        raise HTTPException(404, "콘텐츠를 찾을 수 없습니다")
+
+    return {
+        "id": str(row.id),
+        "content_type": row.report_type,
+        "title": row.title,
+        "body": row.content_text or "",
+        "date": row.report_date.isoformat() if row.report_date else None,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "election_id": str(row.election_id) if row.election_id else None,
+    }
 
 
 # ── Multi-tone Content ──

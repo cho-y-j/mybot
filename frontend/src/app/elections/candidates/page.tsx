@@ -5,7 +5,8 @@ import { api } from '@/services/api';
 
 export default function CandidatesPage() {
   const searchParams = useSearchParams();
-  const electionId = searchParams.get('id') || '';
+  const urlElectionId = searchParams?.get('id') || '';
+  const [electionId, setElectionId] = useState(urlElectionId);
 
   const [candidates, setCandidates] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -16,6 +17,15 @@ export default function CandidatesPage() {
     search_keywords: '', homonym_filters: '',
   });
   const [error, setError] = useState('');
+
+  // URL에 election_id 없으면 첫 번째 선거 자동 선택
+  useEffect(() => {
+    if (!electionId) {
+      api.getElections().then((els: any[]) => {
+        if (els.length > 0) setElectionId(els[0].id);
+      }).catch(() => {});
+    }
+  }, []);
 
   useEffect(() => { if (electionId) loadCandidates(); }, [electionId]);
 

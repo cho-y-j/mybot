@@ -7,7 +7,7 @@ from datetime import datetime, timezone, timedelta, date
 from uuid import UUID
 
 from celery import Celery
-from sqlalchemy import select, create_engine
+from sqlalchemy import select, create_engine, func, text
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -62,13 +62,99 @@ def _run_async(coro):
         return asyncio.run(coro)
 
 
+# ── 날짜 컷오프 ──
+RECENT_DAYS = 7
+
+
+def _check_pub_cutoff(pub_at, collected_fallback: datetime | None = None) -> tuple[datetime | None, bool]:
+    """날짜 컷오프 + 저장값 결정. CLAUDE.md 룰: 가짜 날짜 저장 금지.
+
+    Returns:
+        (pub_to_save, should_keep)
+        - pub_to_save: DB에 저장할 published_at. pub_at이 None이면 None (가짜 금지).
+        - should_keep: True이면 해당 아이템 저장, False면 드롭 (7일 이전 또는 날짜 불명).
+
+    필터 판정은 pub_at 우선, 없으면 collected_fallback 참고.
+    저장은 실제 pub_at만 (collected_at으로 대체 금지).
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=RECENT_DAYS)
+
+    if pub_at is not None:
+        if pub_at.tzinfo is None:
+            pub_at = pub_at.replace(tzinfo=timezone.utc)
+        if pub_at < cutoff:
+            return None, False  # 7일 이전 → 드롭
+        return pub_at, True  # 실제 날짜 저장
+
+    # pub_at 없음 — collected_at으로 recency만 판정
+    if collected_fallback is None:
+        return None, False
+    if collected_fallback.tzinfo is None:
+        collected_fallback = collected_fallback.replace(tzinfo=timezone.utc)
+    if collected_fallback < cutoff:
+        return None, False
+    # 최근에 수집됐지만 진짜 pub_at 없음 → NULL로 저장 (정직하게)
+    return None, True
+
+
+# 하위 호환: 기존 함수명 유지하되 새 함수로 래핑
+def _is_recent_or_fallback(pub_at, collected_fallback: datetime | None = None) -> datetime | None:
+    """DEPRECATED: _check_pub_cutoff 사용 권장."""
+    _, keep = _check_pub_cutoff(pub_at, collected_fallback)
+    return pub_at if keep else None
+
+
+async def _run_full_ai_pipeline(tenant_id: str, election_id: str, limit_per_type: int = 100) -> dict:
+    """수집 직후 호출: Sonnet 전략 분석 + Opus 검증 + 이벤트 기반 위기 알림.
+
+    AsyncSession을 열어 analyze_all_media(내부에서 Opus 검증까지 포함)를 실행하고,
+    끝난 직후 AI가 판정한 weakness/threat 항목을 실시간 텔레그램 알림으로 발송.
+    """
+    from app.database import async_session_factory
+    from app.analysis.media_analyzer import analyze_all_media
+    from app.collectors.alert_monitor import check_db_alerts, format_alert_message
+
+    async with async_session_factory() as adb:
+        try:
+            result = await analyze_all_media(
+                adb, tenant_id, election_id, limit_per_type=limit_per_type,
+            )
+            await adb.commit()
+        except Exception as e:
+            await adb.rollback()
+            logger.error("ai_pipeline_failed", error=str(e)[:300],
+                         tenant=tenant_id, election=election_id)
+            return {"error": str(e)[:300]}
+
+        # ── 이벤트 기반 긴급 알림 ──
+        try:
+            alerts = await check_db_alerts(adb, tenant_id, election_id, since_minutes=30)
+            if alerts:
+                msg = format_alert_message(alerts)
+                from app.telegram_service.reporter import send_alert
+                await send_alert(adb, tenant_id, msg)
+                result["alerts_sent"] = len(alerts)
+                logger.info("pipeline_alerts_sent", count=len(alerts), tenant=tenant_id)
+            else:
+                result["alerts_sent"] = 0
+        except Exception as alert_err:
+            logger.warning("pipeline_alert_error", error=str(alert_err)[:300])
+            result["alerts_sent"] = 0
+
+        return result
+
+
 # ──────────────── NEWS COLLECTION ──────────────────────────────
 
 @celery_app.task(bind=True, name="collect.news")
 def collect_news(self, tenant_id: str, election_id: str, schedule_id: str):
-    """뉴스 수집: 후보별 키워드로 검색 → 감성분석 → DB 저장."""
+    """뉴스 수집: 후보별 키워드로 검색 → 수집 시점 게이트 → 저장 → AI 파이프라인.
+
+    CLAUDE.md 룰 1.7: 날짜 컷오프 (7일), 관련성 필터, AI가 아닌 폴백 감성 금지.
+    CLAUDE.md 룰 1.6: 수집 직후 Sonnet 분석 + Opus 검증이 한 흐름으로 실행됨.
+    """
     from app.collectors.naver import NaverCollector
-    from app.analysis.sentiment import SentimentAnalyzer
+    from app.collectors.filters import parse_published_at
     from app.elections.models import ScheduleRun, Candidate, NewsArticle
 
     session = get_sync_session()
@@ -86,8 +172,9 @@ def collect_news(self, tenant_id: str, election_id: str, schedule_id: str):
         ).scalars().all()
 
         collector = NaverCollector(settings.NAVER_CLIENT_ID, settings.NAVER_CLIENT_SECRET)
-        analyzer = SentimentAnalyzer()
+        cand_names = [c.name for c in candidates]  # 전체 후보 이름 (관련성 필터용)
         total = 0
+        dropped_old = 0
 
         for cand in candidates:
             # 동명이인 필터 구성
@@ -104,50 +191,57 @@ def collect_news(self, tenant_id: str, election_id: str, schedule_id: str):
                 )
 
                 for article in articles:
-                    # 중복 확인
-                    exists = session.execute(
-                        select(NewsArticle).where(
-                            NewsArticle.tenant_id == tenant_id,
-                            NewsArticle.url == article["url"],
-                        )
-                    ).scalar_one_or_none()
-                    if exists:
+                    title = article.get("title", "")
+                    desc = article.get("description", "")
+                    text = f"{title} {desc}"
+
+                    # ── 관련성 필터 ──
+                    if not any(cn in text for cn in cand_names):
+                        continue
+                    if any(x in title for x in [
+                        "멤버십", "무료배송", "스토어", "할인", "쿠폰",
+                        "적립", "클립 챌린지", "24시간 센터",
+                    ]):
                         continue
 
-                    # 감성 분석
-                    text = f"{article['title']} {article.get('description', '')}"
-                    sentiment, score = analyzer.analyze(text)
+                    # ── 날짜 컷오프 (CLAUDE.md 룰 1.7 + 1.8) ──
+                    pub_at_raw = parse_published_at(
+                        article.get("pub_date") or article.get("pubDate")
+                    )
+                    pub_at, should_keep = _check_pub_cutoff(pub_at_raw, datetime.now(timezone.utc))
+                    if not should_keep:
+                        dropped_old += 1
+                        continue
+                    # pub_at은 실제 날짜이거나 None (가짜 금지)
 
-                    # 기사 날짜 파싱
-                    pub_at = None
-                    raw_date = article.get("pub_date") or article.get("pubDate")
-                    if raw_date:
-                        try:
-                            from email.utils import parsedate_to_datetime
-                            pub_at = parsedate_to_datetime(raw_date)
-                        except Exception:
-                            try:
-                                from datetime import datetime as _dt
-                                pub_at = _dt.fromisoformat(raw_date.replace("Z", "+00:00"))
-                            except Exception:
-                                pass
-
-                    session.add(NewsArticle(
+                    # ── 저장 (ON CONFLICT DO NOTHING — race condition 방지) ──
+                    from sqlalchemy.dialects.postgresql import insert as pg_insert
+                    stmt = pg_insert(NewsArticle).values(
                         tenant_id=tenant_id,
                         election_id=election_id,
                         candidate_id=cand.id,
-                        title=article["title"],
+                        title=title,
                         url=article["url"],
                         source=article.get("source", ""),
-                        summary=article.get("description", "")[:300],
+                        summary=desc[:300],
                         published_at=pub_at,
-                        sentiment=sentiment,
-                        sentiment_score=score,
                         platform=article.get("platform", "naver"),
-                    ))
-                    total += 1
+                    ).on_conflict_do_nothing(constraint="uq_news_url_per_tenant")
+                    res = session.execute(stmt)
+                    if res.rowcount:
+                        total += 1
 
         session.commit()
+
+        # ── AI 파이프라인 실행 (Sonnet 분석 + Opus 검증) ──
+        ai_result = {}
+        if total > 0:
+            try:
+                ai_result = _run_async(_run_full_ai_pipeline(tenant_id, election_id))
+                logger.info("news_ai_pipeline_done", total=total,
+                            ai=ai_result, dropped_old=dropped_old)
+            except Exception as ai_err:
+                logger.error("news_ai_pipeline_error", error=str(ai_err)[:300])
 
         # 실행 기록 업데이트
         run.status = "success"
@@ -156,7 +250,12 @@ def collect_news(self, tenant_id: str, election_id: str, schedule_id: str):
         run.duration_seconds = (run.completed_at - run.started_at).total_seconds()
         session.commit()
 
-        return {"status": "success", "items": total}
+        return {
+            "status": "success",
+            "items": total,
+            "dropped_old": dropped_old,
+            "ai": ai_result,
+        }
 
     except Exception as e:
         run.status = "failed"
@@ -172,9 +271,9 @@ def collect_news(self, tenant_id: str, election_id: str, schedule_id: str):
 
 @celery_app.task(bind=True, name="collect.community")
 def collect_community(self, tenant_id: str, election_id: str, schedule_id: str):
-    """블로그/카페 수집."""
+    """블로그/카페 수집 → 날짜 컷오프 → 저장 → AI 파이프라인."""
     from app.collectors.naver import NaverCollector, calculate_relevance
-    from app.analysis.sentiment import SentimentAnalyzer
+    from app.collectors.filters import parse_published_at
     from app.elections.models import ScheduleRun, Candidate, CommunityPost
 
     session = get_sync_session()
@@ -192,46 +291,35 @@ def collect_community(self, tenant_id: str, election_id: str, schedule_id: str):
         ).scalars().all()
 
         collector = NaverCollector(settings.NAVER_CLIENT_ID, settings.NAVER_CLIENT_SECRET)
-        analyzer = SentimentAnalyzer()
         cand_names = [c.name for c in candidates]
         total = 0
+        dropped_old = 0
 
         for cand in candidates:
             for keyword in (cand.search_keywords or [cand.name]):
-                # 블로그 + 카페 검색
                 blog_posts = _run_async(collector.search_blog(keyword, display=10))
                 cafe_posts = _run_async(collector.search_cafe(keyword, display=10))
                 all_posts = blog_posts + cafe_posts
 
                 for post in all_posts:
-                    exists = session.execute(
-                        select(CommunityPost).where(
-                            CommunityPost.tenant_id == tenant_id,
-                            CommunityPost.url == post["url"],
-                        )
-                    ).scalar_one_or_none()
-                    if exists:
+                    text = f"{post['title']} {post.get('description', '')}"
+
+                    if not any(cn in text for cn in cand_names):
                         continue
 
-                    text = f"{post['title']} {post.get('description', '')}"
-                    sentiment, score = analyzer.analyze(text)
+                    # ── 날짜 컷오프 ──
+                    raw_pd = post.get("postdate") or post.get("pub_date") or post.get("pubDate")
+                    post_pub_raw = parse_published_at(raw_pd)
+                    post_pub_at, should_keep = _check_pub_cutoff(post_pub_raw, datetime.now(timezone.utc))
+                    if not should_keep:
+                        dropped_old += 1
+                        continue
+                    # post_pub_at은 실제 날짜이거나 None (가짜 금지)
+
                     relevance = calculate_relevance(text, cand_names)
 
-                    # 게시 날짜 파싱
-                    post_pub_at = None
-                    raw_pd = post.get("postdate") or post.get("pub_date") or post.get("pubDate")
-                    if raw_pd:
-                        try:
-                            from datetime import datetime as _dt
-                            if len(raw_pd) == 8:  # "20260411"
-                                post_pub_at = _dt.strptime(raw_pd, "%Y%m%d").replace(tzinfo=timezone.utc)
-                            else:
-                                from email.utils import parsedate_to_datetime
-                                post_pub_at = parsedate_to_datetime(raw_pd)
-                        except Exception:
-                            pass
-
-                    session.add(CommunityPost(
+                    from sqlalchemy.dialects.postgresql import insert as pg_insert
+                    stmt = pg_insert(CommunityPost).values(
                         tenant_id=tenant_id,
                         election_id=election_id,
                         candidate_id=cand.id,
@@ -240,20 +328,35 @@ def collect_community(self, tenant_id: str, election_id: str, schedule_id: str):
                         source=post.get("author", ""),
                         content_snippet=post.get("description", "")[:200],
                         published_at=post_pub_at,
-                        sentiment=sentiment,
-                        sentiment_score=score,
                         relevance_score=relevance / 100.0,
                         platform=post.get("platform", "naver_blog"),
-                    ))
-                    total += 1
+                    )
+                    # 기존 행의 published_at이 NULL이면 새로 파싱된 날짜로 백필
+                    stmt = stmt.on_conflict_do_update(
+                        constraint="uq_community_url_per_tenant",
+                        set_={
+                            "published_at": text("COALESCE(community_posts.published_at, EXCLUDED.published_at)"),
+                        },
+                    )
+                    res = session.execute(stmt)
+                    if res.rowcount:
+                        total += 1
 
         session.commit()
+
+        ai_result = {}
+        if total > 0:
+            try:
+                ai_result = _run_async(_run_full_ai_pipeline(tenant_id, election_id))
+            except Exception as ai_err:
+                logger.error("community_ai_pipeline_error", error=str(ai_err)[:300])
+
         run.status = "success"
         run.completed_at = datetime.now(timezone.utc)
         run.items_collected = total
         run.duration_seconds = (run.completed_at - run.started_at).total_seconds()
         session.commit()
-        return {"status": "success", "items": total}
+        return {"status": "success", "items": total, "dropped_old": dropped_old, "ai": ai_result}
 
     except Exception as e:
         run.status = "failed"
@@ -269,9 +372,9 @@ def collect_community(self, tenant_id: str, election_id: str, schedule_id: str):
 
 @celery_app.task(bind=True, name="collect.youtube")
 def collect_youtube(self, tenant_id: str, election_id: str, schedule_id: str):
-    """유튜브 영상 수집."""
+    """유튜브 영상 수집 → 품질/날짜/동명이인 필터(youtube.py) → AI 파이프라인."""
     from app.collectors.youtube import YouTubeCollector
-    from app.analysis.sentiment import SentimentAnalyzer
+    from app.collectors.filters import parse_published_at
     from app.elections.models import ScheduleRun, Candidate, YouTubeVideo
 
     session = get_sync_session()
@@ -289,12 +392,19 @@ def collect_youtube(self, tenant_id: str, election_id: str, schedule_id: str):
         ).scalars().all()
 
         collector = YouTubeCollector(settings.YOUTUBE_API_KEY or settings.GOOGLE_API_KEY)
-        analyzer = SentimentAnalyzer()
         total = 0
 
         for cand in candidates:
+            homonym = None
+            if cand.homonym_filters:
+                homonym = {
+                    "exclude": cand.homonym_filters,
+                    "require_any": ["교육", "선거", "후보", "교육감", "출마"],
+                }
             for keyword in (cand.search_keywords or [cand.name]):
-                videos = _run_async(collector.search_videos(keyword, max_results=10))
+                videos = _run_async(collector.search_videos(
+                    keyword, max_results=10, homonym_filters=homonym,
+                ))
 
                 for vid in videos:
                     exists = session.execute(
@@ -304,15 +414,18 @@ def collect_youtube(self, tenant_id: str, election_id: str, schedule_id: str):
                         )
                     ).scalar_one_or_none()
 
+                    # YouTube API는 publishedAt(ISO 8601)을 항상 반환. 파싱 실패 시 NULL 저장.
+                    pub_at = parse_published_at(vid.get("published_at"))
+
                     if exists:
-                        # 조회수 업데이트 (MAX)
                         if vid.get("views", 0) > (exists.views or 0):
                             exists.views = vid["views"]
                             exists.likes = vid.get("likes", 0)
                             exists.comments_count = vid.get("comments_count", 0)
+                        # 기존 행의 published_at이 NULL이면 이번 조회 값으로 백필
+                        if exists.published_at is None and pub_at is not None:
+                            exists.published_at = pub_at
                         continue
-
-                    sentiment, score = analyzer.analyze(vid["title"])
 
                     session.add(YouTubeVideo(
                         tenant_id=tenant_id,
@@ -323,21 +436,28 @@ def collect_youtube(self, tenant_id: str, election_id: str, schedule_id: str):
                         channel=vid.get("channel", ""),
                         description_snippet=vid.get("description", "")[:300],
                         thumbnail_url=vid.get("thumbnail", ""),
+                        published_at=pub_at,  # 파싱 실패 시 NULL — 가짜 날짜 금지
                         views=vid.get("views", 0),
                         likes=vid.get("likes", 0),
                         comments_count=vid.get("comments_count", 0),
-                        sentiment=sentiment,
-                        sentiment_score=score,
                     ))
                     total += 1
 
         session.commit()
+
+        ai_result = {}
+        if total > 0:
+            try:
+                ai_result = _run_async(_run_full_ai_pipeline(tenant_id, election_id))
+            except Exception as ai_err:
+                logger.error("youtube_ai_pipeline_error", error=str(ai_err)[:300])
+
         run.status = "success"
         run.completed_at = datetime.now(timezone.utc)
         run.items_collected = total
         run.duration_seconds = (run.completed_at - run.started_at).total_seconds()
         session.commit()
-        return {"status": "success", "items": total}
+        return {"status": "success", "items": total, "ai": ai_result}
 
     except Exception as e:
         run.status = "failed"
@@ -442,15 +562,13 @@ def collect_trends(self, tenant_id: str, election_id: str, schedule_id: str):
 
 @celery_app.task(bind=True, name="collect.news_comments")
 def collect_news_comments(self, tenant_id: str, election_id: str, schedule_id: str = None):
-    """최근 뉴스 기사의 댓글 수집."""
+    """최근 뉴스 기사의 댓글 수집. sentiment는 NULL로 저장 (보조 데이터)."""
     from app.collectors.news_comments import collect_comments_for_articles
-    from app.analysis.sentiment import SentimentAnalyzer
     from app.elections.models import NewsArticle, Candidate
     from app.elections.history_models import NewsComment
 
     session = get_sync_session()
     try:
-        # 최근 24시간 뉴스 가져오기
         cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
 
         articles = session.execute(
@@ -470,7 +588,6 @@ def collect_news_comments(self, tenant_id: str, election_id: str, schedule_id: s
         ]
 
         results = _run_async(collect_comments_for_articles(article_list, max_per_article=10))
-        analyzer = SentimentAnalyzer()
         total = 0
 
         for article_result in results:
@@ -478,7 +595,6 @@ def collect_news_comments(self, tenant_id: str, election_id: str, schedule_id: s
                 text = comment.get("text", "")
                 if not text:
                     continue
-                sentiment, _ = analyzer.analyze(text)
                 session.add(NewsComment(
                     tenant_id=tenant_id,
                     article_url=article_result["url"],
@@ -486,7 +602,6 @@ def collect_news_comments(self, tenant_id: str, election_id: str, schedule_id: s
                     text=text[:500],
                     sympathy_count=comment.get("sympathy", 0),
                     antipathy_count=comment.get("antipathy", 0),
-                    sentiment=sentiment,
                     candidate_name=article_result.get("candidate", ""),
                 ))
                 total += 1
@@ -549,6 +664,7 @@ def collect_community_enhanced(self, tenant_id: str, election_id: str, schedule_
                 election_type=e_type,
             ))
 
+            from app.collectors.filters import parse_published_at
             for post in posts:
                 exists = session.execute(
                     select(CommunityPost).where(
@@ -559,6 +675,13 @@ def collect_community_enhanced(self, tenant_id: str, election_id: str, schedule_
                 if exists:
                     continue
 
+                # 날짜 컷오프 + 실제 날짜만 저장
+                post_pub_raw = parse_published_at(post.get("published_at") or post.get("pub_date"))
+                post_pub_at, should_keep = _check_pub_cutoff(post_pub_raw, datetime.now(timezone.utc))
+                if not should_keep:
+                    continue
+                # post_pub_at은 실제 날짜이거나 None
+
                 session.add(CommunityPost(
                     tenant_id=tenant_id,
                     election_id=election_id,
@@ -567,8 +690,7 @@ def collect_community_enhanced(self, tenant_id: str, election_id: str, schedule_
                     url=post["url"],
                     source=post.get("source", ""),
                     content_snippet=post.get("content_snippet", "")[:200],
-                    sentiment=post.get("sentiment", "neutral"),
-                    sentiment_score=post.get("sentiment_score", 0.0),
+                    published_at=post_pub_at,
                     issue_category=post.get("issue_category"),
                     relevance_score=post.get("relevance_score", 0.0),
                     engagement=post.get("engagement", {}),
@@ -577,12 +699,20 @@ def collect_community_enhanced(self, tenant_id: str, election_id: str, schedule_
                 total += 1
 
         session.commit()
+
+        ai_result = {}
+        if total > 0:
+            try:
+                ai_result = _run_async(_run_full_ai_pipeline(tenant_id, election_id))
+            except Exception as ai_err:
+                logger.error("community_enh_ai_pipeline_error", error=str(ai_err)[:300])
+
         run.status = "success"
         run.completed_at = datetime.now(timezone.utc)
         run.items_collected = total
         run.duration_seconds = (run.completed_at - run.started_at).total_seconds()
         session.commit()
-        return {"status": "success", "items": total}
+        return {"status": "success", "items": total, "ai": ai_result}
 
     except Exception as e:
         run.status = "failed"
@@ -598,9 +728,9 @@ def collect_community_enhanced(self, tenant_id: str, election_id: str, schedule_
 
 @celery_app.task(bind=True, name="collect.youtube_enhanced")
 def collect_youtube_enhanced(self, tenant_id: str, election_id: str, schedule_id: str):
-    """유튜브 영상 + 숏츠 + 댓글 수집."""
+    """유튜브 영상 + 숏츠 + 댓글 수집 → AI 파이프라인."""
     from app.collectors.youtube import YouTubeCollector
-    from app.analysis.sentiment import SentimentAnalyzer
+    from app.collectors.filters import parse_published_at
     from app.elections.models import ScheduleRun, Candidate, YouTubeVideo
     from app.elections.history_models import YouTubeComment
 
@@ -619,15 +749,20 @@ def collect_youtube_enhanced(self, tenant_id: str, election_id: str, schedule_id
         ).scalars().all()
 
         collector = YouTubeCollector(settings.YOUTUBE_API_KEY or settings.GOOGLE_API_KEY)
-        analyzer = SentimentAnalyzer()
         total = 0
         comment_total = 0
 
         for cand in candidates:
+            homonym = None
+            if cand.homonym_filters:
+                homonym = {
+                    "exclude": cand.homonym_filters,
+                    "require_any": ["교육", "선거", "후보", "교육감", "출마"],
+                }
             for keyword in (cand.search_keywords or [cand.name]):
-                # Regular videos
-                videos = _run_async(collector.search_videos(keyword, max_results=10))
-                # Shorts
+                videos = _run_async(collector.search_videos(
+                    keyword, max_results=10, homonym_filters=homonym,
+                ))
                 shorts = _run_async(collector.search_shorts(keyword, max_results=5))
 
                 for vid in videos + shorts:
@@ -638,14 +773,17 @@ def collect_youtube_enhanced(self, tenant_id: str, election_id: str, schedule_id
                         )
                     ).scalar_one_or_none()
 
+                    pub_at = parse_published_at(vid.get("published_at"))
+
                     if exists:
                         if vid.get("views", 0) > (exists.views or 0):
                             exists.views = vid["views"]
                             exists.likes = vid.get("likes", 0)
                             exists.comments_count = vid.get("comments_count", 0)
+                        # NULL published_at 백필
+                        if exists.published_at is None and pub_at is not None:
+                            exists.published_at = pub_at
                         continue
-
-                    sentiment, score = analyzer.analyze(vid["title"])
                     session.add(YouTubeVideo(
                         tenant_id=tenant_id,
                         election_id=election_id,
@@ -655,15 +793,14 @@ def collect_youtube_enhanced(self, tenant_id: str, election_id: str, schedule_id
                         channel=vid.get("channel", ""),
                         description_snippet=vid.get("description", "")[:300],
                         thumbnail_url=vid.get("thumbnail", ""),
+                        published_at=pub_at,  # 파싱 실패 시 NULL — 가짜 날짜 금지
                         views=vid.get("views", 0),
                         likes=vid.get("likes", 0),
                         comments_count=vid.get("comments_count", 0),
-                        sentiment=sentiment,
-                        sentiment_score=score,
                     ))
                     total += 1
 
-            # Comments for top videos
+            # Comments for top videos (sentiment NULL — 보조 데이터)
             top_vids = session.execute(
                 select(YouTubeVideo).where(
                     YouTubeVideo.candidate_id == cand.id,
@@ -675,25 +812,31 @@ def collect_youtube_enhanced(self, tenant_id: str, election_id: str, schedule_id
             for v in top_vids:
                 comments = _run_async(collector.get_video_comments(v.video_id, max_results=10))
                 for c in comments:
-                    sentiment, _ = analyzer.analyze(c.get("text", ""))
                     session.add(YouTubeComment(
                         tenant_id=tenant_id,
                         video_id=v.video_id,
                         author=c.get("author", ""),
                         text=c.get("text", "")[:500],
                         like_count=c.get("likes", 0),
-                        sentiment=sentiment,
                         candidate_name=cand.name,
                     ))
                     comment_total += 1
 
         session.commit()
+
+        ai_result = {}
+        if total > 0:
+            try:
+                ai_result = _run_async(_run_full_ai_pipeline(tenant_id, election_id))
+            except Exception as ai_err:
+                logger.error("youtube_enh_ai_pipeline_error", error=str(ai_err)[:300])
+
         run.status = "success"
         run.completed_at = datetime.now(timezone.utc)
         run.items_collected = total
         run.duration_seconds = (run.completed_at - run.started_at).total_seconds()
         session.commit()
-        return {"status": "success", "videos": total, "comments": comment_total}
+        return {"status": "success", "videos": total, "comments": comment_total, "ai": ai_result}
 
     except Exception as e:
         run.status = "failed"
@@ -832,14 +975,14 @@ def alert_check(self, tenant_id: str, election_id: str):
                 today_vol = session.execute(
                     select(sqlfunc.max(SearchTrend.relative_volume)).where(
                         SearchTrend.keyword == cand.name,
-                        sqlfunc.date(SearchTrend.checked_at) >= yesterday,
+                        func.date(SearchTrend.checked_at) >= yesterday,
                     )
                 ).scalar() or 0
                 prev_vol = session.execute(
                     select(sqlfunc.max(SearchTrend.relative_volume)).where(
                         SearchTrend.keyword == cand.name,
-                        sqlfunc.date(SearchTrend.checked_at) >= two_days_ago,
-                        sqlfunc.date(SearchTrend.checked_at) < yesterday,
+                        func.date(SearchTrend.checked_at) >= two_days_ago,
+                        func.date(SearchTrend.checked_at) < yesterday,
                     )
                 ).scalar() or 0
 
@@ -919,17 +1062,17 @@ def full_collection_with_briefing(self, tenant_id: str, election_id: str, briefi
     # 1. 수집 (동기 호출)
     collect_result = full_collection(tenant_id, election_id) if not hasattr(full_collection, 'delay') else full_collection.run(tenant_id, election_id)
 
-    # 2. AI 감성 재분석 (neutral인 뉴스를 배치로)
-    reanalyzed = 0
+    # 2. Opus 감성 분석 + 4사분면 배정 (미분석 전체 — 뉴스 + 커뮤니티)
+    analyzed = 0
     try:
-        reanalyzed = _run_async(_batch_reanalyze_sentiment(tenant_id, election_id))
+        analyzed = _run_async(_opus_analyze_all(tenant_id, election_id))
     except Exception as e:
-        logger.warning("batch_sentiment_error", error=str(e)[:200])
+        logger.warning("opus_analyze_error", error=str(e)[:200])
 
-    # 3. 수집 직후 브리핑
+    # 4. 수집 직후 브리핑
     briefing_result = _run_briefing(tenant_id, election_id, briefing_type)
 
-    # 4. 대시보드 캐시 프리로드 (다음 접속 시 즉시 로딩)
+    # 5. 대시보드 캐시 프리로드 (다음 접속 시 즉시 로딩)
     try:
         _run_async(_preload_dashboard_cache(tenant_id, election_id))
     except Exception as e:
@@ -937,7 +1080,7 @@ def full_collection_with_briefing(self, tenant_id: str, election_id: str, briefi
 
     return {
         "collected": collect_result if isinstance(collect_result, dict) else {},
-        "reanalyzed_sentiment": reanalyzed,
+        "sentiment_analyzed": analyzed,
         "briefing": briefing_result,
     }
 
@@ -1248,47 +1391,265 @@ async def _preload_dashboard_cache(tenant_id: str, election_id: str):
             logger.warning("cache_preload_partial", error=str(e)[:200])
 
 
-async def _batch_reanalyze_sentiment(tenant_id: str, election_id: str) -> int:
-    """neutral 뉴스를 AI 배치로 재분석."""
+async def _opus_analyze_all(tenant_id: str, election_id: str) -> int:
+    """
+    감성 분석 + 4사분면 배정 파이프라인:
+    1. Sonnet으로 neutral 전체 감성 분류
+    2. 즉시 4사분면 배정 (규칙 기반 — AI 불필요)
+       우리+긍정=strength, 우리+부정=weakness, 경쟁+긍정=threat, 경쟁+부정=opportunity
+    """
     from app.database import async_session_factory
     from app.analysis.sentiment import SentimentAnalyzer
     from app.common.election_access import get_election_tenant_ids
+    from app.elections.models import Candidate, NewsArticle, CommunityPost
 
     async with async_session_factory() as db:
         all_tids = await get_election_tenant_ids(db, election_id)
-        since = date.today() - timedelta(days=1)
+        since = date.today() - timedelta(days=2)
 
-        # 최근 1일 중립 뉴스 (아직 AI 분석 안 된 것)
-        rows = (await db.execute(
+        # 후보 정보 (4사분면 배정에 필요)
+        candidates = (await db.execute(
+            select(Candidate).where(Candidate.election_id == election_id, Candidate.enabled == True)
+        )).scalars().all()
+        cand_map = {str(c.id): c for c in candidates}
+
+        def _get_quadrant(candidate_id: str, sentiment: str) -> str | None:
+            """감성 + 후보 관계 → 4사분면 즉시 배정."""
+            if sentiment == "neutral":
+                return None
+            cand = cand_map.get(str(candidate_id))
+            if not cand:
+                return None
+            is_ours = cand.is_our_candidate
+            if sentiment == "positive":
+                return "strength" if is_ours else "threat"
+            elif sentiment == "negative":
+                return "weakness" if is_ours else "opportunity"
+            return None
+
+        # ── 1단계: Sonnet 감성 분류 (neutral 전체) ──
+        neutral_news = (await db.execute(
             select(NewsArticle).where(
                 NewsArticle.tenant_id.in_(all_tids),
                 NewsArticle.election_id == election_id,
                 NewsArticle.sentiment == "neutral",
+                NewsArticle.sentiment_verified == False,
                 func.date(NewsArticle.collected_at) >= since,
+            ).limit(100)
+        )).scalars().all()
+
+        neutral_community = (await db.execute(
+            select(CommunityPost).where(
+                CommunityPost.tenant_id.in_(all_tids),
+                CommunityPost.election_id == election_id,
+                CommunityPost.sentiment == "neutral",
+                CommunityPost.sentiment_verified == False,
+                func.date(CommunityPost.collected_at) >= since,
             ).limit(50)
         )).scalars().all()
 
-        if not rows:
-            return 0
-
         analyzer = SentimentAnalyzer()
-        items = [{"id": str(r.id), "text": f"{r.title or ''} {r.content_snippet or ''}"} for r in rows]
-        results = await analyzer.analyze_batch(items)
-
         updated = 0
-        for r in results:
-            if r["sentiment"] != "neutral":
+
+        # Sonnet 배치 — 뉴스
+        if neutral_news:
+            news_map = {str(r.id): r for r in neutral_news}
+            items = [{"id": str(r.id), "text": f"{r.title or ''} {r.summary or r.content_snippet or ''}"} for r in neutral_news]
+            results = await analyzer.analyze_batch(items)
+            for r in results:
+                if r["sentiment"] != "neutral":
+                    row = news_map.get(r["id"])
+                    quadrant = _get_quadrant(row.candidate_id, r["sentiment"]) if row else None
+                    await db.execute(
+                        text("UPDATE news_articles SET sentiment = :s, sentiment_score = :sc, "
+                             "sentiment_verified = TRUE, "
+                             "strategic_quadrant = :q, strategic_value = :q "
+                             "WHERE id = :id"),
+                        {"s": r["sentiment"], "sc": r["score"], "q": quadrant, "id": r["id"]},
+                    )
+                    updated += 1
+
+        # Sonnet 배치 — 커뮤니티
+        if neutral_community:
+            comm_map = {str(r.id): r for r in neutral_community}
+            items = [{"id": str(r.id), "text": f"{r.title or ''} {r.content_snippet or ''}"} for r in neutral_community]
+            results = await analyzer.analyze_batch(items)
+            for r in results:
+                if r["sentiment"] != "neutral":
+                    row = comm_map.get(r["id"])
+                    quadrant = _get_quadrant(row.candidate_id, r["sentiment"]) if row else None
+                    await db.execute(
+                        text("UPDATE community_posts SET sentiment = :s, sentiment_score = :sc, "
+                             "sentiment_verified = TRUE, "
+                             "strategic_quadrant = :q, strategic_value = :q "
+                             "WHERE id = :id"),
+                        {"s": r["sentiment"], "sc": r["score"], "q": quadrant, "id": r["id"]},
+                    )
+                    updated += 1
+
+        # ── 2단계: 기존 positive/negative 중 4사분면 미배정 건도 즉시 배정 ──
+        no_quad_news = (await db.execute(
+            select(NewsArticle).where(
+                NewsArticle.tenant_id.in_(all_tids),
+                NewsArticle.election_id == election_id,
+                NewsArticle.sentiment.in_(["positive", "negative"]),
+                NewsArticle.strategic_quadrant.is_(None),
+            ).limit(200)
+        )).scalars().all()
+        for row in no_quad_news:
+            q = _get_quadrant(row.candidate_id, row.sentiment)
+            if q:
                 await db.execute(
-                    text("UPDATE news_articles SET sentiment = :s, sentiment_score = :sc WHERE id = :id"),
-                    {"s": r["sentiment"], "sc": r["score"], "id": r["id"]},
+                    text("UPDATE news_articles SET strategic_quadrant = :q, strategic_value = :q, "
+                         "sentiment_verified = TRUE WHERE id = :id"),
+                    {"q": q, "id": str(row.id)},
+                )
+                updated += 1
+
+        no_quad_comm = (await db.execute(
+            select(CommunityPost).where(
+                CommunityPost.tenant_id.in_(all_tids),
+                CommunityPost.election_id == election_id,
+                CommunityPost.sentiment.in_(["positive", "negative"]),
+                CommunityPost.strategic_quadrant.is_(None),
+            ).limit(200)
+        )).scalars().all()
+        for row in no_quad_comm:
+            q = _get_quadrant(row.candidate_id, row.sentiment)
+            if q:
+                await db.execute(
+                    text("UPDATE community_posts SET strategic_quadrant = :q, strategic_value = :q, "
+                         "sentiment_verified = TRUE WHERE id = :id"),
+                    {"q": q, "id": str(row.id)},
                 )
                 updated += 1
 
         if updated:
             await db.commit()
-            logger.info("batch_sentiment_done", total=len(rows), updated=updated)
 
+        logger.info("sentiment_pipeline_done",
+                     news_input=len(neutral_news), comm_input=len(neutral_community),
+                     quadrant_backfill_news=len(no_quad_news), quadrant_backfill_comm=len(no_quad_comm),
+                     total_updated=updated)
         return updated
+
+
+async def _verify_sentiment_with_opus(tenant_id: str, election_id: str) -> int:
+    """
+    Opus(premium)로 감성 분류 검증 + 4사분면 자동 배정.
+    Haiku가 판정한 positive/negative를 Opus가 재확인.
+    오분류 시 교정하고, 4사분면(strength/weakness/opportunity/threat) 배정.
+    """
+    from app.database import async_session_factory
+    from app.analysis.sentiment import SentimentAnalyzer
+    from app.common.election_access import get_election_tenant_ids
+    from app.elections.models import Candidate, NewsArticle, CommunityPost
+
+    async with async_session_factory() as db:
+        all_tids = await get_election_tenant_ids(db, election_id)
+        since = date.today() - timedelta(days=2)
+
+        # 후보 정보 (우리/경쟁 구분 필요)
+        candidates = (await db.execute(
+            select(Candidate).where(
+                Candidate.election_id == election_id,
+                Candidate.enabled == True,
+            )
+        )).scalars().all()
+        cand_map = {str(c.id): c for c in candidates}
+
+        # 미검증 + positive/negative인 뉴스 (최근 2일)
+        unverified_news = (await db.execute(
+            select(NewsArticle).where(
+                NewsArticle.tenant_id.in_(all_tids),
+                NewsArticle.election_id == election_id,
+                NewsArticle.sentiment.in_(["positive", "negative"]),
+                NewsArticle.sentiment_verified == False,
+                func.date(NewsArticle.collected_at) >= since,
+            ).limit(30)
+        )).scalars().all()
+
+        # 미검증 커뮤니티
+        unverified_community = (await db.execute(
+            select(CommunityPost).where(
+                CommunityPost.tenant_id.in_(all_tids),
+                CommunityPost.election_id == election_id,
+                CommunityPost.sentiment.in_(["positive", "negative"]),
+                CommunityPost.sentiment_verified == False,
+                func.date(CommunityPost.collected_at) >= since,
+            ).limit(20)
+        )).scalars().all()
+
+        all_items = []
+        for row in unverified_news:
+            cand = cand_map.get(str(row.candidate_id))
+            all_items.append({
+                "id": str(row.id),
+                "table": "news_articles",
+                "text": f"{row.title or ''} {row.summary or row.content_snippet or ''}",
+                "current_sentiment": row.sentiment,
+                "candidate_name": cand.name if cand else "불명",
+                "is_our_candidate": cand.is_our_candidate if cand else False,
+            })
+
+        for row in unverified_community:
+            cand = cand_map.get(str(row.candidate_id))
+            all_items.append({
+                "id": str(row.id),
+                "table": "community_posts",
+                "text": f"{row.title or ''} {row.content_snippet or ''}",
+                "current_sentiment": row.sentiment,
+                "candidate_name": cand.name if cand else "불명",
+                "is_our_candidate": cand.is_our_candidate if cand else False,
+            })
+
+        if not all_items:
+            logger.info("opus_verify_skip", reason="no unverified items")
+            return 0
+
+        analyzer = SentimentAnalyzer()
+        results = await analyzer.verify_batch_with_opus(all_items)
+
+        verified = 0
+        changed = 0
+        for r in results:
+            # 원본 테이블 찾기
+            item = next((it for it in all_items if it["id"] == r["id"]), None)
+            if not item:
+                continue
+
+            tbl = item["table"]
+            update_sql = (
+                f"UPDATE {tbl} SET "
+                f"sentiment = :s, sentiment_score = :sc, "
+                f"sentiment_verified = TRUE, "
+                f"strategic_quadrant = :q, strategic_value = :q "
+                f"WHERE id = :id"
+            )
+            await db.execute(
+                text(update_sql),
+                {
+                    "s": r["sentiment"],
+                    "sc": r["score"],
+                    "q": r.get("quadrant"),
+                    "id": r["id"],
+                },
+            )
+            verified += 1
+            if r.get("changed"):
+                changed += 1
+
+        if verified:
+            await db.commit()
+            logger.info(
+                "opus_verify_done",
+                total=len(all_items),
+                verified=verified,
+                changed=changed,
+                tenant_id=tenant_id,
+            )
+
+        return verified
 
 
 async def _generate_report_async(tenant_id: str, election_id: str) -> dict:
@@ -1330,7 +1691,7 @@ async def _collect_candidates_data(tenant_id: str, election_id: str) -> list:
                     sqlfunc.count().label("cnt"),
                     sqlfunc.sum(case((NewsArticle.sentiment == "positive", 1), else_=0)).label("pos"),
                     sqlfunc.sum(case((NewsArticle.sentiment == "negative", 1), else_=0)).label("neg"),
-                ).where(NewsArticle.candidate_id == c.id, sqlfunc.date(NewsArticle.collected_at) >= since)
+                ).where(NewsArticle.candidate_id == c.id, func.date(NewsArticle.collected_at) >= since)
             )).one()
 
             # 커뮤니티

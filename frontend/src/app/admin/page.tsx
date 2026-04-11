@@ -1,7 +1,10 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function AdminDashboard() {
+  const router = useRouter();
+  const [authorized, setAuthorized] = useState(false);
   const [health, setHealth] = useState<any>(null);
   const [tenants, setTenants] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
@@ -37,7 +40,21 @@ export default function AdminDashboard() {
     'Content-Type': 'application/json',
   });
 
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => {
+    // Check superadmin access
+    const userStr = localStorage.getItem('user');
+    if (userStr) {
+      try {
+        const user = JSON.parse(userStr);
+        if (!user.is_superadmin) {
+          router.replace('/dashboard');
+          return;
+        }
+      } catch { router.replace('/dashboard'); return; }
+    }
+    setAuthorized(true);
+    loadAll();
+  }, []);
 
   const loadAll = async () => {
     try {
@@ -49,10 +66,10 @@ export default function AdminDashboard() {
         fetch('/api/admin/pending-users', { headers: headers() }).then(r => r.ok ? r.json() : []),
       ]);
       setHealth(h);
-      setTenants(t);
-      setUsers(u);
+      setTenants(Array.isArray(t) ? t : []);
+      setUsers(Array.isArray(u) ? u : []);
       setDataStats(d);
-      setPendingUsers(p);
+      setPendingUsers(Array.isArray(p) ? p : []);
     } catch (e) {
       console.error('admin load error:', e);
     }
@@ -224,6 +241,8 @@ export default function AdminDashboard() {
       alert('실패: ' + (e?.message || ''));
     }
   };
+
+  if (!authorized) return <div className="flex items-center justify-center min-h-screen"><div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full" /></div>;
 
   return (
     <div className="space-y-6">

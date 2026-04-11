@@ -4,6 +4,7 @@ ElectionPulse - Smart Onboarding API
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text, func, select as sa_select
 from pydantic import BaseModel
 from typing import Optional
 
@@ -13,7 +14,10 @@ from app.elections.korea_data import (
     auto_generate_setup, get_regions_list,
     get_election_types, get_parties_list, REGIONS,
 )
-from app.elections.models import Election, Candidate, Keyword, ScheduleConfig
+from app.elections.models import (
+    Election, Candidate, Keyword, ScheduleConfig,
+    NewsArticle, CommunityPost, YouTubeVideo, ScheduleRun,
+)
 from app.auth.models import Tenant
 
 router = APIRouter()
@@ -247,32 +251,58 @@ async def apply_setup(
 
     await db.flush()
 
-    # 6. 즉시 첫 수집 + 자동 부트스트랩 (백그라운드 task — fire and forget)
-    # 수집 → 분석 → AI 리포트까지 순차 자동 실행. 사용자가 첫 페이지 방문 시 모든 게 채워져 있어야 함.
+    # 6. 즉시 첫 수집 + 자동 부트스트랩 (백그라운드 task)
+    # 수집 → 분석 → AI 리포트까지 순차 자동 실행. 진행 상태는 analysis_cache에 저장되어
+    # GET /elections/{id}/bootstrap-status 로 폴링 가능.
     try:
         import asyncio
         from app.collectors.instant import collect_all_now
         from app.elections.bootstrap import bootstrap_campaign
+
+        election_id_str = str(election.id)
+        tenant_id_str = str(tid)
 
         async def _bg_collect_and_bootstrap():
             from app.database import async_session_factory
             import structlog
             log = structlog.get_logger()
             try:
+                await _write_bootstrap_status(
+                    tenant_id_str, election_id_str, "collecting", 10,
+                    "데이터 수집 중 (뉴스·블로그·유튜브)"
+                )
                 # 1단계: 데이터 수집
                 async with async_session_factory() as bg_db:
-                    await collect_all_now(bg_db, tid, str(election.id))
-                    log.info("onboarding_collect_done", election_id=str(election.id))
+                    await collect_all_now(bg_db, tenant_id_str, election_id_str)
+                    log.info("onboarding_collect_done", election_id=election_id_str)
 
-                # 2단계: 분석/리포트 자동 부트스트랩 (수집 끝난 후)
+                await _write_bootstrap_status(
+                    tenant_id_str, election_id_str, "analyzing", 60,
+                    "AI 분석 중 (Sonnet + Opus 2단계)"
+                )
+                # 2단계: 분석/리포트 자동 부트스트랩
                 async with async_session_factory() as bg_db2:
-                    boot = await bootstrap_campaign(bg_db2, tid, str(election.id))
+                    boot = await bootstrap_campaign(bg_db2, tenant_id_str, election_id_str)
                     await bg_db2.commit()
-                    log.info("onboarding_bootstrap_done", election_id=str(election.id), result=boot)
+                    log.info("onboarding_bootstrap_done", election_id=election_id_str, result=boot)
+
+                await _write_bootstrap_status(
+                    tenant_id_str, election_id_str, "done", 100,
+                    "완료 — 모든 페이지 준비됨"
+                )
             except Exception as e:
                 log.error("bg_first_collect_failed", error=str(e))
+                await _write_bootstrap_status(
+                    tenant_id_str, election_id_str, "failed", 0,
+                    f"실패: {str(e)[:150]}"
+                )
 
         asyncio.create_task(_bg_collect_and_bootstrap())
+        # 부트스트랩 시작 상태 즉시 기록
+        await _write_bootstrap_status(
+            tenant_id_str, election_id_str, "starting", 5,
+            "초기 데이터 수집 준비 중"
+        )
     except Exception as e:
         import structlog
         structlog.get_logger().warning("onboarding_first_collect_failed", error=str(e))
@@ -308,4 +338,151 @@ async def apply_setup(
             "community_targets": len(setup["community_targets"]),
             "history_records": history_result.get("records_imported", 0),
         },
+    }
+
+
+# ─────────────────── BOOTSTRAP STATUS ───────────────────
+
+async def _write_bootstrap_status(
+    tenant_id: str, election_id: str, phase: str, progress: int, message: str,
+) -> None:
+    """analysis_cache에 부트스트랩 상태 기록. 실패해도 조용히 통과."""
+    from app.database import async_session_factory
+    import json
+    try:
+        async with async_session_factory() as db:
+            import uuid
+            data = {"phase": phase, "progress": progress, "message": message}
+            data_json = json.dumps(data, ensure_ascii=False)
+            await db.execute(text(
+                "INSERT INTO analysis_cache "
+                "  (id, tenant_id, election_id, cache_type, data, "
+                "   analysis_type, analysis_date, result_data, created_at) "
+                "VALUES (:id, :tid, :eid, 'bootstrap_status', :data, "
+                "        'bootstrap_status', CURRENT_DATE, :data, NOW()) "
+                "ON CONFLICT (tenant_id, election_id, cache_type) DO UPDATE SET "
+                "  data = EXCLUDED.data, "
+                "  result_data = EXCLUDED.result_data, "
+                "  created_at = NOW()"
+            ), {
+                "id": str(uuid.uuid4()),
+                "tid": tenant_id, "eid": election_id,
+                "data": data_json,
+            })
+            await db.commit()
+    except Exception:
+        pass  # analysis_cache 테이블이 없거나 실패해도 무시
+
+
+@router.get("/elections/{election_id}/bootstrap-status")
+async def get_bootstrap_status(
+    election_id: str,
+    user=Depends(CurrentUser),
+    db: AsyncSession = Depends(get_db),
+):
+    """신규 가입 부트스트랩 진행 상태. 프론트엔드 setup 페이지에서 폴링.
+
+    Returns: {
+      "phase": "starting|collecting|analyzing|done|failed",
+      "progress": 0~100,
+      "message": str,
+      "counts": {news, community, youtube, analyzed_news, analyzed_community, analyzed_youtube},
+      "schedule_runs": int,
+      "last_run": ISO datetime,
+    }
+    """
+    tid = user["tenant_id"]
+
+    # 캐시된 상태 읽기
+    phase = "unknown"
+    progress = 0
+    message = ""
+    try:
+        row = (await db.execute(text(
+            "SELECT data, created_at FROM analysis_cache "
+            "WHERE tenant_id = :tid AND election_id = :eid AND cache_type = 'bootstrap_status' "
+            "ORDER BY created_at DESC LIMIT 1"
+        ), {"tid": str(tid), "eid": election_id})).first()
+        if row:
+            import json as _json
+            data = row[0] if isinstance(row[0], dict) else _json.loads(row[0])
+            phase = data.get("phase", "unknown")
+            progress = data.get("progress", 0)
+            message = data.get("message", "")
+    except Exception:
+        pass
+
+    # 실시간 카운트 (캐시된 상태와 교차 검증)
+    async def _count(q):
+        try:
+            return (await db.execute(q)).scalar() or 0
+        except Exception:
+            return 0
+
+    news_total = await _count(sa_select(func.count(NewsArticle.id)).where(
+        NewsArticle.tenant_id == tid, NewsArticle.election_id == election_id,
+    ))
+    community_total = await _count(sa_select(func.count(CommunityPost.id)).where(
+        CommunityPost.tenant_id == tid, CommunityPost.election_id == election_id,
+    ))
+    youtube_total = await _count(sa_select(func.count(YouTubeVideo.id)).where(
+        YouTubeVideo.tenant_id == tid, YouTubeVideo.election_id == election_id,
+    ))
+    news_analyzed = await _count(sa_select(func.count(NewsArticle.id)).where(
+        NewsArticle.tenant_id == tid, NewsArticle.election_id == election_id,
+        NewsArticle.ai_analyzed_at.isnot(None),
+    ))
+    community_analyzed = await _count(sa_select(func.count(CommunityPost.id)).where(
+        CommunityPost.tenant_id == tid, CommunityPost.election_id == election_id,
+        CommunityPost.ai_analyzed_at.isnot(None),
+    ))
+    youtube_analyzed = await _count(sa_select(func.count(YouTubeVideo.id)).where(
+        YouTubeVideo.tenant_id == tid, YouTubeVideo.election_id == election_id,
+        YouTubeVideo.ai_analyzed_at.isnot(None),
+    ))
+
+    # ScheduleRun 최신 1건 (수집 진행 여부 증거)
+    last_run = None
+    run_count = 0
+    try:
+        rr = (await db.execute(sa_select(ScheduleRun).where(
+            ScheduleRun.tenant_id == tid,
+        ).order_by(ScheduleRun.started_at.desc()).limit(1))).scalar_one_or_none()
+        if rr:
+            last_run = rr.started_at.isoformat() if rr.started_at else None
+        run_count = await _count(sa_select(func.count(ScheduleRun.id)).where(
+            ScheduleRun.tenant_id == tid,
+        ))
+    except Exception:
+        pass
+
+    # 상태 추론 보정: 캐시가 없어도 DB 카운트로 진행도 derive
+    if phase == "unknown":
+        if news_total + community_total + youtube_total == 0:
+            phase = "starting"
+            progress = 5
+            message = "수집 대기 중"
+        elif news_analyzed + community_analyzed + youtube_analyzed == 0:
+            phase = "collecting"
+            progress = 30
+            message = f"수집 완료 {news_total + community_total + youtube_total}건, AI 분석 대기"
+        else:
+            phase = "analyzing"
+            progress = 70
+            message = f"AI 분석 진행 중 ({news_analyzed + community_analyzed + youtube_analyzed}건 완료)"
+
+    return {
+        "phase": phase,
+        "progress": progress,
+        "message": message,
+        "counts": {
+            "news": news_total,
+            "community": community_total,
+            "youtube": youtube_total,
+            "analyzed_news": news_analyzed,
+            "analyzed_community": community_analyzed,
+            "analyzed_youtube": youtube_analyzed,
+        },
+        "schedule_runs": run_count,
+        "last_run": last_run,
     }

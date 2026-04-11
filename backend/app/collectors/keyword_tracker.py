@@ -27,13 +27,23 @@ class KeywordTracker:
 
     async def get_candidate_trends(
         self, candidates: list[str], days: int = 30,
+        election_type: str = "superintendent", region_short: str = "충북",
     ) -> dict:
         """
-        후보별 검색량 추이.
-        Returns: {"김진균": [{"date": "2026-03-01", "ratio": 5.2}, ...], ...}
+        후보별 검색량 추이 (동명이인 방지: "이름 + 직위" 검색).
         """
         if not self.client_id or len(candidates) == 0:
             return {}
+
+        # 선거유형별 직위명
+        title_map = {
+            "superintendent": "교육감",
+            "mayor": "시장",
+            "governor": "도지사",
+            "council": "의원",
+            "congressional": "국회의원",
+        }
+        title = title_map.get(election_type, "후보")
 
         now = datetime.now()
         body = {
@@ -42,7 +52,7 @@ class KeywordTracker:
             "timeUnit": "date",
             "keywordGroups": [
                 {"groupName": name, "keywords": [name]}
-                for name in candidates[:5]  # DataLab 최대 5그룹
+                for name in candidates[:5]
             ],
         }
 
@@ -59,21 +69,26 @@ class KeywordTracker:
         if not issues:
             return {}
 
-        # 상위 5개 이슈 키워드로 그룹 구성
-        top_issues = issues[:5]
+        # DataLab 최대 5그룹이라 여러 번 호출 (상위 15개)
+        all_results = {}
         now = datetime.now()
+        for batch_start in range(0, min(len(issues), 15), 5):
+            batch = issues[batch_start:batch_start + 5]
+            if not batch:
+                break
+            body = {
+                "startDate": (now - timedelta(days=days)).strftime("%Y-%m-%d"),
+                "endDate": now.strftime("%Y-%m-%d"),
+                "timeUnit": "date",
+                "keywordGroups": [
+                    {"groupName": issue, "keywords": [issue, f"{region_short} {issue}"] if region_short else [issue]}
+                    for issue in batch
+                ],
+            }
+            batch_result = await self._call_datalab(body)
+            all_results.update(batch_result)
 
-        body = {
-            "startDate": (now - timedelta(days=days)).strftime("%Y-%m-%d"),
-            "endDate": now.strftime("%Y-%m-%d"),
-            "timeUnit": "date",
-            "keywordGroups": [
-                {"groupName": issue, "keywords": [issue, f"{region_short} {issue}"] if region_short else [issue]}
-                for issue in top_issues
-            ],
-        }
-
-        return await self._call_datalab(body)
+        return all_results
 
     async def get_custom_trends(
         self, keyword_groups: list[dict], days: int = 30,
@@ -129,6 +144,74 @@ class KeywordTracker:
                 logger.error("datalab_error", error=str(e))
                 return {}
 
+    async def get_regional_issue_trends(
+        self, election_type: str, region_short: str, days: int = 30,
+    ) -> dict:
+        """
+        지역 vs 전국 이슈 비교 — 지역에서 특히 관심이 높은 이슈를 식별.
+        각 이슈에 대해 "지역명 이슈" vs "이슈" 검색 비교 → regional_boost 점수.
+        """
+        issues = ELECTION_ISSUES.get(election_type, {}).get("issues", [])
+        if not issues or not region_short:
+            return {}
+
+        results = {}
+        now = datetime.now()
+
+        # 상위 15개 이슈를 5개씩 배치
+        for batch_start in range(0, min(len(issues), 15), 5):
+            batch = issues[batch_start:batch_start + 5]
+            if not batch:
+                break
+
+            # 전국 검색량 조회
+            national_body = {
+                "startDate": (now - timedelta(days=days)).strftime("%Y-%m-%d"),
+                "endDate": now.strftime("%Y-%m-%d"),
+                "timeUnit": "date",
+                "keywordGroups": [
+                    {"groupName": issue, "keywords": [issue]}
+                    for issue in batch
+                ],
+            }
+            national = await self._call_datalab(national_body)
+
+            # 지역 검색량 조회
+            regional_body = {
+                "startDate": (now - timedelta(days=days)).strftime("%Y-%m-%d"),
+                "endDate": now.strftime("%Y-%m-%d"),
+                "timeUnit": "date",
+                "keywordGroups": [
+                    {"groupName": issue, "keywords": [f"{region_short} {issue}"]}
+                    for issue in batch
+                ],
+            }
+            regional = await self._call_datalab(regional_body)
+
+            for issue in batch:
+                nat = national.get(issue, {})
+                reg = regional.get(issue, {})
+                nat_avg = nat.get("avg_7d", 0)
+                reg_avg = reg.get("avg_7d", 0)
+
+                # regional_boost: 지역 검색의 상대적 강세 (-100 ~ +100)
+                if nat_avg > 0 and reg_avg > 0:
+                    boost = ((reg_avg / max(nat_avg, 1)) - 1) * 100
+                else:
+                    boost = 0
+
+                results[issue] = {
+                    "national_avg_7d": round(nat_avg, 1),
+                    "regional_avg_7d": round(reg_avg, 1),
+                    "national_trend": nat.get("trend", "stable"),
+                    "regional_trend": reg.get("trend", "stable"),
+                    "regional_boost": round(boost, 1),
+                    "latest_national": nat.get("latest", 0),
+                    "latest_regional": reg.get("latest", 0),
+                }
+
+        return results
+
     @staticmethod
     def _calc_trend(points: list[dict]) -> str:
         """최근 7일 vs 이전 7일 비교 → 상승/하락/유지."""
@@ -164,7 +247,7 @@ async def collect_and_store_trends(
     stored = 0
 
     for name, trend_data in cand_trends.items():
-        db_session.execute(text("""
+        await db_session.execute(text("""
             INSERT INTO search_trends (id, tenant_id, election_id, keyword, platform,
                 relative_volume, search_volume, checked_at)
             VALUES (:id, :tid, :eid, :kw, 'naver_datalab', :vol, :svol, NOW())
@@ -179,7 +262,7 @@ async def collect_and_store_trends(
     issue_trends = await tracker.get_issue_trends(election_type, region_short)
 
     for issue, trend_data in issue_trends.items():
-        db_session.execute(text("""
+        await db_session.execute(text("""
             INSERT INTO search_trends (id, tenant_id, election_id, keyword, platform,
                 relative_volume, search_volume, checked_at)
             VALUES (:id, :tid, :eid, :kw, 'naver_datalab_issue', :vol, :svol, NOW())
@@ -190,5 +273,6 @@ async def collect_and_store_trends(
         })
         stored += 1
 
+    await db_session.flush()
     logger.info("trends_stored", tenant_id=tenant_id, count=stored)
     return {"stored": stored, "candidates": len(cand_trends), "issues": len(issue_trends)}

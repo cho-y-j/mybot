@@ -1,12 +1,23 @@
 """
 ElectionPulse - YouTube Video Collector
 유튜브 영상/댓글/숏츠 수집 엔진
+
+수집 시점 게이트:
+- publishedAfter (7일 기본)
+- 조회수 최소 기준 (기본 50)
+- homonym_filters (동명이인 차단)
 """
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 import httpx
 import structlog
 
+from app.collectors.filters import apply_homonym_filter
+
 logger = structlog.get_logger()
+
+DEFAULT_RECENT_DAYS = 7
+DEFAULT_MIN_VIEWS = 50
 
 
 class YouTubeCollector:
@@ -24,10 +35,16 @@ class YouTubeCollector:
         order: str = "date",
         region: str = "KR",
         video_duration: str = None,
+        recent_days: int = DEFAULT_RECENT_DAYS,
+        min_views: int = DEFAULT_MIN_VIEWS,
+        homonym_filters: dict | None = None,
     ) -> list[dict]:
         """
         유튜브 영상 검색.
         video_duration: None(전체) | "short"(숏츠/4분 이하) | "medium" | "long"
+        recent_days: publishedAfter 컷오프 (기본 7일). 0이면 시간 필터 없음.
+        min_views: 조회수 최소치 (기본 50). 0이면 품질 필터 없음.
+        homonym_filters: {exclude, require_any, require_name}
         Returns: [{"video_id", "title", "channel", "description", "published_at",
                    "thumbnail", "is_short"}, ...]
         """
@@ -45,6 +62,10 @@ class YouTubeCollector:
             "relevanceLanguage": "ko",
             "key": self.api_key,
         }
+
+        if recent_days > 0:
+            published_after = (datetime.now(timezone.utc) - timedelta(days=recent_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            params["publishedAfter"] = published_after
 
         if video_duration:
             params["videoDuration"] = video_duration
@@ -90,8 +111,24 @@ class YouTubeCollector:
                         if not v["is_short"] and duration:
                             v["is_short"] = self._is_short_duration(duration)
 
-                logger.info("youtube_search", keyword=keyword, count=len(videos),
-                           duration_filter=video_duration)
+                before_quality = len(videos)
+                if min_views > 0:
+                    videos = [v for v in videos if v.get("views", 0) >= min_views]
+
+                before_homonym = len(videos)
+                if homonym_filters:
+                    videos = apply_homonym_filter(
+                        videos, homonym_filters,
+                        text_fields=("title", "description", "channel"),
+                    )
+
+                logger.info(
+                    "youtube_search",
+                    keyword=keyword, count=len(videos),
+                    raw=before_quality, after_views=before_homonym,
+                    min_views=min_views, recent_days=recent_days,
+                    duration_filter=video_duration,
+                )
                 return videos
 
             except Exception as e:

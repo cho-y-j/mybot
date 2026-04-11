@@ -13,6 +13,7 @@ import structlog
 from sqlalchemy import select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import app.auth.models  # ORM relationship resolution (Tenant 등)
 from app.elections.models import (
     Election, Candidate, NewsArticle, CommunityPost,
     YouTubeVideo, SearchTrend, Survey, SurveyCrosstab,
@@ -524,4 +525,4 @@ async def _call_claude_for_report(factsheet: str, system_prompt: str = None) -> 
     """Claude CLI로 AI 보고서 생성 — ai_service로 위임."""
     from app.services.ai_service import call_claude_text
     prompt = f"{system_prompt or REPORT_PROMPT_DAILY}\n\n[수집 데이터 팩트시트]\n{factsheet}"
-    return await call_claude_text(prompt, timeout=90, context="ai_report_generation")
+    return await call_claude_text(prompt, timeout=180, context="ai_report_generation")

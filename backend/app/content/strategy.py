@@ -88,12 +88,10 @@ async def generate_content_strategy(
             sigungu=election.region_sigungu,
         )
 
-    # AI 블로그 아웃라인 (상위 3개 주제)
+    # 블로그 아웃라인 (Claude 없이 빠른 fallback만 — AI는 수동 트리거)
     ai_outlines = []
     for topic in blog_topics[:3]:
-        outline = await _generate_blog_outline(
-            topic, election, our, d_day,
-        )
+        outline = _fallback_outline(topic, our)
         if outline:
             ai_outlines.append(outline)
 
@@ -173,7 +171,7 @@ async def _get_competitor_topics(
         news = (await db.execute(
             select(NewsArticle.title)
             .where(NewsArticle.candidate_id == comp.id)
-            .order_by(NewsArticle.collected_at.desc())
+            .order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.collected_at.desc())
             .limit(10)
         )).scalars().all()
 
@@ -207,7 +205,7 @@ async def _get_our_coverage(db: AsyncSession, our: Candidate) -> dict:
     news_titles = (await db.execute(
         select(NewsArticle.title)
         .where(NewsArticle.candidate_id == our.id)
-        .order_by(NewsArticle.collected_at.desc())
+        .order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.collected_at.desc())
         .limit(20)
     )).scalars().all()
 

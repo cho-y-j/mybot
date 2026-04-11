@@ -5,6 +5,23 @@
 :root {
   --background: #f8fafc;
   --foreground: #0f172a;
+  --card-bg: #ffffff;
+  --card-border: #f1f5f9;
+  --input-bg: #ffffff;
+  --input-border: #e2e8f0;
+  --muted: #64748b;
+  --muted-bg: #f1f5f9;
+}
+
+.dark {
+  --background: #0f1117;
+  --foreground: #e2e8f0;
+  --card-bg: #1a1d2e;
+  --card-border: #2a2d3e;
+  --input-bg: #1e2235;
+  --input-border: #333750;
+  --muted: #94a3b8;
+  --muted-bg: #1e2235;
 }
 
 body {
@@ -19,6 +36,8 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+.dark ::-webkit-scrollbar-thumb { background: #333750; }
+.dark ::-webkit-scrollbar-thumb:hover { background: #4a4f6a; }
 
 @layer components {
   .btn-primary {
@@ -27,21 +46,22 @@ body {
     shadow-sm hover:shadow-md;
   }
   .btn-secondary {
-    @apply bg-white text-gray-700 px-4 py-2.5 rounded-xl hover:bg-gray-50
-    transition-all font-medium border border-gray-200 hover:border-gray-300
-    shadow-sm;
+    @apply px-4 py-2.5 rounded-xl transition-all font-medium shadow-sm
+    bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 hover:border-gray-300
+    dark:bg-dark-card dark:text-gray-300 dark:border-dark-border dark:hover:bg-dark-hover;
   }
   .btn-danger {
     @apply bg-red-500 text-white px-4 py-2.5 rounded-xl hover:bg-red-600
     transition-all font-semibold shadow-sm;
   }
   .input-field {
-    @apply w-full px-3.5 py-2.5 border border-gray-200 rounded-xl
-    focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500
-    bg-white transition-all placeholder:text-gray-400;
+    @apply w-full px-3.5 py-2.5 rounded-xl transition-all placeholder:text-gray-400
+    border focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500
+    bg-[var(--input-bg)] border-[var(--input-border)] text-[var(--foreground)];
   }
   .card {
-    @apply bg-white rounded-2xl shadow-sm border border-gray-100 p-6
-    transition-shadow hover:shadow-md;
+    @apply rounded-2xl shadow-sm p-6 transition-all
+    bg-[var(--card-bg)] border border-[var(--card-border)]
+    hover:shadow-md;
   }
 }

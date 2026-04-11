@@ -24,10 +24,15 @@ MODEL_TIER = {
 
 # 용도별 기본 tier (context명 → tier)
 DEFAULT_TIER = {
-    # fast (Haiku) — 대량·단순 분류
-    "sentiment": "fast",
-    "batch_sentiment": "fast",
+    # fast (Haiku) — 단순 분류만
     "issue_classify": "fast",
+    # standard (Sonnet) — 감성 분석 (Haiku로는 한국어 선거 뉴스 오분류 26-40%)
+    "sentiment": "standard",
+    "batch_sentiment": "standard",
+    "media_analyze_batch": "standard",
+    "media_analyze_single": "standard",
+    "competitor_gap_summary": "standard",
+    "survey_ai_strategy": "premium",
     "telegram_briefing": "fast",
     "alert_check": "fast",
     "keyword_extract": "fast",
@@ -41,7 +46,8 @@ DEFAULT_TIER = {
     "swing_voter_cta": "standard",
     "briefing": "standard",
     "ai_briefing": "standard",
-    # premium (Opus) — 보고서·전략·토론
+    # premium (Opus) — 보고서·전략·토론·감성검증
+    "sentiment_verify": "premium",
     "daily_report": "premium",
     "weekly_report": "premium",
     "debate_script": "premium",

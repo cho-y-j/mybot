@@ -165,7 +165,7 @@ def _build_election_info(election, candidates, d_day) -> str:
 
 
 async def _build_news_context(db, tenant_id, election_id, candidates, today) -> str:
-    """뉴스 데이터 컨텍스트."""
+    """뉴스 컨텍스트 — AI 분석 결과(ai_summary, strategic_quadrant, action_summary) 포함."""
     lines = ["=== 뉴스 현황 (오늘) ==="]
 
     for cand in candidates:
@@ -191,22 +191,35 @@ async def _build_news_context(db, tenant_id, election_id, candidates, today) -> 
         )).scalar() or 0
         lines.append(f"{cand.name}: {total}건 (긍정 {pos}, 부정 {neg}, 중립 {total-pos-neg})")
 
-    # 최근 뉴스 제목
-    recent = (await db.execute(
-        select(NewsArticle, Candidate.name)
-        .join(Candidate, NewsArticle.candidate_id == Candidate.id)
-        .where(NewsArticle.tenant_id == tenant_id)
-        .order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.collected_at.desc())
-        .limit(10)
-    )).all()
+    # 최근 뉴스 — AI 분석 결과 우선. `is_about_our_candidate`가 TRUE이거나 관련성 있는 것만.
+    recent = (await db.execute(text("""
+        SELECT n.title, n.sentiment, n.ai_summary, n.ai_reason,
+               n.strategic_quadrant, n.ai_threat_level, n.action_summary,
+               n.is_about_our_candidate, n.published_at, c.name AS cand_name
+        FROM news_articles n
+        LEFT JOIN candidates c ON n.candidate_id = c.id
+        WHERE n.tenant_id = :tid
+          AND (n.strategic_quadrant IS NOT NULL OR n.ai_analyzed_at IS NOT NULL)
+        ORDER BY
+          CASE n.ai_threat_level WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
+          n.published_at DESC NULLS LAST,
+          n.collected_at DESC
+        LIMIT 12
+    """), {"tid": tenant_id})).all()
 
     if recent:
-        lines.append("\n최근 주요 뉴스:")
-        for news, cand_name in recent:
-            emoji = {"positive": "+", "negative": "-", "neutral": "o"}.get(news.sentiment, "o")
-            lines.append(f"  [{emoji}][{cand_name}] {news.title}")
-            if news.summary:
-                lines.append(f"    요약: {news.summary[:100]}")
+        lines.append("\n최근 주요 뉴스 (AI 분석 포함):")
+        for r in recent:
+            emoji = {"positive": "+", "negative": "-", "neutral": "o"}.get(r.sentiment, "o")
+            sq = f" [{r.strategic_quadrant}]" if r.strategic_quadrant else ""
+            thr = f" ⚠{r.ai_threat_level}" if r.ai_threat_level in ("high", "medium") else ""
+            lines.append(f"  [{emoji}][{r.cand_name or '?'}]{sq}{thr} {r.title}")
+            if r.ai_summary:
+                lines.append(f"    AI 요약: {r.ai_summary[:150]}")
+            if r.ai_reason:
+                lines.append(f"    판단 근거: {r.ai_reason[:120]}")
+            if r.action_summary:
+                lines.append(f"    권장 액션: {r.action_summary[:120]}")
 
     return "\n".join(lines)
 
@@ -318,55 +331,115 @@ async def _build_survey_context(db, tenant_id, election_id) -> str:
 
 
 async def _build_strategy_context(db, tenant_id, election_id, candidates, our) -> str:
-    """전략 분석 컨텍스트."""
+    """전략 분석 컨텍스트 — AI 4사분면(strength/weakness/opportunity/threat) 기반."""
     if not our:
         return ""
-    lines = ["=== 전략 분석 데이터 ==="]
+    lines = ["=== 전략 분석 (AI 4사분면 기반) ==="]
 
-    # 우리 후보 vs 경쟁자 뉴스 비교
-    our_news = (await db.execute(
-        select(func.count()).where(NewsArticle.candidate_id == our.id)
-    )).scalar() or 0
-    total_news = (await db.execute(
-        select(func.count()).where(
-            NewsArticle.tenant_id == tenant_id, NewsArticle.election_id == election_id,
-        )
-    )).scalar() or 0
+    # ── 1) 4사분면 요약 집계 ──
+    q_rows = (await db.execute(text("""
+        SELECT strategic_quadrant, COUNT(*) AS cnt
+        FROM news_articles
+        WHERE tenant_id = :tid AND election_id = :eid
+          AND strategic_quadrant IS NOT NULL
+          AND ai_analyzed_at > NOW() - INTERVAL '14 days'
+        GROUP BY strategic_quadrant
+    """), {"tid": tenant_id, "eid": election_id})).all()
 
-    lines.append(f"우리 후보({our.name}) 뉴스 비중: {our_news}/{total_news}건 ({round(our_news/total_news*100) if total_news else 0}%)")
+    q_counts = {r.strategic_quadrant: r.cnt for r in q_rows}
+    lines.append(
+        f"최근 14일 4사분면: 강점 {q_counts.get('strength', 0)}건, "
+        f"위기 {q_counts.get('weakness', 0)}건, "
+        f"기회 {q_counts.get('opportunity', 0)}건, "
+        f"위협 {q_counts.get('threat', 0)}건"
+    )
 
-    # 경쟁자별 비교
-    for cand in candidates:
-        if cand.is_our_candidate:
-            continue
-        c_news = (await db.execute(
-            select(func.count()).where(NewsArticle.candidate_id == cand.id)
-        )).scalar() or 0
-        c_neg = (await db.execute(
-            select(func.count()).where(
-                NewsArticle.candidate_id == cand.id, NewsArticle.sentiment == "negative",
-            )
-        )).scalar() or 0
-        lines.append(f"경쟁자 {cand.name}: 뉴스 {c_news}건, 부정 {c_neg}건")
+    # ── 2) 우리 위기 (weakness) TOP 5 — 방어/해명이 필요한 항목 ──
+    weak = (await db.execute(text("""
+        SELECT n.title, n.ai_summary, n.ai_reason, n.action_summary, n.ai_threat_level,
+               c.name AS cand_name
+        FROM news_articles n
+        LEFT JOIN candidates c ON n.candidate_id = c.id
+        WHERE n.tenant_id = :tid AND n.election_id = :eid
+          AND n.strategic_quadrant = 'weakness'
+        ORDER BY
+          CASE n.ai_threat_level WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
+          n.published_at DESC NULLS LAST
+        LIMIT 5
+    """), {"tid": tenant_id, "eid": election_id})).all()
+
+    if weak:
+        lines.append("\n[우리 위기 — 방어/해명 필요]")
+        for w in weak:
+            thr = f" ⚠{w.ai_threat_level}" if w.ai_threat_level in ("high", "medium") else ""
+            lines.append(f"  •{thr} {w.title}")
+            if w.ai_summary:
+                lines.append(f"    요약: {w.ai_summary[:140]}")
+            if w.action_summary:
+                lines.append(f"    대응: {w.action_summary[:120]}")
+
+    # ── 3) 경쟁자 약점 (opportunity) TOP 5 — 공격 기회 ──
+    opp = (await db.execute(text("""
+        SELECT n.title, n.ai_summary, n.action_summary, c.name AS cand_name
+        FROM news_articles n
+        LEFT JOIN candidates c ON n.candidate_id = c.id
+        WHERE n.tenant_id = :tid AND n.election_id = :eid
+          AND n.strategic_quadrant = 'opportunity'
+        ORDER BY n.published_at DESC NULLS LAST
+        LIMIT 5
+    """), {"tid": tenant_id, "eid": election_id})).all()
+
+    if opp:
+        lines.append("\n[경쟁자 약점 — 공격 기회]")
+        for o in opp:
+            lines.append(f"  • [{o.cand_name or '?'}] {o.title}")
+            if o.ai_summary:
+                lines.append(f"    요약: {o.ai_summary[:140]}")
+
+    # ── 4) 우리 강점 (strength) TOP 5 — 확산/홍보 ──
+    strong = (await db.execute(text("""
+        SELECT n.title, n.ai_summary, n.action_summary
+        FROM news_articles n
+        WHERE n.tenant_id = :tid AND n.election_id = :eid
+          AND n.strategic_quadrant = 'strength'
+        ORDER BY n.published_at DESC NULLS LAST
+        LIMIT 5
+    """), {"tid": tenant_id, "eid": election_id})).all()
+
+    if strong:
+        lines.append("\n[우리 강점 — 확산 대상]")
+        for s in strong:
+            lines.append(f"  • {s.title}")
+            if s.ai_summary:
+                lines.append(f"    요약: {s.ai_summary[:140]}")
 
     return "\n".join(lines)
 
 
 async def _build_candidate_detail(db, tenant_id, cand, today) -> str:
-    """특정 후보 상세 정보."""
+    """특정 후보 상세 정보 — AI 분석 결과 포함."""
     lines = [f"=== {cand.name} 상세 ==="]
     lines.append(f"정당: {cand.party or '무소속'}")
     lines.append(f"검색 키워드: {', '.join(cand.search_keywords or [])}")
     if cand.career_summary:
         lines.append(f"경력: {cand.career_summary}")
 
-    # 최근 뉴스
-    recent = (await db.execute(
-        select(NewsArticle).where(NewsArticle.candidate_id == cand.id)
-        .order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.collected_at.desc()).limit(5)
-    )).scalars().all()
+    # 최근 뉴스 — AI 분석 포함
+    recent = (await db.execute(text("""
+        SELECT title, sentiment, strategic_quadrant, ai_summary, ai_threat_level,
+               action_summary, published_at
+        FROM news_articles
+        WHERE candidate_id = :cid
+        ORDER BY published_at DESC NULLS LAST, collected_at DESC
+        LIMIT 6
+    """), {"cid": str(cand.id)})).all()
+
     for n in recent:
-        lines.append(f"  [{n.sentiment}] {n.title}")
+        sq = f" [{n.strategic_quadrant}]" if n.strategic_quadrant else ""
+        thr = f" ⚠{n.ai_threat_level}" if n.ai_threat_level in ("high", "medium") else ""
+        lines.append(f"  [{n.sentiment or '-'}]{sq}{thr} {n.title}")
+        if n.ai_summary:
+            lines.append(f"    → {n.ai_summary[:140]}")
 
     return "\n".join(lines)
 

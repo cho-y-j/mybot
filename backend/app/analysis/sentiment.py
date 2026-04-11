@@ -232,6 +232,132 @@ class SentimentAnalyzer:
 
         return results
 
+    async def verify_batch_with_opus(
+        self,
+        items: list[dict],
+        tenant_id: str | None = None,
+        db=None,
+    ) -> list[dict]:
+        """
+        Opus(premium)로 감성 분류 검증 + 4사분면 배정.
+        1차(Sonnet) 판정을 Opus가 재확인.
+
+        items: [{
+            "id": str,
+            "text": str,
+            "current_sentiment": str,  # 1차 판정 (Sonnet)
+            "candidate_name": str,
+            "is_our_candidate": bool,
+        }, ...]
+
+        Returns: [{
+            "id": str,
+            "sentiment": str,         # 검증 후 최종 감성
+            "score": float,
+            "quadrant": str,           # strength|weakness|opportunity|threat
+            "changed": bool,           # 1차 판정이 뒤집혔는지
+            "reason": str,             # Opus 판단 근거
+        }, ...]
+        """
+        if not items:
+            return []
+
+        from app.services.ai_service import call_claude
+
+        results = []
+        # 5건씩 배치 (Opus는 정밀 분석이라 더 작은 배치)
+        for i in range(0, len(items), 5):
+            batch = items[i:i + 5]
+            numbered_items = []
+            for j, it in enumerate(batch):
+                side = "우리 후보" if it.get("is_our_candidate") else "경쟁 후보"
+                numbered_items.append(
+                    f"{j+1}. [{side}: {it['candidate_name']}] "
+                    f"[현재판정: {it['current_sentiment']}] "
+                    f"{it['text'][:150]}"
+                )
+            numbered = "\n".join(numbered_items)
+
+            prompt = (
+                "당신은 선거 캠프 미디어 분석 전문가입니다. 아래 뉴스/게시글의 감성 분류와 4사분면 전략 분류를 검증하세요.\n\n"
+                "## 감성 규칙\n"
+                "1. 감성은 해당 후보 관점에서 판단:\n"
+                "   - 해당 후보에게 유리한 내용 → positive\n"
+                "   - 해당 후보에게 불리한 내용 → negative\n"
+                "   - 단순 사실보도, 중립적 비교, 판단 애매 → neutral\n"
+                "2. '비리 근절 공약', '학폭 방지 대책' = 해결/예방 → positive (부정단어지만 맥락이 긍정)\n"
+                "3. '비리 의혹 제기', '학폭 가해 전력' = 문제 발생 → negative\n\n"
+                "## ★★ 4사분면 — 사건 vs 행동 구분 (가장 중요) ★★\n"
+                "단순 매핑 금지! 발화 주체와 행위에 따라 정반대 분류 가능.\n\n"
+                "### 우리 후보\n"
+                "▶ 우리 후보 본인이 능동적으로 발표/해명/주장/공개/제안/약속/항의/요구/반발/입장표명한 콘텐츠\n"
+                "  = **strength** (능동 메시지) — 사건이 부정적이어도 우리 후보의 행동은 강점\n"
+                "  예: '서승우 경선 번복 반발' → 본인이 능동 항의 → strength (sentiment=negative여도!)\n"
+                "  예: '후보 재경선 수용' → 대승적 결단 → strength\n"
+                "  예: '후보 공약 발표' → strength\n\n"
+                "▶ 우리 후보가 외부에 의해 비판/사고/논란/실수/의혹/스캔들로 보도\n"
+                "  = **weakness** (실제 위기) — 즉시 방어 필요\n"
+                "  예: '후보 부동산 투기 의혹 제기' → weakness\n"
+                "  예: '후보 컷오프, 자격 미달 지적' → weakness\n\n"
+                "### 경쟁 후보\n"
+                "▶ 경쟁 후보가 비판/사고/논란/약점 노출 → **opportunity** (공격 기회)\n"
+                "▶ 경쟁 후보 능동 발표/성과/동원 성공 → **threat** (경쟁 위협)\n\n"
+                "### 제3자/일반 뉴스 → neutral → null\n\n"
+                "## 규칙\n"
+                "1. 기존 판정이 틀렸으면 반드시 교정 (특히 '우리 후보 + negative 사건 + 능동 행동' = strength)\n"
+                "2. sentiment와 quadrant는 독립적으로 판단. 'negative = weakness' 기계적 매핑 금지.\n"
+                "3. 본문에 '~가 발표했다', '~가 입장을 밝혔다', '~가 항의했다' 같은 능동 발화 있으면 strength 가능성 검토.\n\n"
+                "반드시 JSON 배열로만 답변:\n"
+                '[{"n":1,"s":"positive","c":0.9,"q":"strength","r":"능동 항의로 strength"},...]\n'
+                "n=번호, s=최종감성, c=확신도(0~1), q=4사분면(strength/weakness/opportunity/threat/null), r=판단근거(20자이내)\n\n"
+                f"텍스트:\n{numbered}"
+            )
+
+            ai_result = await call_claude(
+                prompt, timeout=60, context="sentiment_verify",
+                model_tier="premium",  # Opus 강제
+                tenant_id=tenant_id,
+                db=db,
+            )
+
+            if ai_result and "items" in ai_result:
+                for item in ai_result["items"]:
+                    idx = item.get("n", 0) - 1
+                    if 0 <= idx < len(batch):
+                        original = batch[idx]
+                        new_sentiment = item.get("s", original["current_sentiment"])
+                        confidence = float(item.get("c", 0.5))
+                        score = confidence if new_sentiment == "positive" else (
+                            -confidence if new_sentiment == "negative" else 0.0
+                        )
+                        quadrant = item.get("q", "null")
+                        if quadrant == "null":
+                            quadrant = None
+
+                        results.append({
+                            "id": original["id"],
+                            "sentiment": new_sentiment,
+                            "score": round(score, 3),
+                            "quadrant": quadrant,
+                            "changed": new_sentiment != original["current_sentiment"],
+                            "reason": item.get("r", ""),
+                        })
+
+            # AI 결과에 없는 항목은 기존 판정 유지
+            result_ids = {r["id"] for r in results}
+            for it in batch:
+                if it["id"] not in result_ids:
+                    results.append({
+                        "id": it["id"],
+                        "sentiment": it["current_sentiment"],
+                        "score": 0.0,
+                        "quadrant": None,
+                        "changed": False,
+                        "reason": "검증 실패 — 기존 유지",
+                    })
+
+        return results
+
 
 class TrendDetector:
     """트렌드 변화 감지기."""

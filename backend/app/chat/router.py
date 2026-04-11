@@ -15,7 +15,6 @@ from app.common.dependencies import CurrentUser
 from app.elections.models import Election
 from app.chat.context_builder import build_chat_context
 from app.config import get_settings
-import httpx
 import structlog
 
 logger = structlog.get_logger()
@@ -84,8 +83,10 @@ async def chat_send(
     # DB에서 관련 데이터 자동 수집
     context = await build_chat_context(db, tid, election_id, req.message)
 
-    # AI 호출 (Claude API 또는 로컬 분석)
-    reply = await _get_ai_response(req.message, context, model_tier=req.model_tier)
+    # AI 호출 (고객 API키 → 배정 CLI → 시스템 CLI 자동 전환)
+    reply = await _get_ai_response(
+        req.message, context, tenant_id=tid, db=db, model_tier=req.model_tier,
+    )
 
     # 사용된 컨텍스트 섹션 추출
     sections_used = [
@@ -101,178 +102,45 @@ async def chat_send(
     )
 
 
-async def _get_ai_response(question: str, context: str, model_tier: str | None = None) -> str:
+async def _get_ai_response(
+    question: str,
+    context: str,
+    tenant_id: str | None = None,
+    db=None,
+    model_tier: str | None = None,
+) -> str:
     """
-    AI 응답 생성 우선순위:
-    1순위: Claude CLI (고객 구독 — 비용 0원)
-    2순위: ChatGPT CLI (고객 구독 — 비용 0원)
-    3순위: Claude API (API 키 있으면)
-    4순위: OpenAI API (API 키 있으면)
-    5순위: 데이터 기반 자동 응답 (항상 동작)
-    """
+    AI 응답 생성 — ai_service.call_claude_text 단일 진입점 사용.
 
-    # 1순위: Claude CLI (고객의 구독 계정)
+    ai_service가 내부적으로 자동 전환:
+    1순위: 고객 Anthropic API 키 (tenants.anthropic_api_key)
+    2순위: 배정된 Claude CLI 계정 (CLAUDE_CONFIG_DIR)
+    3순위: 시스템 기본 CLI
+    실패 시: 데이터 기반 자동 응답 (항상 동작)
+    """
+    from app.services.ai_service import call_claude_text
+
+    # System prompt + context + question 하나로 합침
+    full_prompt = f"{SYSTEM_PROMPT}\n\n[수집된 선거 데이터]\n{context}\n\n[질문]\n{question}"
+
+    chat_context_name = f"chat_{model_tier}" if model_tier else "chat"
+
     try:
-        result = await _call_claude_cli(question, context, model_tier)
-        if result:
+        result = await call_claude_text(
+            full_prompt,
+            timeout=90,
+            context=chat_context_name,
+            tenant_id=tenant_id,
+            db=db,
+            model_tier=model_tier,
+        )
+        if result and len(result) > 30:
             return result
     except Exception as e:
-        logger.warning("claude_cli_unavailable", error=str(e))
+        logger.warning("chat_ai_failed", error=str(e)[:200])
 
-    # 2순위: ChatGPT CLI
-    try:
-        result = await _call_chatgpt_cli(question, context)
-        if result:
-            return result
-    except Exception as e:
-        logger.warning("chatgpt_cli_unavailable", error=str(e))
-
-    # 3순위: Claude API (키 있으면)
-    anthropic_key = getattr(settings, 'ANTHROPIC_API_KEY', '') or ''
-    if anthropic_key:
-        try:
-            return await _call_claude_api(question, context, anthropic_key)
-        except Exception as e:
-            logger.error("claude_api_error", error=str(e))
-
-    # 4순위: OpenAI API (키 있으면)
-    openai_key = getattr(settings, 'OPENAI_API_KEY', '') or ''
-    if openai_key:
-        try:
-            return await _call_openai_api(question, context, openai_key)
-        except Exception as e:
-            logger.error("openai_api_error", error=str(e))
-
-    # 5순위: 데이터 기반 자동 응답 (항상 동작)
+    # 최종 폴백: 데이터 기반 자동 응답
     return _generate_data_response(question, context)
-
-
-async def _call_claude_cli(question: str, context: str, model_tier: str | None = None) -> str | None:
-    """
-    Claude CLI로 AI 응답 (고객의 구독 계정 사용, 비용 0원).
-    claude -p "프롬프트" --model <모델> 형태로 실행.
-    """
-    import asyncio
-    import shutil
-    from app.services.ai_service import get_model_for_context
-
-    claude_path = shutil.which("claude")
-    if not claude_path:
-        return None
-
-    # 챗 context에 맞는 모델 선택
-    chat_context = f"chat_{model_tier}" if model_tier else "chat"
-    model = get_model_for_context(chat_context, model_tier)
-
-    prompt = f"[수집된 선거 데이터]\n{context}\n\n[질문]\n{question}"
-
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            claude_path, "-p", prompt,
-            "--model", model,
-            "--system-prompt", SYSTEM_PROMPT,
-            "--permission-mode", "plan",
-            "--no-session-persistence",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60)
-
-        if proc.returncode == 0 and stdout:
-            result = stdout.decode("utf-8").strip()
-            if result:
-                logger.info("claude_cli_success", model=model, tier=model_tier or "standard", length=len(result))
-                return result
-        return None
-    except asyncio.TimeoutError:
-        logger.warning("claude_cli_timeout")
-        return None
-    except Exception as e:
-        logger.warning("claude_cli_error", error=str(e))
-        return None
-
-
-async def _call_chatgpt_cli(question: str, context: str) -> str | None:
-    """
-    ChatGPT CLI로 AI 응답 (고객의 구독 계정 사용).
-    """
-    import asyncio
-    import shutil
-
-    # chatgpt CLI 경로 (설치되어 있으면)
-    for cmd in ["chatgpt", "openai"]:
-        cli_path = shutil.which(cmd)
-        if cli_path:
-            break
-    else:
-        return None
-
-    prompt = f"{SYSTEM_PROMPT}\n\n[수집된 선거 데이터]\n{context}\n\n[질문]\n{question}"
-
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            cli_path, "-p", prompt,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60)
-
-        if proc.returncode == 0 and stdout:
-            result = stdout.decode("utf-8").strip()
-            if result:
-                return result
-        return None
-    except Exception:
-        return None
-
-
-async def _call_claude_api(question: str, context: str, api_key: str) -> str:
-    """Anthropic Claude API 호출 (API 키 있을 때만)."""
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": api_key,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model": "claude-sonnet-4-20250514",
-                "max_tokens": 2000,
-                "system": SYSTEM_PROMPT,
-                "messages": [
-                    {"role": "user", "content": f"[수집된 선거 데이터]\n{context}\n\n[질문]\n{question}"},
-                ],
-            },
-            timeout=30,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        return data["content"][0]["text"]
-
-
-async def _call_openai_api(question: str, context: str, api_key: str) -> str:
-    """OpenAI GPT API 호출 (API 키 있을 때만)."""
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": "gpt-4o",
-                "messages": [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": f"[수집된 선거 데이터]\n{context}\n\n[질문]\n{question}"},
-                ],
-                "max_tokens": 2000,
-            },
-            timeout=30,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        return data["choices"][0]["message"]["content"]
 
 
 def _generate_data_response(question: str, context: str) -> str:

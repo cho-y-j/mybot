@@ -113,14 +113,35 @@ class NaverCollector:
                         continue
                     if "naver.com/search" in href:
                         continue
-                    # 네이버 UI 텍스트 필터
-                    if any(x in title for x in ["언론사 선정", "네이버 메인에서", "구독하세요", "관련뉴스"]):
+                    # 네이버 UI/광고/쓰레기 필터
+                    GARBAGE_PATTERNS = [
+                        "언론사 선정", "네이버 메인에서", "구독하세요", "관련뉴스",
+                        "멤버십", "무료배송", "스토어", "클립 챌린지", "취향을 남겨",
+                        "홈리빙", "인기 스토어", "24시간 센터", "문제 발생시",
+                        "컬리를", "쇼핑", "할인", "쿠폰", "적립",
+                    ]
+                    if any(x in title for x in GARBAGE_PATTERNS):
+                        continue
+                    # naver 내부 링크 차단
+                    if any(x in href for x in [
+                        "naver.com/my", "naver.com/notify", "naver.com/help",
+                        "shopping.naver", "smartstore.naver", "campaign.naver",
+                        "naver.com/nid", "login.naver",
+                    ]):
                         continue
 
-                    # 뉴스 링크 판별
+                    # 뉴스 링크 판별 (엄격 모드)
                     cls = " ".join(a_tag.get("class", []))
                     is_news = any(c in cls for c in NAVER_NEWS_LINK_CLASSES)
-                    is_news = is_news or any(x in href for x in ["news", "article", ".co.kr", ".com"])
+                    # .com만으로는 부족 — 뉴스 도메인 패턴 필요
+                    if not is_news:
+                        is_news = any(x in href for x in [
+                            "news", "article", ".co.kr/", "journalist",
+                            "daejonilbo", "newsis", "nocutnews", "breaknews",
+                        ])
+                    # 네이버 자체 서비스 제외
+                    if any(x in href for x in ["shopping", "smartstore", "blog.naver", "cafe.naver"]):
+                        is_news = False
 
                     if not is_news:
                         continue
@@ -241,8 +262,9 @@ class NaverCollector:
                     elif "tistory" in href:
                         platform = "tistory"
 
-                    # 설명 추출
+                    # 설명 + 날짜 추출
                     desc = ""
+                    pub_date = None
                     parent = a_tag.find_parent(["li", "div"])
                     if parent:
                         for desc_cls in ["api_txt_lines", "dsc_txt", "txt_area"]:
@@ -250,10 +272,13 @@ class NaverCollector:
                             if desc_el:
                                 desc = desc_el.get_text(strip=True)[:200]
                                 break
+                        # 날짜 추출 (네이버 검색 결과 CSS에서)
+                        from app.collectors.filters import extract_naver_result_date
+                        pub_date = extract_naver_result_date(parent)
 
                     posts.append({
                         "title": title, "url": href, "author": "",
-                        "description": desc, "pub_date": None, "platform": platform,
+                        "description": desc, "pub_date": pub_date, "platform": platform,
                     })
 
                 return self._deduplicate(posts)[:count]

@@ -50,3 +50,17 @@ htmlcov/
 
 # Generated
 reports/generated/
+
+# Celery beat runtime state
+celerybeat-schedule
+celerybeat-schedule-*
+backend/celerybeat-schedule
+backend/celerybeat-schedule-*
+
+# 작업 로그 / 스크린샷 (커밋 제외)
+작업일지_*.md
+작업중내용.md
+*.png
+report_*.pdf
+.playwright-mcp/
+dashboard_*.png

@@ -345,6 +345,24 @@ class ApiClient {
     });
   }
 
+  // ─── Content History (생성된 콘텐츠/토론 저장소) ───
+  getContentHistory(electionId: string, opts?: { contentTypes?: string; limit?: number; offset?: number }) {
+    const params = new URLSearchParams();
+    if (opts?.contentTypes) params.set('content_types', opts.contentTypes);
+    if (opts?.limit) params.set('limit', String(opts.limit));
+    if (opts?.offset) params.set('offset', String(opts.offset));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return this.request<any>(`/content/history/${electionId}${qs}`);
+  }
+
+  getContentHistoryDetail(reportId: string) {
+    return this.request<any>(`/content/history-detail/${reportId}`);
+  }
+
+  getBootstrapStatus(electionId: string) {
+    return this.request<any>(`/onboarding/elections/${electionId}/bootstrap-status`);
+  }
+
   generateMultiTone(electionId: string, topic: string, context: string = '', platforms: string[] = ['instagram', 'blog'], tones: string[] = ['formal', 'friendly']) {
     return this.request<any>(`/content/generate-multi-tone/${electionId}`, {
       method: 'POST',

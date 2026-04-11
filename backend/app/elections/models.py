@@ -147,6 +147,8 @@ class NewsArticle(Base):
 
     sentiment = Column(String(20), nullable=True, comment="positive|negative|neutral")
     sentiment_score = Column(Float, nullable=True, comment="-1.0 ~ 1.0")
+    sentiment_verified = Column(Boolean, default=False, comment="Opus 검증 완료 여부")
+    strategic_quadrant = Column(String(20), nullable=True, comment="strength|weakness|opportunity|threat")
     relevance_score = Column(Float, nullable=True, comment="0.0 ~ 1.0")
 
     # AI 분석
@@ -187,6 +189,8 @@ class CommunityPost(Base):
 
     sentiment = Column(String(20), nullable=True)
     sentiment_score = Column(Float, nullable=True)
+    sentiment_verified = Column(Boolean, default=False, comment="Opus 검증 완료 여부")
+    strategic_quadrant = Column(String(20), nullable=True, comment="strength|weakness|opportunity|threat")
     issue_category = Column(String(100), nullable=True, comment="급식|돌봄|학폭|교권 등")
     relevance_score = Column(Float, nullable=True)
 
@@ -233,6 +237,8 @@ class YouTubeVideo(Base):
 
     sentiment = Column(String(20), nullable=True)
     sentiment_score = Column(Float, nullable=True)
+    sentiment_verified = Column(Boolean, default=False, comment="Opus 검증 완료 여부")
+    strategic_quadrant = Column(String(20), nullable=True, comment="strength|weakness|opportunity|threat")
 
     # AI 분석
     ai_summary = Column(Text, nullable=True)

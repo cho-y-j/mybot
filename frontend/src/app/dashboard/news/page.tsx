@@ -189,7 +189,8 @@ export default function NewsAnalysisPage() {
           <div className="space-y-2">
             {candComparison.map((c, i) => {
               const maxTotal = Math.max(...candComparison.map(x => x.total), 1);
-              const posRate = c.total > 0 ? Math.round(c.positive / c.total * 100) : 0;
+              const effective = (c.positive || 0) + (c.negative || 0);
+              const posRate = effective > 0 ? Math.round(c.positive / effective * 100) : 0;
               return (
                 <div key={c.name} className={`flex items-center gap-3 p-3 rounded-xl ${c.isOurs ? 'bg-blue-500/10 ring-1 ring-blue-500/30' : 'bg-[var(--muted-bg)]'}`}>
                   <span className="text-xs font-bold w-5 text-[var(--muted)]">{i + 1}</span>

@@ -353,13 +353,17 @@ class CommunityCollector:
                     if cafe_el:
                         cafe_name = cafe_el.get_text(strip=True)
 
+                    # 날짜 추출 (네이버 검색 결과 HTML에서 파싱)
+                    from app.collectors.filters import extract_naver_result_date
+                    pub_date = extract_naver_result_date(item)
+
                     posts.append({
                         "title": title,
                         "url": href,
                         "author": "",
                         "cafe_name": cafe_name,
                         "description": desc,
-                        "pub_date": None,
+                        "pub_date": pub_date,
                         "platform": "naver_cafe",
                     })
 
@@ -414,12 +418,16 @@ class CommunityCollector:
                     if "tistory" in href:
                         platform = "tistory"
 
+                    # 날짜 추출
+                    from app.collectors.filters import extract_naver_result_date
+                    pub_date = extract_naver_result_date(item)
+
                     posts.append({
                         "title": title,
                         "url": href,
                         "author": author,
                         "description": desc,
-                        "pub_date": None,
+                        "pub_date": pub_date,
                         "platform": platform,
                     })
 
@@ -462,6 +470,12 @@ class CommunityCollector:
                         desc = el.get_text(strip=True)[:200]
                         break
 
+            # 날짜 추출 (parent 요소에서)
+            pub_date = None
+            if parent:
+                from app.collectors.filters import extract_naver_result_date
+                pub_date = extract_naver_result_date(parent)
+
             actual_platform = platform
             if "cafe" in href:
                 actual_platform = "naver_cafe"
@@ -473,7 +487,7 @@ class CommunityCollector:
                 "url": href,
                 "author": "",
                 "description": desc,
-                "pub_date": None,
+                "pub_date": pub_date,
                 "platform": actual_platform,
             })
 

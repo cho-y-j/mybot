@@ -4,7 +4,7 @@ import { useSearchParams } from 'next/navigation';
 
 export default function AdminSetupPage() {
   const searchParams = useSearchParams();
-  const tenantId = searchParams.get('tenant') || '';
+  const tenantId = searchParams?.get('tenant') || '';
 
   const [form, setForm] = useState({
     election_name: '',

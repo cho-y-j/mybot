@@ -80,7 +80,7 @@ export default function StrategicQuadrant({ electionId, defaultVisible = 2, fetc
 
   if (!data) return null;
 
-  const { quadrants, counts, analysis_progress } = data;
+  const { quadrants = {}, counts = {}, analysis_progress = {} } = data || {};
   const total = (counts.strength || 0) + (counts.weakness || 0) + (counts.opportunity || 0) + (counts.threat || 0);
 
   return (

@@ -51,6 +51,7 @@ async def collect_meta_ads(
 
     collected = 0
     errors = []
+    search_log = []
 
     async with httpx.AsyncClient(timeout=30) as client:
         for candidate in candidates:
@@ -61,6 +62,11 @@ async def collect_meta_ads(
                     country="KR",
                     limit=min(limit, 50),
                 )
+                search_log.append({
+                    "candidate": candidate.name,
+                    "search_term": candidate.name,
+                    "results_found": len(ads),
+                })
 
                 for ad in ads:
                     # 중복 체크
@@ -122,7 +128,15 @@ async def collect_meta_ads(
                 logger.error("meta_ads_collect_error", candidate=candidate.name, error=str(e)[:200])
                 errors.append(f"{candidate.name}: {str(e)[:100]}")
 
-    return {"collected": collected, "errors": errors}
+    return {
+        "collected": collected,
+        "errors": errors,
+        "search_log": search_log,
+        "candidates_searched": len(candidates),
+        "message": f"{len(candidates)}명 후보 검색 완료. {collected}건 수집." + (
+            " Meta에 해당 후보의 광고가 없습니다." if collected == 0 and not errors else ""
+        ),
+    }
 
 
 async def _search_ads(
@@ -138,7 +152,7 @@ async def _search_ads(
         "access_token": access_token,
         "search_terms": search_term,
         "ad_reached_countries": country,
-        "ad_type": "POLITICAL_AND_ISSUE_ADS",
+        "ad_type": "ALL",
         "fields": "id,page_name,page_id,ad_creative_bodies,ad_creative_link_captions,spend,impressions,demographic_distribution,ad_delivery_start_time",
         "limit": limit,
     }

@@ -28,9 +28,20 @@ QUADRANT_LABELS = {
 }
 
 
+VALID_TABLES = {
+    "news_articles": "summary",
+    "community_posts": "content_snippet",
+    "youtube_videos": "description_snippet",
+}
+
+
 async def _quadrant_items(db: AsyncSession, table: str, content_col: str,
                           election_id: UUID, all_tids: list, sval: str, limit: int = 10) -> list[dict]:
     """특정 사분면의 top N items."""
+    # SQL Injection 방지: 테이블/컬럼명 화이트리스트 검증
+    if table not in VALID_TABLES or content_col not in VALID_TABLES.values():
+        return []
+
     # youtube_videos는 url 컬럼 없고 video_id로 만들어야 함
     if table == "youtube_videos":
         url_expr = "'https://www.youtube.com/watch?v=' || t.video_id"
@@ -38,17 +49,19 @@ async def _quadrant_items(db: AsyncSession, table: str, content_col: str,
         url_expr = "t.url"
 
     rows = (await db.execute(text(f"""
-        SELECT t.id, t.title, {url_expr} as url, t.{content_col} as content, t.published_at, t.collected_at,
-               t.sentiment, t.strategic_value, t.action_type, t.action_priority,
-               t.action_summary, t.ai_summary, t.is_about_our_candidate,
-               c.name as cand_name, c.is_our_candidate
+        SELECT t.id, t.title, {url_expr} as url, t.{content_col} as content,
+               t.published_at, t.collected_at,
+               t.sentiment, t.strategic_quadrant, t.sentiment_score,
+               c.name as cand_name, c.is_our_candidate,
+               t.ai_summary, t.ai_reason,
+               t.action_type, t.action_priority, t.action_summary,
+               t.is_about_our_candidate
         FROM {table} t
         LEFT JOIN candidates c ON t.candidate_id = c.id
         WHERE t.election_id = :eid
           AND t.tenant_id = ANY(:tids)
-          AND t.strategic_value = :sval
+          AND t.strategic_quadrant = :sval
         ORDER BY
-          CASE t.action_priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
           t.published_at DESC NULLS LAST,
           t.collected_at DESC
         LIMIT :lim
@@ -58,6 +71,15 @@ async def _quadrant_items(db: AsyncSession, table: str, content_col: str,
         "sval": sval,
         "lim": limit,
     })).all()
+
+    # AI가 생성한 action_* 필드를 우선 사용, 없으면 sval 기반 fallback
+    ACTION_MAP_FALLBACK = {
+        "strength": ("promote", "high", "확산/홍보 활용"),
+        "weakness": ("defend", "high", "즉시 방어/해명 대응 필요"),
+        "opportunity": ("attack", "medium", "공격/활용 콘텐츠 기회"),
+        "threat": ("monitor", "medium", "견제/대응 전략 필요"),
+    }
+    fb = ACTION_MAP_FALLBACK.get(sval, ("monitor", "low", ""))
 
     return [
         {
@@ -69,13 +91,14 @@ async def _quadrant_items(db: AsyncSession, table: str, content_col: str,
             "collected_at": r[5].isoformat() if r[5] else None,
             "sentiment": r[6],
             "strategic_value": r[7],
-            "action_type": r[8],
-            "action_priority": r[9],
-            "action_summary": r[10],
-            "ai_summary": r[11],
-            "is_about_our_candidate": r[12],
-            "candidate": r[13],
-            "is_our_candidate_original": r[14],  # 원본 tenant 기준
+            "action_type": r[13] or fb[0],
+            "action_priority": r[14] or fb[1],
+            "action_summary": r[15] or fb[2],
+            "ai_summary": r[11],  # AI가 본문 읽고 생성한 요약
+            "ai_reason": r[12],
+            "is_about_our_candidate": r[16] if r[16] is not None else r[10],
+            "candidate": r[9],
+            "is_our_candidate_original": r[10],
             "media_table": table,
         }
         for r in rows
@@ -156,8 +179,9 @@ async def get_strategic_quadrant(
             "opportunity": "공격/활용 콘텐츠 기회",
             "strength": "확산/홍보 활용",
             "threat": "견제/대응 전략 필요",
+            "neutral": "모니터링 지속",
         }
-        flipped_action = ACTION_FLIP.get(flipped_sval, "확인 필요")
+        flipped_action = ACTION_FLIP.get(flipped_sval, "모니터링 지속")
 
         return {
             **item,
@@ -183,8 +207,11 @@ async def get_strategic_quadrant(
 
     for sval in ("strength", "weakness", "opportunity", "threat"):
         items = [it for it in flipped if it.get("strategic_value") == sval]
-        items.sort(key=lambda x: x.get("collected_at") or "", reverse=True)
-        items.sort(key=lambda x: {"high": 0, "medium": 1, "low": 2}.get(x.get("action_priority") or "low", 3))
+        # CLAUDE.md 룰 1.8: 시간 기반 목록은 published_at 역순 ONLY.
+        items.sort(
+            key=lambda x: (x.get("collected_at") or x.get("date") or ""),
+            reverse=True,
+        )
         quadrants[sval] = {
             **QUADRANT_LABELS[sval],
             "items": items[:items_per_quadrant],
@@ -194,12 +221,12 @@ async def get_strategic_quadrant(
     # 미분류 items도 통계에 반영 (DB 전체 카운트 → 뒤집기 적용)
     for tbl, _col in tables:
         rows = (await db.execute(text(f"""
-            SELECT t.strategic_value, t.is_about_our_candidate, c.name as cand_name, COUNT(*)
+            SELECT t.strategic_quadrant, c.is_our_candidate, c.name as cand_name, COUNT(*)
             FROM {tbl} t
             LEFT JOIN candidates c ON t.candidate_id = c.id
             WHERE t.election_id = :eid AND t.tenant_id = ANY(:tids)
-              AND t.strategic_value IS NOT NULL
-            GROUP BY t.strategic_value, t.is_about_our_candidate, c.name
+              AND t.strategic_quadrant IS NOT NULL
+            GROUP BY t.strategic_quadrant, c.is_our_candidate, c.name
         """), {"eid": str(election_id), "tids": [str(t) for t in all_tids]})).all()
 
     # counts는 이미 flipped items 기준으로 계산됨 (위에서)
@@ -209,7 +236,7 @@ async def get_strategic_quadrant(
     progress_analyzed = 0
     for tbl, _col in tables:
         r = (await db.execute(text(f"""
-            SELECT COUNT(*) total, COUNT(strategic_value) analyzed
+            SELECT COUNT(*) total, COUNT(strategic_quadrant) analyzed
             FROM {tbl} WHERE election_id = :eid AND tenant_id = ANY(:tids)
         """), {"eid": str(election_id), "tids": [str(t) for t in all_tids]})).first()
         progress_total += r[0] or 0

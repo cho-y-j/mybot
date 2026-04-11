@@ -928,3 +928,121 @@ async def update_tenant_api_keys(tenant_id: UUID, req: TenantAPIKeyUpdate, user:
     if req.openai_api_key is not None:
         tenant.openai_api_key = req.openai_api_key or None
     return {"message": "API 키 업데이트 완료"}
+
+
+# ──────────────── Opus 감성 검증 ──────────────────────────────────────
+
+@router.post("/verify-sentiment/{election_id}")
+async def verify_sentiment_opus(
+    election_id: UUID,
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    특정 선거의 미검증 데이터를 Opus로 감성 검증 + 4사분면 배정.
+    관리자 또는 해당 캠프 사용자가 수동 실행.
+    """
+    from app.analysis.sentiment import SentimentAnalyzer
+    from app.common.election_access import get_election_tenant_ids
+
+    all_tids = await get_election_tenant_ids(db, election_id)
+    if not user.get("is_superadmin") and user.get("tenant_id") not in [str(t) for t in all_tids]:
+        raise HTTPException(403, "접근 권한 없음")
+
+    # 후보 정보
+    candidates = (await db.execute(
+        select(Candidate).where(
+            Candidate.election_id == election_id,
+            Candidate.enabled == True,
+        )
+    )).scalars().all()
+    cand_map = {str(c.id): c for c in candidates}
+
+    # 미검증 뉴스 (positive/negative)
+    unverified_news = (await db.execute(
+        select(NewsArticle).where(
+            NewsArticle.tenant_id.in_(all_tids),
+            NewsArticle.election_id == election_id,
+            NewsArticle.sentiment.in_(["positive", "negative"]),
+            NewsArticle.sentiment_verified == False,
+        ).order_by(NewsArticle.collected_at.desc()).limit(50)
+    )).scalars().all()
+
+    # 미검증 커뮤니티
+    unverified_community = (await db.execute(
+        select(CommunityPost).where(
+            CommunityPost.tenant_id.in_(all_tids),
+            CommunityPost.election_id == election_id,
+            CommunityPost.sentiment.in_(["positive", "negative"]),
+            CommunityPost.sentiment_verified == False,
+        ).order_by(CommunityPost.collected_at.desc()).limit(30)
+    )).scalars().all()
+
+    all_items = []
+    for row in unverified_news:
+        cand = cand_map.get(str(row.candidate_id))
+        all_items.append({
+            "id": str(row.id),
+            "table": "news_articles",
+            "text": f"{row.title or ''} {row.summary or row.content_snippet or ''}",
+            "current_sentiment": row.sentiment,
+            "candidate_name": cand.name if cand else "불명",
+            "is_our_candidate": cand.is_our_candidate if cand else False,
+        })
+    for row in unverified_community:
+        cand = cand_map.get(str(row.candidate_id))
+        all_items.append({
+            "id": str(row.id),
+            "table": "community_posts",
+            "text": f"{row.title or ''} {row.content_snippet or ''}",
+            "current_sentiment": row.sentiment,
+            "candidate_name": cand.name if cand else "불명",
+            "is_our_candidate": cand.is_our_candidate if cand else False,
+        })
+
+    if not all_items:
+        return {"message": "검증할 항목 없음", "total": 0, "verified": 0, "changed": 0}
+
+    analyzer = SentimentAnalyzer()
+    results = await analyzer.verify_batch_with_opus(all_items)
+
+    verified = 0
+    changed = 0
+    changes_detail = []
+
+    for r in results:
+        item = next((it for it in all_items if it["id"] == r["id"]), None)
+        if not item:
+            continue
+
+        tbl = item["table"]
+        await db.execute(
+            text(
+                f"UPDATE {tbl} SET "
+                f"sentiment = :s, sentiment_score = :sc, "
+                f"sentiment_verified = TRUE, "
+                f"strategic_quadrant = :q, strategic_value = :q "
+                f"WHERE id = :id"
+            ),
+            {"s": r["sentiment"], "sc": r["score"], "q": r.get("quadrant"), "id": r["id"]},
+        )
+        verified += 1
+        if r.get("changed"):
+            changed += 1
+            changes_detail.append({
+                "title": item["text"][:60],
+                "before": item["current_sentiment"],
+                "after": r["sentiment"],
+                "quadrant": r.get("quadrant"),
+                "reason": r.get("reason", ""),
+            })
+
+    await db.commit()
+
+    return {
+        "message": f"Opus 검증 완료: {verified}건 검증, {changed}건 교정",
+        "total": len(all_items),
+        "verified": verified,
+        "changed": changed,
+        "changes": changes_detail[:20],
+    }

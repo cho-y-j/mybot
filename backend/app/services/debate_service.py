@@ -92,23 +92,34 @@ async def generate_debate_script(
     if not opponent:
         return {"error": "경쟁 후보가 없습니다"}
 
-    # 상대 후보 부정 뉴스 수집
+    # 상대 후보 공격 포인트 (strategic_quadrant=opportunity — AI가 '경쟁자 약점'으로 분류한 것 우선)
+    # Fallback: sentiment=negative (AI 분류 없는 오래된 데이터)
     since = date.today() - timedelta(days=90)
     opponent_neg_news = (await db.execute(
         select(NewsArticle).where(
             NewsArticle.candidate_id == opponent.id,
-            NewsArticle.sentiment == "negative",
             func.date(NewsArticle.collected_at) >= since,
-        ).order_by(NewsArticle.collected_at.desc()).limit(10)
+            (NewsArticle.strategic_quadrant == "opportunity") |
+            ((NewsArticle.strategic_quadrant.is_(None)) & (NewsArticle.sentiment == "negative")),
+        ).order_by(
+            NewsArticle.strategic_quadrant.asc().nullslast(),  # opportunity 있는 것 우선
+            NewsArticle.published_at.desc().nullslast(),
+            NewsArticle.collected_at.desc(),
+        ).limit(10)
     )).scalars().all()
 
-    # 우리 후보 긍정 뉴스 (강점 근거)
+    # 우리 후보 강점 근거 (strategic_quadrant=strength — AI가 '우리 강점'으로 분류한 것)
     our_pos_news = (await db.execute(
         select(NewsArticle).where(
             NewsArticle.candidate_id == our.id,
-            NewsArticle.sentiment == "positive",
             func.date(NewsArticle.collected_at) >= since,
-        ).order_by(NewsArticle.collected_at.desc()).limit(5)
+            (NewsArticle.strategic_quadrant == "strength") |
+            ((NewsArticle.strategic_quadrant.is_(None)) & (NewsArticle.sentiment == "positive")),
+        ).order_by(
+            NewsArticle.strategic_quadrant.asc().nullslast(),
+            NewsArticle.published_at.desc().nullslast(),
+            NewsArticle.collected_at.desc(),
+        ).limit(5)
     )).scalars().all()
 
     # 여론조사
@@ -235,6 +246,39 @@ async def generate_debate_script(
             "ai_generated": True,
         }
         await set_cache(db, tenant_id, election_id, cache_key, ai_result)
+
+        # ── 생성 결과 Report 테이블에 저장 (히스토리·챗 컨텍스트 활용) ──
+        try:
+            from app.elections.models import Report
+            import json as _json
+            body_text = (
+                f"[토론 대본 — {our.name} vs {opponent.name}]\n\n"
+                f"[오프닝]\n{ai_result['opening']}\n\n"
+                f"[핵심 포인트]\n"
+                + "\n".join(
+                    f"- {kp.get('topic', '')}: {kp.get('attack_question', '')}"
+                    for kp in ai_result["key_points"]
+                )
+                + f"\n\n[반박]\n"
+                + "\n".join(
+                    f"- 상대: {r.get('opponent_claim', '')}\n  응답: {r.get('our_response', '')}"
+                    for r in ai_result["rebuttals"]
+                )
+                + f"\n\n[클로징]\n{ai_result['closing']}"
+            )
+            report = Report(
+                tenant_id=tenant_id,
+                election_id=election_id,
+                report_type="debate_script",
+                title=f"[토론 대본] {our.name} vs {opponent.name} — {', '.join(topics[:2])}",
+                content_text=body_text,
+                report_date=date.today(),
+            )
+            db.add(report)
+            await db.commit()
+        except Exception as save_err:
+            logger.warning("debate_save_failed", error=str(save_err)[:200])
+
         return ai_result
 
     # Fallback: 규칙 기반 핵심 포인트
@@ -270,17 +314,27 @@ def _build_debate_factsheet(our, opponent, opp_neg_news, our_pos_news, survey, t
     ]
 
     if opp_neg_news:
-        lines.append(f"[{opponent.name} 부정 뉴스 {len(opp_neg_news)}건]")
+        lines.append(f"[{opponent.name} 약점/공격 포인트 {len(opp_neg_news)}건]")
         for n in opp_neg_news[:7]:
-            lines.append(f"- {n.title[:60]}")
+            sq = f" [{n.strategic_quadrant}]" if n.strategic_quadrant else ""
+            lines.append(f"-{sq} {n.title[:70]}")
             if n.ai_summary:
-                lines.append(f"  요약: {n.ai_summary[:100]}")
+                lines.append(f"  요약: {n.ai_summary[:150]}")
+            if n.ai_reason:
+                lines.append(f"  근거: {n.ai_reason[:120]}")
+            if n.action_summary:
+                lines.append(f"  공격 방향: {n.action_summary[:120]}")
         lines.append("")
 
     if our_pos_news:
-        lines.append(f"[{our.name} 긍정 뉴스 (강점 근거)]")
+        lines.append(f"[{our.name} 강점 근거 {len(our_pos_news)}건]")
         for n in our_pos_news[:5]:
-            lines.append(f"- {n.title[:60]}")
+            sq = f" [{n.strategic_quadrant}]" if n.strategic_quadrant else ""
+            lines.append(f"-{sq} {n.title[:70]}")
+            if n.ai_summary:
+                lines.append(f"  요약: {n.ai_summary[:150]}")
+            if n.action_summary:
+                lines.append(f"  어필: {n.action_summary[:120]}")
         lines.append("")
 
     if survey and survey.results:

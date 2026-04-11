@@ -43,19 +43,11 @@ WHITE = (255, 255, 255)
 
 
 def _find_font():
+    """번들된 NanumGothic 폰트 경로 반환. 리눅스/맥/윈도우 어디서나 동일하게 작동."""
     regular = FONT_DIR / "NanumGothic.ttf"
     bold = FONT_DIR / "NanumGothicBold.ttf"
     if regular.exists():
         return str(regular), str(bold) if bold.exists() else str(regular)
-    mac_paths = [
-        "/Library/Fonts/NanumGothic.ttf",
-        "/System/Library/Fonts/Supplemental/NanumGothic.ttf",
-        os.path.expanduser("~/Library/Fonts/NanumGothic.ttf"),
-    ]
-    for p in mac_paths:
-        if os.path.exists(p):
-            bold_p = p.replace("Gothic.ttf", "GothicBold.ttf")
-            return p, bold_p if os.path.exists(bold_p) else p
     return None, None
 
 
@@ -494,23 +486,28 @@ def _parse_report_sections(text: str) -> list:
     current_title = "보고서"
     current_body = []
 
-    # 이모지 제거
+    # 이모지 제거 (한글 U+AC00-U+D7AF 보호)
     emoji_re = re.compile(
         "[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF"
-        "\U0001F1E0-\U0001F1FF\U00002702-\U000027B0\U000024C2-\U0001F251"
-        "\U0001f926-\U0001f937\U00010000-\U0010ffff"
-        "\u2640-\u2642\u2600-\u2B55\u200d\u23cf\u23e9\u231a\ufe0f\u3030]+",
+        "\U0001F1E0-\U0001F1FF\U00002702-\U000027B0"
+        "\U0001f926-\U0001f937\U0001F000-\U0001F9FF"
+        "\u2640-\u2642\u2600-\u2B55\u200d\u23cf\u23e9\u231a\ufe0f\u3030"
+        "\U000024C2-\U000024FF\U0001F200-\U0001F251]+",
         flags=re.UNICODE,
     )
 
     for line in text.split("\n"):
         clean = emoji_re.sub("", line).strip()
         clean = re.sub(r'</?b>', '', clean)
+        # 마크다운 bold/header 제거 (섹션 감지 전)
+        clean_for_match = re.sub(r'^\*{1,2}', '', clean)
+        clean_for_match = re.sub(r'\*{1,2}$', '', clean_for_match).strip()
+        clean_for_match = re.sub(r'^#{1,3}\s*', '', clean_for_match).strip()
 
         # 섹션 헤더 감지
-        sec_match = re.match(r'^[═━=]{3,}.*?(PART|파트)\s*(\d+)', clean, re.IGNORECASE)
-        num_match = re.match(r'^(\d{1,2})\.\s+(.+)', clean)
-        roman_match = re.match(r'^(I{1,3}V?|VI{0,3})\.\s+(.+)', clean)
+        sec_match = re.match(r'^[═━=]{3,}.*?(PART|파트)\s*(\d+)', clean_for_match, re.IGNORECASE)
+        num_match = re.match(r'^(\d{1,2})\.\s+(.+)', clean_for_match)
+        roman_match = re.match(r'^(I{1,3}V?|VI{0,3})\.\s+(.+)', clean_for_match)
 
         if sec_match or (num_match and len(clean) < 60) or roman_match:
             if current_body:

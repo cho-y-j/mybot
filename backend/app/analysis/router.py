@@ -54,7 +54,13 @@ async def get_competitor_gaps(
     result = await analyze_competitor_gaps(db, tid, str(election_id), days=days)
     if refresh:
         from app.analysis.competitor import _generate_ai_summary
-        ai_summary = await _generate_ai_summary(result.get("gaps", []), result.get("strengths", []), result.get("our_candidate", ""))
+        ai_summary = await _generate_ai_summary(
+            result.get("gaps", []),
+            result.get("strengths", []),
+            result.get("our_candidate", ""),
+            tenant_id=str(tid),
+            db=db,
+        )
         result["ai_summary"] = ai_summary
     result["cached"] = False
 

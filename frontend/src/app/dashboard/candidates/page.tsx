@@ -9,7 +9,9 @@ export default function CandidateComparisonPage() {
   const colorMap = useMemo(() => getCandidateColorMap(candidates), [candidates]);
   const [gaps, setGaps] = useState<any>(null);
   const [surveys, setSurveys] = useState<any[]>([]);
+  const [mediaData, setMediaData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [analyzing, setAnalyzing] = useState(false);
 
   useEffect(() => {
     if (election) loadData();
@@ -19,13 +21,28 @@ export default function CandidateComparisonPage() {
     if (!election) return;
     setLoading(true);
     try {
-      const [gp, sv] = await Promise.all([
+      const [gp, sv, md] = await Promise.all([
         api.getCompetitorGaps(election.id).catch(() => null),
         api.getSurveys(election.id).catch(() => ({ surveys: [] })),
+        api.getMediaOverview(election.id).catch(() => null),
       ]);
       setGaps(gp);
       setSurveys(sv.surveys || []);
-    } catch {} finally { setLoading(false); }
+      setMediaData(md);
+    } catch (e: any) {
+      console.error('candidates load error:', e);
+    } finally { setLoading(false); }
+  };
+
+  const handleRefreshAnalysis = async () => {
+    if (!election) return;
+    setAnalyzing(true);
+    try {
+      const gp = await api.getCompetitorGaps(election.id, 7, true);
+      setGaps(gp);
+    } catch (e: any) {
+      console.error('refresh error:', e);
+    } finally { setAnalyzing(false); }
   };
 
   if (elLoading || loading) return <div className="flex items-center justify-center h-64"><div className="animate-spin h-8 w-8 border-4 border-primary-500 border-t-transparent rounded-full" /></div>;
@@ -40,11 +57,26 @@ export default function CandidateComparisonPage() {
   });
   const orderedNames = orderedCands.map(c => c.name);
 
-  // Survey trend
+  // Survey trend — 중첩 구조도 풀어서 후보별 지지율 추출
   const parseResults = (r: any): Record<string, number> => {
     if (!r) return {};
-    if (typeof r === 'string') { try { return JSON.parse(r); } catch { return {}; } }
-    return r;
+    let data = r;
+    if (typeof data === 'string') { try { data = JSON.parse(data); } catch { return {}; } }
+
+    const flat: Record<string, number> = {};
+    for (const [key, val] of Object.entries(data)) {
+      if (typeof val === 'number') {
+        flat[key] = val;
+      } else if (typeof val === 'object' && val !== null) {
+        // 중첩 구조: {"교육감지지도": {"김진균": 8.1, ...}} → 풀기
+        for (const [k2, v2] of Object.entries(val as any)) {
+          if (typeof v2 === 'number' && orderedNames.some(n => k2.includes(n) || n.includes(k2))) {
+            flat[k2] = v2 as number;
+          }
+        }
+      }
+    }
+    return flat;
   };
 
   const trendData = surveys.filter(s => {
@@ -57,8 +89,15 @@ export default function CandidateComparisonPage() {
     return row;
   });
 
-  // Latest survey results
-  const latestSurvey = surveys.length > 0 ? parseResults(surveys[0].results) : {};
+  // Latest survey results — 후보 이름이 있는 가장 최신 여론조사 찾기
+  let latestSurvey: Record<string, number> = {};
+  for (const s of surveys) {
+    const parsed = parseResults(s.results);
+    if (orderedNames.some(n => parsed[n] > 0)) {
+      latestSurvey = parsed;
+      break;
+    }
+  }
 
   // Gap analysis items
   const gapItems = gaps?.gaps || [];
@@ -71,22 +110,42 @@ export default function CandidateComparisonPage() {
 
       {/* AI Gap Summary */}
       {gaps?.ai_summary && (
-        <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl border border-purple-200 p-5">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-lg">AI</span>
-            <h3 className="font-bold text-purple-900">AI 경쟁 분석</h3>
-            <span className="text-xs bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full">{gaps.analysis_period}</span>
+        <div className="bg-gradient-to-r from-purple-500/5 to-pink-500/5 rounded-xl border border-purple-500/20 p-5">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">AI</span>
+              <h3 className="font-bold">AI 경쟁 분석</h3>
+              <span className="text-xs bg-purple-500/10 text-purple-500 px-2 py-0.5 rounded-full">{gaps.analysis_period}</span>
+              {gaps.cached && (
+                <span className="text-[10px] text-[var(--muted)]">캐시 ({gaps.cached_at?.substring(5, 16)})</span>
+              )}
+            </div>
+            <button onClick={handleRefreshAnalysis} disabled={analyzing}
+              className="px-3 py-1.5 bg-purple-600 text-white rounded-lg text-xs hover:bg-purple-700 disabled:opacity-50">
+              {analyzing ? 'AI 분석 중...' : 'AI 재분석'}
+            </button>
           </div>
-          <p className="text-sm text-gray-700 leading-relaxed">{gaps.ai_summary}</p>
+          <p className="text-sm leading-relaxed">{gaps.ai_summary}</p>
+        </div>
+      )}
+      {!gaps?.ai_summary && (
+        <div className="card text-center py-6">
+          <button onClick={handleRefreshAnalysis} disabled={analyzing}
+            className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 disabled:opacity-50">
+            {analyzing ? 'AI 분석 중...' : 'AI 경쟁 분석 실행'}
+          </button>
+          <p className="text-xs text-[var(--muted)] mt-2">경쟁자 대비 갭 분석 + AI 요약을 생성합니다</p>
         </div>
       )}
 
       {/* Candidate Profile Cards */}
-      <div className={`grid grid-cols-1 md:grid-cols-${Math.min(orderedCands.length, 4)} gap-4`}>
+      <div className={`grid grid-cols-1 ${orderedCands.length === 1 ? 'md:grid-cols-1' : orderedCands.length === 2 ? 'md:grid-cols-2' : orderedCands.length === 3 ? 'md:grid-cols-3' : 'md:grid-cols-4'} gap-4`}>
         {orderedCands.map((c) => {
           const data = newsByCand.find((d: any) => d.name === c.name);
           const total = data ? data.positive + data.negative + data.neutral : 0;
-          const posRate = total ? Math.round((data?.positive || 0) / total * 100) : 0;
+          const effective = (data?.positive || 0) + (data?.negative || 0);
+          const posRate = effective > 0 ? Math.round((data?.positive || 0) / effective * 100) : 0;
+          const qualityLow = (data?.analysis_quality === 'low');
           const surveyVal = latestSurvey[c.name] || 0;
 
           return (
@@ -116,12 +175,17 @@ export default function CandidateComparisonPage() {
                 </div>
                 <div className="bg-green-50 rounded-lg p-3 text-center">
                   <p className="text-2xl font-bold text-green-600">{posRate}%</p>
-                  <p className="text-xs text-gray-500">긍정률</p>
+                  <p className="text-xs text-gray-500">긍정률 {effective > 0 ? `(${effective}건)` : ''}</p>
                 </div>
                 <div className="bg-red-50 rounded-lg p-3 text-center">
                   <p className="text-2xl font-bold text-red-600">{data?.negative || 0}</p>
                   <p className="text-xs text-gray-500">부정 뉴스</p>
                 </div>
+              {qualityLow && (
+                <div className="col-span-2 bg-amber-50 border border-amber-200 rounded-lg p-2 text-xs text-amber-700 text-center">
+                  분석 품질 낮음 — 중립 {data?.neutral_rate}% (재분석 필요)
+                </div>
+              )}
               </div>
 
               {/* Sentiment bar */}
@@ -164,6 +228,8 @@ export default function CandidateComparisonPage() {
                     <div key={i} className="bg-red-50 rounded-lg p-3 text-sm">
                       <p className="font-medium text-red-800">{g.area}</p>
                       {g.detail && <p className="text-red-600 text-xs mt-1">{g.detail}</p>}
+                      {g.recommendation && <p className="text-red-500 text-xs mt-1">{g.recommendation}</p>}
+                      {g.quality_warning && <p className="text-amber-600 text-[10px] mt-1">* 분석 품질 낮음 — 재분석 후 재확인 필요</p>}
                     </div>
                   ))}
                 </div>
@@ -177,6 +243,7 @@ export default function CandidateComparisonPage() {
                     <div key={i} className="bg-green-50 rounded-lg p-3 text-sm">
                       <p className="font-medium text-green-800">{s.area}</p>
                       {s.detail && <p className="text-green-600 text-xs mt-1">{s.detail}</p>}
+                      {s.quality_warning && <p className="text-amber-600 text-[10px] mt-1">* 분석 품질 낮음 — 재분석 후 재확인 필요</p>}
                     </div>
                   ))}
                 </div>
@@ -231,14 +298,17 @@ export default function CandidateComparisonPage() {
                   return <td key={c.id} className="text-center p-3 font-bold">{d?.count || 0}</td>;
                 })}
               </tr>
-              {/* Positive rate */}
+              {/* Positive rate (neutral 제외 유효 감성 기준) */}
               <tr className="border-b border-gray-100 hover:bg-gray-50">
                 <td className="p-3 font-medium">긍정률</td>
                 {orderedCands.map(c => {
                   const d = newsByCand.find((n: any) => n.name === c.name);
-                  const total = d ? d.positive + d.negative + d.neutral : 0;
-                  const rate = total ? Math.round(d.positive / total * 100) : 0;
-                  return <td key={c.id} className="text-center p-3 font-bold text-green-600">{rate}%</td>;
+                  const eff = d ? (d.positive || 0) + (d.negative || 0) : 0;
+                  const rate = eff > 0 ? Math.round(d.positive / eff * 100) : 0;
+                  return <td key={c.id} className="text-center p-3 font-bold text-green-600">
+                    {rate}%
+                    {d?.analysis_quality === 'low' && <span className="block text-[10px] text-amber-500 font-normal">분석 품질 낮음</span>}
+                  </td>;
                 })}
               </tr>
               {/* Negative count */}
@@ -255,6 +325,40 @@ export default function CandidateComparisonPage() {
                 {orderedCands.map(c => {
                   const val = latestSurvey[c.name];
                   return <td key={c.id} className="text-center p-3 font-bold">{val ? `${val}%` : '-'}</td>;
+                })}
+              </tr>
+              {/* YouTube views */}
+              <tr className="border-b border-[var(--card-border)]/50 hover:bg-[var(--muted-bg)]/30">
+                <td className="p-3 font-medium">유튜브 조회수</td>
+                {orderedCands.map(c => {
+                  const md = (mediaData?.candidates || []).find((m: any) => m.name === c.name);
+                  return <td key={c.id} className="text-center p-3 font-bold">{md?.youtube?.views ? md.youtube.views.toLocaleString() : '-'}</td>;
+                })}
+              </tr>
+              {/* YouTube engagement */}
+              <tr className="border-b border-[var(--card-border)]/50 hover:bg-[var(--muted-bg)]/30">
+                <td className="p-3 font-medium">유튜브 참여율</td>
+                {orderedCands.map(c => {
+                  const md = (mediaData?.candidates || []).find((m: any) => m.name === c.name);
+                  const yt = md?.youtube || {};
+                  const engRate = yt.views > 0 ? ((yt.likes + yt.comments) / yt.views * 100).toFixed(2) : null;
+                  return <td key={c.id} className="text-center p-3 font-bold">{engRate ? `${engRate}%` : '-'}</td>;
+                })}
+              </tr>
+              {/* Community */}
+              <tr className="border-b border-[var(--card-border)]/50 hover:bg-[var(--muted-bg)]/30">
+                <td className="p-3 font-medium">커뮤니티 언급</td>
+                {orderedCands.map(c => {
+                  const md = (mediaData?.candidates || []).find((m: any) => m.name === c.name);
+                  return <td key={c.id} className="text-center p-3 font-bold">{md?.community?.count || 0}</td>;
+                })}
+              </tr>
+              {/* Reach score */}
+              <tr className="border-b border-[var(--card-border)]/50 hover:bg-[var(--muted-bg)]/30">
+                <td className="p-3 font-medium">도달 점수</td>
+                {orderedCands.map(c => {
+                  const md = (mediaData?.candidates || []).find((m: any) => m.name === c.name);
+                  return <td key={c.id} className="text-center p-3 font-black text-blue-500">{md?.reach_score ? md.reach_score.toLocaleString() : '-'}</td>;
                 })}
               </tr>
             </tbody>

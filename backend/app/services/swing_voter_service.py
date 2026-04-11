@@ -140,12 +140,8 @@ async def detect_swing_indicators(
     # ── 3. 뉴스에서도 찬반 갈리는 이슈 보강 ──
     news_controversial = await _find_controversial_news(db, all_tids, election_id, since)
 
-    # ── 4. AI 행동 유도 생성 ──
+    # ── 4. AI 행동 유도 — 별도 요청으로 분리 (페이지 로딩 속도 개선) ──
     recommendations = []
-    if hot_issues:
-        recommendations = await _generate_recommendations(
-            hot_issues[:5], our.name if our else "우리 후보", election, db, tenant_id
-        )
 
     result = {
         "hot_issues": hot_issues,

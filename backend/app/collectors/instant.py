@@ -96,18 +96,11 @@ async def collect_news_now(db: AsyncSession, tenant_id: str, election_id: str) -
                 if exists:
                     continue
 
-                text = f"{article['title']} {article.get('description', '')}"
-                sentiment, score = analyzer.analyze(text)
+                # published_at 파싱 (실제 날짜만 저장, 실패 시 NULL — 가짜 금지)
+                from app.collectors.filters import parse_published_at
+                pub_at = parse_published_at(article.get("pub_date"))
 
-                # published_at 파싱
-                pub_at = None
-                if article.get("pub_date"):
-                    try:
-                        from dateutil import parser as dateparser
-                        pub_at = dateparser.parse(article["pub_date"])
-                    except Exception:
-                        pass
-
+                # 감성/분류는 AI 파이프라인(analyze_all_media)이 수집 후 자동 처리
                 db.add(NewsArticle(
                     tenant_id=tenant_id,
                     election_id=election_id,
@@ -116,8 +109,6 @@ async def collect_news_now(db: AsyncSession, tenant_id: str, election_id: str) -
                     url=article["url"],
                     source=article.get("source", ""),
                     summary=article.get("description", "")[:300],
-                    sentiment=sentiment,
-                    sentiment_score=score,
                     platform="naver",
                     published_at=pub_at,
                 ))
@@ -172,8 +163,7 @@ async def _collect_news_comments(
             if not text:
                 continue
 
-            sentiment, _ = analyzer.analyze(text)
-
+            # 댓글은 보조 데이터 — sentiment NULL, 필요 시 별도 분석
             db.add(NewsComment(
                 tenant_id=tenant_id,
                 article_url=article_result["url"],
@@ -181,7 +171,6 @@ async def _collect_news_comments(
                 text=text[:500],
                 sympathy_count=comment.get("sympathy", 0),
                 antipathy_count=comment.get("antipathy", 0),
-                sentiment=sentiment,
                 candidate_name=article_result.get("candidate", ""),
             ))
             count += 1
@@ -280,14 +269,9 @@ async def collect_community_now(db: AsyncSession, tenant_id: str, election_id: s
             if exists:
                 continue
 
-            # published_at 파싱
-            pub_at = None
-            if post.get("pub_date"):
-                try:
-                    from dateutil import parser as dateparser
-                    pub_at = dateparser.parse(post["pub_date"])
-                except Exception:
-                    pass
+            # published_at 파싱 (실제 날짜만 저장, 실패 시 NULL)
+            from app.collectors.filters import parse_published_at
+            pub_at = parse_published_at(post.get("pub_date") or post.get("published_at"))
 
             db.add(CommunityPost(
                 tenant_id=tenant_id,
@@ -297,8 +281,6 @@ async def collect_community_now(db: AsyncSession, tenant_id: str, election_id: s
                 url=post["url"],
                 source=post.get("source", ""),
                 content_snippet=post.get("content_snippet", "")[:200],
-                sentiment=post.get("sentiment", "neutral"),
-                sentiment_score=post.get("sentiment_score", 0.0),
                 issue_category=post.get("issue_category"),
                 relevance_score=post.get("relevance_score", 0.0),
                 engagement=post.get("engagement", {}),
@@ -389,23 +371,30 @@ async def collect_youtube_now(db: AsyncSession, tenant_id: str, election_id: str
                 exists = (await db.execute(
                     select(YouTubeVideo).where(YouTubeVideo.tenant_id == tenant_id, YouTubeVideo.video_id == vid["video_id"])
                 )).scalar_one_or_none()
+
+                # published_at 파싱 (YouTube는 ISO 8601). 파싱 실패 시 NULL — 가짜 날짜 금지
+                from app.collectors.filters import parse_published_at
+                vid_pub_at = parse_published_at(vid.get("published_at"))
+
                 if exists:
                     if vid.get("views", 0) > (exists.views or 0):
                         exists.views = vid["views"]
                         exists.likes = vid.get("likes", 0)
                         exists.comments_count = vid.get("comments_count", 0)
+                    # NULL published_at 백필
+                    if exists.published_at is None and vid_pub_at is not None:
+                        exists.published_at = vid_pub_at
                     continue
 
-                # 감성 분석 (제목 + 설명)
-                sentiment, score = analyzer.analyze(f"{title} {desc[:200]}")
+                # 감성/4사분면은 AI 파이프라인이 수집 후 자동 처리
                 db.add(YouTubeVideo(
                     tenant_id=tenant_id, election_id=election_id, candidate_id=cand.id,
                     video_id=vid["video_id"], title=title, channel=vid.get("channel", ""),
                     description_snippet=desc[:300],
                     thumbnail_url=vid.get("thumbnail", ""),
+                    published_at=vid_pub_at,  # 실패 시 NULL
                     views=vid.get("views", 0), likes=vid.get("likes", 0),
                     comments_count=vid.get("comments_count", 0),
-                    sentiment=sentiment, sentiment_score=score,
                 ))
                 total += 1
 
@@ -421,14 +410,13 @@ async def collect_youtube_now(db: AsyncSession, tenant_id: str, election_id: str
         for v in vids:
             comments = await collector.get_video_comments(v.video_id, max_results=10)
             for c in comments:
-                sentiment, _ = analyzer.analyze(c.get("text", ""))
+                # 댓글 sentiment는 AI 파이프라인이 필요 시 처리 (보조 데이터)
                 db.add(YouTubeComment(
                     tenant_id=tenant_id,
                     video_id=v.video_id,
                     author=c.get("author", ""),
                     text=c.get("text", "")[:500],
                     like_count=c.get("likes", 0),
-                    sentiment=sentiment,
                     candidate_name=cand.name,
                 ))
                 comment_count += 1

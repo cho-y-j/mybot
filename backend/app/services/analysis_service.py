@@ -246,6 +246,31 @@ async def get_analysis_overview(
             our.name if our else "", news_by_candidate, score_board, neg_list,
         )
 
+    # Q8: 4사분면 집계
+    quadrant_data = {"strength": 0, "weakness": 0, "opportunity": 0, "threat": 0}
+    if cand_ids:
+        quad_rows = (await db.execute(
+            select(NewsArticle.strategic_quadrant, func.count())
+            .where(
+                NewsArticle.candidate_id.in_(cand_ids),
+                NewsArticle.strategic_quadrant.isnot(None),
+            ).group_by(NewsArticle.strategic_quadrant)
+        )).all()
+        for qname, qcount in quad_rows:
+            if qname in quadrant_data:
+                quadrant_data[qname] = qcount
+        # 커뮤니티도 합산
+        quad_comm = (await db.execute(
+            select(CommunityPost.strategic_quadrant, func.count())
+            .where(
+                CommunityPost.candidate_id.in_(cand_ids),
+                CommunityPost.strategic_quadrant.isnot(None),
+            ).group_by(CommunityPost.strategic_quadrant)
+        )).all()
+        for qname, qcount in quad_comm:
+            if qname in quadrant_data:
+                quadrant_data[qname] += qcount
+
     # ── 알림 ──
     alerts = []
     if our_data:
@@ -281,6 +306,7 @@ async def get_analysis_overview(
         "alerts": alerts,
         "ai_briefing": ai_briefing,
         "our_candidate": our.name if our else None,
+        "strategic_quadrant": quadrant_data,
     }
     await set_cache(db, tenant_id, str(election_id), cache_key, result)
     return result
@@ -620,7 +646,8 @@ async def get_youtube_data(
                 "likes": v.likes or 0,
                 "comments_count": v.comments_count or 0,
                 "sentiment": v.sentiment or "neutral",
-                "published_at": v.published_at.strftime("%Y-%m-%d") if v.published_at else None,
+                # published_at 우선, 없으면 collected_at으로 폴백 (수집 시점이라도 표시)
+                "published_at": (v.published_at or v.collected_at).strftime("%Y-%m-%d") if (v.published_at or v.collected_at) else None,
                 "thumbnail_url": v.thumbnail_url,
                 "is_short": bool(v.title and ('#shorts' in v.title.lower() or '#short' in v.title.lower())),
             } for v in videos],

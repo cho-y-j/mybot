@@ -260,6 +260,144 @@ class AlertMonitor:
             self._redis = None
 
 
+async def check_db_alerts(
+    db, tenant_id: str, election_id: str,
+    since_minutes: int = 30,
+) -> list[dict]:
+    """DB 기반 실시간 위기 감지 (Phase 2 이벤트 기반 방식).
+
+    수집+AI 분석이 끝난 직후 호출. AI가 이미 분류한
+    strategic_value='weakness' (우리 후보 공격), ai_threat_level in ('high','medium'),
+    sentiment_verified=TRUE 인 항목들을 긴급 알림 후보로 삼는다.
+
+    Redis SET을 사용해 이미 알림 발송한 URL은 중복 제외.
+
+    Returns: [{severity, candidate, type, message, details, timestamp}, ...]
+    """
+    from sqlalchemy import text as sql_text
+    alerts: list[dict] = []
+    now = datetime.now(timezone(timedelta(hours=9)))
+
+    # Redis (알림 중복 방지용 SET)
+    redis_client = None
+    try:
+        import redis.asyncio as aioredis
+        redis_client = aioredis.from_url(
+            "redis://localhost:6380/0", decode_responses=True,
+        )
+    except Exception as e:
+        logger.warning("alert_redis_unavailable", error=str(e)[:200])
+
+    alerted_key = f"alerted:{tenant_id}:{election_id}"
+
+    async def _is_alerted(url: str) -> bool:
+        if not redis_client:
+            return False
+        try:
+            return bool(await redis_client.sismember(alerted_key, url))
+        except Exception:
+            return False
+
+    async def _mark_alerted(url: str) -> None:
+        if not redis_client:
+            return
+        try:
+            await redis_client.sadd(alerted_key, url)
+            await redis_client.expire(alerted_key, 86400)  # 24시간 TTL
+        except Exception:
+            pass
+
+    # ── 뉴스에서 critical 항목 쿼리 ──
+    # 우리 후보 공격 (weakness) + 고위협 (high threat_level) + 검증된 부정
+    rows = (await db.execute(sql_text(f"""
+        SELECT n.id, n.title, n.url, n.ai_summary, n.ai_reason,
+               n.sentiment, n.strategic_value, n.ai_threat_level,
+               c.name AS candidate, c.is_our_candidate
+        FROM news_articles n
+        LEFT JOIN candidates c ON n.candidate_id = c.id
+        WHERE n.tenant_id = :tid AND n.election_id = :eid
+          AND n.ai_analyzed_at > NOW() - INTERVAL '{since_minutes} minutes'
+          AND n.sentiment_verified = TRUE
+          AND n.is_about_our_candidate = TRUE
+          AND (
+            n.strategic_value = 'weakness'
+            OR n.ai_threat_level IN ('high', 'medium')
+          )
+        ORDER BY
+          CASE n.ai_threat_level
+            WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3
+          END,
+          n.ai_analyzed_at DESC
+        LIMIT 20
+    """), {"tid": tenant_id, "eid": election_id})).all()
+
+    for r in rows:
+        if await _is_alerted(r.url):
+            continue
+        severity = SEVERITY_CRITICAL if r.ai_threat_level == "high" else SEVERITY_WARNING
+        alerts.append({
+            "severity": severity,
+            "candidate": r.candidate or "",
+            "type": "weakness_detected",
+            "message": f"⚠️ {r.candidate or '우리 후보'}: {r.title[:70]}",
+            "details": {
+                "title": r.title,
+                "url": r.url,
+                "summary": r.ai_summary or "",
+                "reason": r.ai_reason or "",
+                "strategic_value": r.strategic_value,
+                "threat_level": r.ai_threat_level,
+            },
+            "timestamp": now.isoformat(),
+        })
+        await _mark_alerted(r.url)
+
+    # ── 경쟁 후보의 약점 (opportunity) — 우리에게 기회 ──
+    opp_rows = (await db.execute(sql_text(f"""
+        SELECT n.id, n.title, n.url, n.ai_summary, c.name AS candidate
+        FROM news_articles n
+        LEFT JOIN candidates c ON n.candidate_id = c.id
+        WHERE n.tenant_id = :tid AND n.election_id = :eid
+          AND n.ai_analyzed_at > NOW() - INTERVAL '{since_minutes} minutes'
+          AND n.sentiment_verified = TRUE
+          AND n.strategic_value = 'opportunity'
+          AND n.ai_threat_level IN ('high', 'medium')
+        ORDER BY n.ai_analyzed_at DESC
+        LIMIT 10
+    """), {"tid": tenant_id, "eid": election_id})).all()
+
+    for r in opp_rows:
+        if await _is_alerted(r.url):
+            continue
+        alerts.append({
+            "severity": SEVERITY_INFO,
+            "candidate": r.candidate or "",
+            "type": "opportunity_detected",
+            "message": f"💡 경쟁자 약점: {r.title[:70]}",
+            "details": {
+                "title": r.title,
+                "url": r.url,
+                "summary": r.ai_summary or "",
+                "candidate": r.candidate,
+            },
+            "timestamp": now.isoformat(),
+        })
+        await _mark_alerted(r.url)
+
+    if redis_client:
+        try:
+            await redis_client.aclose()
+        except Exception:
+            pass
+
+    logger.info(
+        "db_alerts_check",
+        tenant=tenant_id, election=election_id,
+        since=since_minutes, count=len(alerts),
+    )
+    return alerts
+
+
 def format_alert_message(alerts: list[dict]) -> str:
     """알림 목록을 텔레그램 메시지 형식으로 변환."""
     if not alerts:

@@ -9,17 +9,17 @@ export const CANDIDATE_COLORS = [
   '#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6', '#ec4899',
 ];
 
-// ──── 커스텀 툴팁 ────
+// ──── 커스텀 툴팁 (다크모드 대응) ────
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-white/95 backdrop-blur-sm shadow-xl rounded-xl border border-gray-100 px-4 py-3 text-sm">
-      <p className="font-semibold text-gray-900 mb-1.5">{label}</p>
+    <div className="backdrop-blur-sm shadow-xl rounded-xl px-4 py-3 text-sm bg-[var(--card-bg)] border border-[var(--card-border)]">
+      <p className="font-semibold text-[var(--foreground)] mb-1.5">{label}</p>
       {payload.map((p: any, i: number) => (
         <div key={i} className="flex items-center gap-2 py-0.5">
           <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: p.color }} />
-          <span className="text-gray-600">{p.name}:</span>
-          <span className="font-bold text-gray-900">{typeof p.value === 'number' ? p.value.toLocaleString() : p.value}</span>
+          <span className="text-[var(--muted)]">{p.name}:</span>
+          <span className="font-bold text-[var(--foreground)]">{typeof p.value === 'number' ? p.value.toLocaleString() : p.value}</span>
         </div>
       ))}
     </div>
@@ -31,7 +31,7 @@ const CustomLegend = ({ payload }: any) => (
     {payload?.map((p: any, i: number) => (
       <div key={i} className="flex items-center gap-1.5">
         <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: p.color }} />
-        <span className="text-xs text-gray-600 font-medium">{p.value}</span>
+        <span className="text-xs text-[var(--muted)] font-medium">{p.value}</span>
       </div>
     ))}
   </div>
