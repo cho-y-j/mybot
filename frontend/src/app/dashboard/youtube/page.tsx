@@ -561,7 +561,9 @@ export default function YouTubePage() {
                         </span>
                       </div>
                       <h4 className="font-medium text-sm line-clamp-2">{v.title}</h4>
-                      <p className="text-xs text-[var(--muted)] mt-1">{v.channel} | {v.published_at || ''}</p>
+                      <p className="text-xs text-[var(--muted)] mt-1">
+                        {v.channel} | {v.published_at ? v.published_at : <span className="text-amber-500 italic">날짜 없음</span>}
+                      </p>
                       <div className="flex items-center gap-3 mt-2 text-xs text-[var(--muted)]">
                         <span>조회 {(v.views || 0).toLocaleString()}</span>
                         <span>좋아요 {(v.likes || 0).toLocaleString()}</span>
@@ -888,8 +890,12 @@ export default function YouTubePage() {
                 {pagedPosts.map((p: any, i: number) => (
                   <a key={i} href={p.url} target="_blank" rel="noopener noreferrer"
                     className="flex items-center gap-3 p-2 rounded-lg hover:bg-[var(--muted-bg)] transition block">
-                    <span className="text-[10px] text-[var(--muted)] w-20 shrink-0">
-                      {(p.published_at || p.collected_at || '').substring(0, 10) || '날짜없음'}
+                    <span className="text-[10px] w-20 shrink-0" title={p.published_at ? '작성일' : '작성일 미상 (수집: ' + (p.collected_at || '').substring(0, 10) + ')'}>
+                      {p.published_at ? (
+                        <span className="text-[var(--muted)]">{p.published_at.substring(0, 10)}</span>
+                      ) : (
+                        <span className="text-amber-500 italic">날짜 없음</span>
+                      )}
                     </span>
                     <span className="text-xs font-bold w-16 shrink-0" style={{ color: colorMap[p.candidate] }}>{p.candidate}</span>
                     <span className="flex-1 text-sm line-clamp-1 min-w-0">{p.title}</span>

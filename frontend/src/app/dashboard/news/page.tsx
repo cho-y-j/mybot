@@ -118,14 +118,20 @@ export default function NewsAnalysisPage() {
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const pagedNews = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  // 페이지 내 날짜별 그룹핑 (날짜 내에서도 시간순 유지)
+  // 페이지 내 작성일 기준 그룹핑 (collected_at으로 위조 금지 — CLAUDE.md 룰 1.12)
+  // n.date = published_at (백엔드에서 이미 substring 적용됨)
   const groupedByDate: Record<string, any[]> = {};
   pagedNews.forEach(n => {
-    const date = n.date || n.collected_at?.substring(0, 10) || '날짜 없음';
+    const date = n.date || '날짜 없음';
     if (!groupedByDate[date]) groupedByDate[date] = [];
     groupedByDate[date].push(n);
   });
-  const sortedDates = Object.keys(groupedByDate).sort((a, b) => b.localeCompare(a));
+  // "날짜 없음"은 항상 맨 아래
+  const sortedDates = Object.keys(groupedByDate).sort((a, b) => {
+    if (a === '날짜 없음') return 1;
+    if (b === '날짜 없음') return -1;
+    return b.localeCompare(a);
+  });
 
   return (
     <div className="space-y-5">

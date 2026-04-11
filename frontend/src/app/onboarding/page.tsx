@@ -360,14 +360,14 @@ export default function OnboardingPage() {
           </div>
         )}
 
-        {/* ───── Step 4: 완료 ───── */}
+        {/* ───── Step 4: 완료 + 부트스트랩 진행률 ───── */}
         {step === 'done' && result && (
           <div className="card text-center py-12">
             <div className="text-6xl mb-4">🎉</div>
             <h2 className="text-2xl font-bold mb-2">설정 완료!</h2>
             <p className="text-gray-500 mb-6">{result.message}</p>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8 max-w-lg mx-auto">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6 max-w-lg mx-auto">
               <div className="bg-blue-50 rounded-lg p-3">
                 <p className="text-2xl font-bold text-blue-600">{result.summary.competitors + 1}</p>
                 <p className="text-xs text-gray-500">후보</p>
@@ -386,17 +386,125 @@ export default function OnboardingPage() {
               </div>
             </div>
 
-            <div className="flex gap-3 justify-center">
-              <button onClick={() => router.push('/dashboard')} className="btn-primary px-8 py-3">
-                대시보드로 이동
-              </button>
-              <button onClick={() => router.push('/settings')} className="btn-secondary px-8 py-3">
-                텔레그램 연결하기
-              </button>
-            </div>
+            {/* 부트스트랩 진행률 폴링 */}
+            <BootstrapProgress electionId={result.election_id} onDone={() => router.push('/dashboard')} />
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+
+// ── 부트스트랩 진행률 폴링 컴포넌트 ──
+function BootstrapProgress({ electionId, onDone }: { electionId: string; onDone: () => void }) {
+  const [status, setStatus] = useState<any>(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!electionId) return;
+    let stopped = false;
+
+    const poll = async () => {
+      try {
+        const s = await api.getBootstrapStatus(electionId);
+        if (stopped) return;
+        setStatus(s);
+        if (s.phase === 'done' || s.phase === 'failed') return; // 폴링 중단
+        setTimeout(poll, 5000);
+      } catch (e: any) {
+        if (!stopped) setError(e.message || '상태 조회 실패');
+      }
+    };
+    poll();
+
+    return () => { stopped = true; };
+  }, [electionId]);
+
+  if (error) {
+    return (
+      <div className="text-sm text-red-600 mb-4">상태 조회 실패: {error}</div>
+    );
+  }
+  if (!status) {
+    return (
+      <div className="text-sm text-gray-500 mb-4">수집 준비 중...</div>
+    );
+  }
+
+  const phase = status.phase || 'unknown';
+  const progress = status.progress || 0;
+  const message = status.message || '';
+  const counts = status.counts || {};
+  const isDone = phase === 'done';
+  const isFailed = phase === 'failed';
+
+  const phaseLabel: Record<string, string> = {
+    starting: '🟡 준비 중',
+    collecting: '🔵 데이터 수집 중',
+    analyzing: '🟣 AI 분석 중',
+    done: '🟢 완료',
+    failed: '🔴 실패',
+    unknown: '⚪ 상태 확인 중',
+  };
+
+  const barColor = isDone ? 'bg-green-500' : isFailed ? 'bg-red-500' : 'bg-blue-500';
+
+  return (
+    <div className="max-w-lg mx-auto mb-6">
+      <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-semibold">{phaseLabel[phase] || phase}</span>
+          <span className="text-sm font-mono text-gray-500">{progress}%</span>
+        </div>
+        <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden mb-3">
+          <div className={`h-full ${barColor} transition-all duration-500`} style={{ width: `${progress}%` }} />
+        </div>
+        <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">{message}</p>
+
+        {/* 실시간 카운트 */}
+        <div className="grid grid-cols-3 gap-2 text-xs">
+          <div className="bg-white dark:bg-gray-900 rounded-lg p-2">
+            <div className="text-gray-500">뉴스</div>
+            <div className="font-semibold">{counts.analyzed_news || 0} / {counts.news || 0}</div>
+          </div>
+          <div className="bg-white dark:bg-gray-900 rounded-lg p-2">
+            <div className="text-gray-500">커뮤니티</div>
+            <div className="font-semibold">{counts.analyzed_community || 0} / {counts.community || 0}</div>
+          </div>
+          <div className="bg-white dark:bg-gray-900 rounded-lg p-2">
+            <div className="text-gray-500">유튜브</div>
+            <div className="font-semibold">{counts.analyzed_youtube || 0} / {counts.youtube || 0}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* 액션 버튼 */}
+      {isDone ? (
+        <div className="flex gap-3 justify-center mt-5">
+          <button onClick={onDone} className="btn-primary px-8 py-3">
+            대시보드로 이동
+          </button>
+        </div>
+      ) : isFailed ? (
+        <div className="flex gap-3 justify-center mt-5">
+          <button onClick={() => window.location.reload()} className="btn-secondary px-6 py-2">
+            다시 시도
+          </button>
+          <button onClick={onDone} className="text-sm text-gray-500 px-4 py-2">
+            그래도 대시보드로
+          </button>
+        </div>
+      ) : (
+        <div className="text-center mt-4">
+          <p className="text-xs text-gray-500">
+            ⏱ 보통 1~3분 소요. 탭을 닫아도 백그라운드에서 계속 수집됩니다.
+          </p>
+          <button onClick={onDone} className="text-xs text-blue-500 hover:underline mt-2">
+            지금 대시보드로 건너뛰기 →
+          </button>
+        </div>
+      )}
     </div>
   );
 }
