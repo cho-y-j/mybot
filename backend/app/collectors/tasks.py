@@ -350,7 +350,6 @@ def collect_community(self, tenant_id: str, election_id: str, schedule_id: str):
                         relevance_score=relevance / 100.0,
                         platform=post.get("platform", "naver_blog"),
                     )
-                    # 기존 행의 published_at이 NULL이면 새로 파싱된 날짜로 백필
                     stmt = stmt.on_conflict_do_update(
                         constraint="uq_community_url_per_tenant",
                         set_={
@@ -360,6 +359,22 @@ def collect_community(self, tenant_id: str, election_id: str, schedule_id: str):
                     res = session.execute(stmt)
                     if res.rowcount:
                         total += 1
+
+                    # P2-01 race-shared 듀얼 라이트
+                    try:
+                        from app.collectors.race_shared import upsert_race_community_sync
+                        upsert_race_community_sync(
+                            session,
+                            election_id=str(election_id),
+                            title=post["title"],
+                            url=post["url"],
+                            source=post.get("author", ""),
+                            content_snippet=post.get("description", "")[:200],
+                            platform=post.get("platform", "naver_blog"),
+                            published_at=post_pub_at,
+                        )
+                    except Exception as rs_err:
+                        logger.warning("race_shared_community_failed", error=str(rs_err)[:200])
 
         session.commit()
 
@@ -461,6 +476,25 @@ def collect_youtube(self, tenant_id: str, election_id: str, schedule_id: str):
                         comments_count=vid.get("comments_count", 0),
                     ))
                     total += 1
+
+                    # P2-01 race-shared 듀얼 라이트
+                    try:
+                        from app.collectors.race_shared import upsert_race_youtube_sync
+                        upsert_race_youtube_sync(
+                            session,
+                            election_id=str(election_id),
+                            video_id=vid["video_id"],
+                            title=vid["title"],
+                            channel=vid.get("channel", ""),
+                            description_snippet=vid.get("description", "")[:300],
+                            thumbnail_url=vid.get("thumbnail", ""),
+                            views=vid.get("views", 0),
+                            likes=vid.get("likes", 0),
+                            comments_count=vid.get("comments_count", 0),
+                            published_at=pub_at,
+                        )
+                    except Exception as rs_err:
+                        logger.warning("race_shared_youtube_failed", error=str(rs_err)[:200])
 
         session.commit()
 
@@ -818,6 +852,25 @@ def collect_youtube_enhanced(self, tenant_id: str, election_id: str, schedule_id
                         comments_count=vid.get("comments_count", 0),
                     ))
                     total += 1
+
+                    # P2-01 race-shared 듀얼 라이트
+                    try:
+                        from app.collectors.race_shared import upsert_race_youtube_sync
+                        upsert_race_youtube_sync(
+                            session,
+                            election_id=str(election_id),
+                            video_id=vid["video_id"],
+                            title=vid["title"],
+                            channel=vid.get("channel", ""),
+                            description_snippet=vid.get("description", "")[:300],
+                            thumbnail_url=vid.get("thumbnail", ""),
+                            views=vid.get("views", 0),
+                            likes=vid.get("likes", 0),
+                            comments_count=vid.get("comments_count", 0),
+                            published_at=pub_at,
+                        )
+                    except Exception as rs_err:
+                        logger.warning("race_shared_youtube_enh_failed", error=str(rs_err)[:200])
 
             # Comments for top videos (sentiment NULL — 보조 데이터)
             top_vids = session.execute(

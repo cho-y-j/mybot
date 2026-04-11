@@ -106,6 +106,93 @@ def upsert_camp_analysis_sync(
     })
 
 
+def upsert_race_community_sync(
+    session: Session,
+    election_id: str,
+    title: str,
+    url: str,
+    source: str = "",
+    content_snippet: str = "",
+    platform: str = "naver_blog",
+    issue_category: Optional[str] = None,
+    engagement: Optional[dict] = None,
+    published_at: Optional[datetime] = None,
+) -> str:
+    """Race-shared 커뮤니티 게시글 UPSERT. ID 반환."""
+    import json as _json
+    row = session.execute(text("""
+        INSERT INTO race_community_posts
+            (id, election_id, title, url, source, content_snippet, platform,
+             issue_category, engagement, published_at, collected_at)
+        VALUES
+            (gen_random_uuid(), :eid, :title, :url, :source, :snippet, :platform,
+             :category, :engagement, :pub, NOW())
+        ON CONFLICT (election_id, url) DO UPDATE SET
+            published_at = COALESCE(race_community_posts.published_at, EXCLUDED.published_at),
+            title = EXCLUDED.title,
+            source = EXCLUDED.source,
+            content_snippet = COALESCE(NULLIF(race_community_posts.content_snippet, ''), EXCLUDED.content_snippet)
+        RETURNING id
+    """), {
+        "eid": str(election_id),
+        "title": title[:500],
+        "url": url[:1000],
+        "source": (source or "")[:200],
+        "snippet": content_snippet or "",
+        "platform": platform[:50],
+        "category": issue_category,
+        "engagement": _json.dumps(engagement) if engagement else None,
+        "pub": published_at,
+    }).scalar_one()
+    return str(row)
+
+
+def upsert_race_youtube_sync(
+    session: Session,
+    election_id: str,
+    video_id: str,
+    title: str,
+    channel: str = "",
+    description_snippet: str = "",
+    thumbnail_url: Optional[str] = None,
+    views: int = 0,
+    likes: int = 0,
+    comments_count: int = 0,
+    published_at: Optional[datetime] = None,
+) -> str:
+    """Race-shared YouTube 영상 UPSERT. ID 반환.
+    기존 행이 있으면 views/likes/comments는 MAX, published_at은 NULL일 때만 백필.
+    """
+    row = session.execute(text("""
+        INSERT INTO race_youtube_videos
+            (id, election_id, video_id, title, channel, description_snippet,
+             thumbnail_url, views, likes, comments_count,
+             published_at, collected_at)
+        VALUES
+            (gen_random_uuid(), :eid, :vid, :title, :channel, :snippet,
+             :thumb, :views, :likes, :comments,
+             :pub, NOW())
+        ON CONFLICT (election_id, video_id) DO UPDATE SET
+            published_at = COALESCE(race_youtube_videos.published_at, EXCLUDED.published_at),
+            views = GREATEST(race_youtube_videos.views, EXCLUDED.views),
+            likes = GREATEST(race_youtube_videos.likes, EXCLUDED.likes),
+            comments_count = GREATEST(race_youtube_videos.comments_count, EXCLUDED.comments_count)
+        RETURNING id
+    """), {
+        "eid": str(election_id),
+        "vid": video_id[:50],
+        "title": title[:500],
+        "channel": (channel or "")[:200],
+        "snippet": description_snippet or "",
+        "thumb": thumbnail_url,
+        "views": views or 0,
+        "likes": likes or 0,
+        "comments": comments_count or 0,
+        "pub": published_at,
+    }).scalar_one()
+    return str(row)
+
+
 async def upsert_race_news_async(
     db: AsyncSession,
     election_id: str,

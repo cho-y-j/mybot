@@ -46,9 +46,9 @@ async def _quadrant_items(db: AsyncSession, table: str, content_col: str,
     if table not in VALID_TABLES or content_col not in VALID_TABLES.values():
         return []
 
-    # ── news는 race-shared 경로 ──
-    if table == "news_articles":
-        rows = (await db.execute(text("""
+    # ── P2-01 race-shared 경로 — 3개 매체 모두 ──
+    race_queries = {
+        "news_articles": """
             SELECT rn.id, rn.title, rn.url, rn.summary AS content,
                    rn.published_at, rn.collected_at,
                    rn.sentiment, ca.strategic_quadrant, rn.sentiment_score,
@@ -62,46 +62,57 @@ async def _quadrant_items(db: AsyncSession, table: str, content_col: str,
             WHERE rn.election_id = :eid
               AND ca.tenant_id = ANY(:tids)
               AND ca.strategic_quadrant = :sval
-            ORDER BY
-              rn.published_at DESC NULLS LAST,
-              rn.collected_at DESC
+            ORDER BY rn.published_at DESC NULLS LAST, rn.collected_at DESC
             LIMIT :lim
-        """), {
-            "eid": str(election_id),
-            "tids": [str(t) for t in all_tids],
-            "sval": sval,
-            "lim": limit,
-        })).all()
-    else:
-        # youtube_videos는 url 컬럼 없고 video_id로 만들어야 함
-        if table == "youtube_videos":
-            url_expr = "'https://www.youtube.com/watch?v=' || t.video_id"
-        else:
-            url_expr = "t.url"
+        """,
+        "community_posts": """
+            SELECT rp.id, rp.title, rp.url, rp.content_snippet AS content,
+                   rp.published_at, rp.collected_at,
+                   rp.sentiment, ca.strategic_quadrant, rp.sentiment_score,
+                   c.name AS cand_name, c.is_our_candidate,
+                   rp.ai_summary, ca.ai_reason,
+                   ca.action_type, ca.action_priority, ca.action_summary,
+                   ca.is_about_our_candidate
+            FROM race_community_posts rp
+            JOIN race_community_camp_analysis ca ON ca.race_community_id = rp.id
+            LEFT JOIN candidates c ON c.id = ca.candidate_id
+            WHERE rp.election_id = :eid
+              AND ca.tenant_id = ANY(:tids)
+              AND ca.strategic_quadrant = :sval
+            ORDER BY rp.published_at DESC NULLS LAST, rp.collected_at DESC
+            LIMIT :lim
+        """,
+        "youtube_videos": """
+            SELECT rv.id, rv.title,
+                   'https://www.youtube.com/watch?v=' || rv.video_id AS url,
+                   rv.description_snippet AS content,
+                   rv.published_at, rv.collected_at,
+                   rv.sentiment, ca.strategic_quadrant, rv.sentiment_score,
+                   c.name AS cand_name, c.is_our_candidate,
+                   rv.ai_summary, ca.ai_reason,
+                   ca.action_type, ca.action_priority, ca.action_summary,
+                   ca.is_about_our_candidate
+            FROM race_youtube_videos rv
+            JOIN race_youtube_camp_analysis ca ON ca.race_youtube_id = rv.id
+            LEFT JOIN candidates c ON c.id = ca.candidate_id
+            WHERE rv.election_id = :eid
+              AND ca.tenant_id = ANY(:tids)
+              AND ca.strategic_quadrant = :sval
+            ORDER BY rv.published_at DESC NULLS LAST, rv.collected_at DESC
+            LIMIT :lim
+        """,
+    }
 
-        rows = (await db.execute(text(f"""
-            SELECT t.id, t.title, {url_expr} as url, t.{content_col} as content,
-                   t.published_at, t.collected_at,
-                   t.sentiment, t.strategic_quadrant, t.sentiment_score,
-                   c.name as cand_name, c.is_our_candidate,
-                   t.ai_summary, t.ai_reason,
-                   t.action_type, t.action_priority, t.action_summary,
-                   t.is_about_our_candidate
-            FROM {table} t
-            LEFT JOIN candidates c ON t.candidate_id = c.id
-            WHERE t.election_id = :eid
-              AND t.tenant_id = ANY(:tids)
-              AND t.strategic_quadrant = :sval
-            ORDER BY
-              t.published_at DESC NULLS LAST,
-              t.collected_at DESC
-            LIMIT :lim
-        """), {
-            "eid": str(election_id),
-            "tids": [str(t) for t in all_tids],
-            "sval": sval,
-            "lim": limit,
-        })).all()
+    query_sql = race_queries.get(table)
+    if not query_sql:
+        return []
+
+    rows = (await db.execute(text(query_sql), {
+        "eid": str(election_id),
+        "tids": [str(t) for t in all_tids],
+        "sval": sval,
+        "lim": limit,
+    })).all()
 
     # AI가 생성한 action_* 필드를 우선 사용, 없으면 sval 기반 fallback
     ACTION_MAP_FALLBACK = {
