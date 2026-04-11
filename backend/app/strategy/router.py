@@ -37,40 +37,71 @@ VALID_TABLES = {
 
 async def _quadrant_items(db: AsyncSession, table: str, content_col: str,
                           election_id: UUID, all_tids: list, sval: str, limit: int = 10) -> list[dict]:
-    """특정 사분면의 top N items."""
+    """특정 사분면의 top N items.
+
+    news_articles는 P2-01 race-shared 경로 사용 (race_news_articles JOIN
+    race_news_camp_analysis). community/youtube는 기존 경로 유지.
+    """
     # SQL Injection 방지: 테이블/컬럼명 화이트리스트 검증
     if table not in VALID_TABLES or content_col not in VALID_TABLES.values():
         return []
 
-    # youtube_videos는 url 컬럼 없고 video_id로 만들어야 함
-    if table == "youtube_videos":
-        url_expr = "'https://www.youtube.com/watch?v=' || t.video_id"
+    # ── news는 race-shared 경로 ──
+    if table == "news_articles":
+        rows = (await db.execute(text("""
+            SELECT rn.id, rn.title, rn.url, rn.summary AS content,
+                   rn.published_at, rn.collected_at,
+                   rn.sentiment, ca.strategic_quadrant, rn.sentiment_score,
+                   c.name AS cand_name, c.is_our_candidate,
+                   rn.ai_summary, ca.ai_reason,
+                   ca.action_type, ca.action_priority, ca.action_summary,
+                   ca.is_about_our_candidate
+            FROM race_news_articles rn
+            JOIN race_news_camp_analysis ca ON ca.race_news_id = rn.id
+            LEFT JOIN candidates c ON c.id = ca.candidate_id
+            WHERE rn.election_id = :eid
+              AND ca.tenant_id = ANY(:tids)
+              AND ca.strategic_quadrant = :sval
+            ORDER BY
+              rn.published_at DESC NULLS LAST,
+              rn.collected_at DESC
+            LIMIT :lim
+        """), {
+            "eid": str(election_id),
+            "tids": [str(t) for t in all_tids],
+            "sval": sval,
+            "lim": limit,
+        })).all()
     else:
-        url_expr = "t.url"
+        # youtube_videos는 url 컬럼 없고 video_id로 만들어야 함
+        if table == "youtube_videos":
+            url_expr = "'https://www.youtube.com/watch?v=' || t.video_id"
+        else:
+            url_expr = "t.url"
 
-    rows = (await db.execute(text(f"""
-        SELECT t.id, t.title, {url_expr} as url, t.{content_col} as content,
-               t.published_at, t.collected_at,
-               t.sentiment, t.strategic_quadrant, t.sentiment_score,
-               c.name as cand_name, c.is_our_candidate,
-               t.ai_summary, t.ai_reason,
-               t.action_type, t.action_priority, t.action_summary,
-               t.is_about_our_candidate
-        FROM {table} t
-        LEFT JOIN candidates c ON t.candidate_id = c.id
-        WHERE t.election_id = :eid
-          AND t.tenant_id = ANY(:tids)
-          AND t.strategic_quadrant = :sval
-        ORDER BY
-          t.published_at DESC NULLS LAST,
-          t.collected_at DESC
-        LIMIT :lim
-    """), {
-        "eid": str(election_id),
-        "tids": [str(t) for t in all_tids],
-        "sval": sval,
-        "lim": limit,
-    })).all()
+        rows = (await db.execute(text(f"""
+            SELECT t.id, t.title, {url_expr} as url, t.{content_col} as content,
+                   t.published_at, t.collected_at,
+                   t.sentiment, t.strategic_quadrant, t.sentiment_score,
+                   c.name as cand_name, c.is_our_candidate,
+                   t.ai_summary, t.ai_reason,
+                   t.action_type, t.action_priority, t.action_summary,
+                   t.is_about_our_candidate
+            FROM {table} t
+            LEFT JOIN candidates c ON t.candidate_id = c.id
+            WHERE t.election_id = :eid
+              AND t.tenant_id = ANY(:tids)
+              AND t.strategic_quadrant = :sval
+            ORDER BY
+              t.published_at DESC NULLS LAST,
+              t.collected_at DESC
+            LIMIT :lim
+        """), {
+            "eid": str(election_id),
+            "tids": [str(t) for t in all_tids],
+            "sval": sval,
+            "lim": limit,
+        })).all()
 
     # AI가 생성한 action_* 필드를 우선 사용, 없으면 sval 기반 fallback
     ACTION_MAP_FALLBACK = {

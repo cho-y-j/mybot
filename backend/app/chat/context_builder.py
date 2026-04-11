@@ -191,21 +191,24 @@ async def _build_news_context(db, tenant_id, election_id, candidates, today) -> 
         )).scalar() or 0
         lines.append(f"{cand.name}: {total}건 (긍정 {pos}, 부정 {neg}, 중립 {total-pos-neg})")
 
-    # 최근 뉴스 — AI 분석 결과 우선. `is_about_our_candidate`가 TRUE이거나 관련성 있는 것만.
+    # 최근 뉴스 — race-shared 경로 (P2-01)
+    # rn=race_news_articles (race 단위 팩트), ca=race_news_camp_analysis (캠프별 관점)
     recent = (await db.execute(text("""
-        SELECT n.title, n.sentiment, n.ai_summary, n.ai_reason,
-               n.strategic_quadrant, n.ai_threat_level, n.action_summary,
-               n.is_about_our_candidate, n.published_at, c.name AS cand_name
-        FROM news_articles n
-        LEFT JOIN candidates c ON n.candidate_id = c.id
-        WHERE n.tenant_id = :tid
-          AND (n.strategic_quadrant IS NOT NULL OR n.ai_analyzed_at IS NOT NULL)
+        SELECT rn.title, rn.sentiment, rn.ai_summary, ca.ai_reason,
+               ca.strategic_quadrant, rn.ai_threat_level, ca.action_summary,
+               ca.is_about_our_candidate, rn.published_at, c.name AS cand_name
+        FROM race_news_articles rn
+        JOIN race_news_camp_analysis ca ON ca.race_news_id = rn.id
+        LEFT JOIN candidates c ON c.id = ca.candidate_id
+        WHERE ca.tenant_id = :tid
+          AND rn.election_id = :eid
+          AND (ca.strategic_quadrant IS NOT NULL OR rn.ai_analyzed_at IS NOT NULL)
         ORDER BY
-          CASE n.ai_threat_level WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
-          n.published_at DESC NULLS LAST,
-          n.collected_at DESC
+          CASE rn.ai_threat_level WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
+          rn.published_at DESC NULLS LAST,
+          rn.collected_at DESC
         LIMIT 12
-    """), {"tid": tenant_id})).all()
+    """), {"tid": tenant_id, "eid": election_id})).all()
 
     if recent:
         lines.append("\n최근 주요 뉴스 (AI 분석 포함):")
@@ -336,14 +339,15 @@ async def _build_strategy_context(db, tenant_id, election_id, candidates, our) -
         return ""
     lines = ["=== 전략 분석 (AI 4사분면 기반) ==="]
 
-    # ── 1) 4사분면 요약 집계 ──
+    # ── 1) 4사분면 요약 집계 (race-shared 경로) ──
     q_rows = (await db.execute(text("""
-        SELECT strategic_quadrant, COUNT(*) AS cnt
-        FROM news_articles
-        WHERE tenant_id = :tid AND election_id = :eid
-          AND strategic_quadrant IS NOT NULL
-          AND ai_analyzed_at > NOW() - INTERVAL '14 days'
-        GROUP BY strategic_quadrant
+        SELECT ca.strategic_quadrant, COUNT(*) AS cnt
+        FROM race_news_camp_analysis ca
+        JOIN race_news_articles rn ON rn.id = ca.race_news_id
+        WHERE ca.tenant_id = :tid AND rn.election_id = :eid
+          AND ca.strategic_quadrant IS NOT NULL
+          AND rn.ai_analyzed_at > NOW() - INTERVAL '14 days'
+        GROUP BY ca.strategic_quadrant
     """), {"tid": tenant_id, "eid": election_id})).all()
 
     q_counts = {r.strategic_quadrant: r.cnt for r in q_rows}
@@ -356,15 +360,16 @@ async def _build_strategy_context(db, tenant_id, election_id, candidates, our) -
 
     # ── 2) 우리 위기 (weakness) TOP 5 — 방어/해명이 필요한 항목 ──
     weak = (await db.execute(text("""
-        SELECT n.title, n.ai_summary, n.ai_reason, n.action_summary, n.ai_threat_level,
+        SELECT rn.title, rn.ai_summary, ca.ai_reason, ca.action_summary, rn.ai_threat_level,
                c.name AS cand_name
-        FROM news_articles n
-        LEFT JOIN candidates c ON n.candidate_id = c.id
-        WHERE n.tenant_id = :tid AND n.election_id = :eid
-          AND n.strategic_quadrant = 'weakness'
+        FROM race_news_camp_analysis ca
+        JOIN race_news_articles rn ON rn.id = ca.race_news_id
+        LEFT JOIN candidates c ON c.id = ca.candidate_id
+        WHERE ca.tenant_id = :tid AND rn.election_id = :eid
+          AND ca.strategic_quadrant = 'weakness'
         ORDER BY
-          CASE n.ai_threat_level WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
-          n.published_at DESC NULLS LAST
+          CASE rn.ai_threat_level WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
+          rn.published_at DESC NULLS LAST
         LIMIT 5
     """), {"tid": tenant_id, "eid": election_id})).all()
 
@@ -378,14 +383,15 @@ async def _build_strategy_context(db, tenant_id, election_id, candidates, our) -
             if w.action_summary:
                 lines.append(f"    대응: {w.action_summary[:120]}")
 
-    # ── 3) 경쟁자 약점 (opportunity) TOP 5 — 공격 기회 ──
+    # ── 3) 경쟁자 약점 (opportunity) TOP 5 — 공격 기회 (race-shared) ──
     opp = (await db.execute(text("""
-        SELECT n.title, n.ai_summary, n.action_summary, c.name AS cand_name
-        FROM news_articles n
-        LEFT JOIN candidates c ON n.candidate_id = c.id
-        WHERE n.tenant_id = :tid AND n.election_id = :eid
-          AND n.strategic_quadrant = 'opportunity'
-        ORDER BY n.published_at DESC NULLS LAST
+        SELECT rn.title, rn.ai_summary, ca.action_summary, c.name AS cand_name
+        FROM race_news_camp_analysis ca
+        JOIN race_news_articles rn ON rn.id = ca.race_news_id
+        LEFT JOIN candidates c ON c.id = ca.candidate_id
+        WHERE ca.tenant_id = :tid AND rn.election_id = :eid
+          AND ca.strategic_quadrant = 'opportunity'
+        ORDER BY rn.published_at DESC NULLS LAST
         LIMIT 5
     """), {"tid": tenant_id, "eid": election_id})).all()
 
@@ -396,13 +402,14 @@ async def _build_strategy_context(db, tenant_id, election_id, candidates, our) -
             if o.ai_summary:
                 lines.append(f"    요약: {o.ai_summary[:140]}")
 
-    # ── 4) 우리 강점 (strength) TOP 5 — 확산/홍보 ──
+    # ── 4) 우리 강점 (strength) TOP 5 — 확산/홍보 (race-shared) ──
     strong = (await db.execute(text("""
-        SELECT n.title, n.ai_summary, n.action_summary
-        FROM news_articles n
-        WHERE n.tenant_id = :tid AND n.election_id = :eid
-          AND n.strategic_quadrant = 'strength'
-        ORDER BY n.published_at DESC NULLS LAST
+        SELECT rn.title, rn.ai_summary, ca.action_summary
+        FROM race_news_camp_analysis ca
+        JOIN race_news_articles rn ON rn.id = ca.race_news_id
+        WHERE ca.tenant_id = :tid AND rn.election_id = :eid
+          AND ca.strategic_quadrant = 'strength'
+        ORDER BY rn.published_at DESC NULLS LAST
         LIMIT 5
     """), {"tid": tenant_id, "eid": election_id})).all()
 
