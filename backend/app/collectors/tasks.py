@@ -231,6 +231,25 @@ def collect_news(self, tenant_id: str, election_id: str, schedule_id: str):
                     if res.rowcount:
                         total += 1
 
+                    # ── P2-01 race-shared 듀얼 라이트 ──
+                    # 같은 선거에 여러 캠프가 있으면 race_news_articles에
+                    # 중복 없이 저장. 캠프별 관점은 analyze_all_media가 overlay.
+                    try:
+                        from app.collectors.race_shared import upsert_race_news_sync
+                        upsert_race_news_sync(
+                            session,
+                            election_id=str(election_id),
+                            title=title,
+                            url=article["url"],
+                            source=article.get("source", ""),
+                            summary=desc[:300],
+                            platform=article.get("platform", "naver"),
+                            published_at=pub_at,
+                        )
+                    except Exception as rs_err:
+                        logger.warning("race_shared_dual_write_failed",
+                                       error=str(rs_err)[:200])
+
         session.commit()
 
         # ── AI 파이프라인 실행 (Sonnet 분석 + Opus 검증) ──

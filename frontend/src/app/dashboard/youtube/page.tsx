@@ -562,7 +562,11 @@ export default function YouTubePage() {
                       </div>
                       <h4 className="font-medium text-sm line-clamp-2">{v.title}</h4>
                       <p className="text-xs text-[var(--muted)] mt-1">
-                        {v.channel} | {v.published_at ? v.published_at : <span className="text-amber-500 italic">날짜 없음</span>}
+                        {v.channel} | {v.published_at ? (
+                          <span>{v.published_at}</span>
+                        ) : (
+                          <span className="text-amber-500 italic" title="유튜브 업로드 날짜 미복원 (YouTube API 쿼터 대기 중)">작성일 미상</span>
+                        )}
                       </p>
                       <div className="flex items-center gap-3 mt-2 text-xs text-[var(--muted)]">
                         <span>조회 {(v.views || 0).toLocaleString()}</span>
@@ -890,11 +894,11 @@ export default function YouTubePage() {
                 {pagedPosts.map((p: any, i: number) => (
                   <a key={i} href={p.url} target="_blank" rel="noopener noreferrer"
                     className="flex items-center gap-3 p-2 rounded-lg hover:bg-[var(--muted-bg)] transition block">
-                    <span className="text-[10px] w-20 shrink-0" title={p.published_at ? '작성일' : '작성일 미상 (수집: ' + (p.collected_at || '').substring(0, 10) + ')'}>
+                    <span className="text-[10px] w-24 shrink-0" title={p.published_at ? `작성일: ${p.published_at}` : `작성일 미상 (수집 시각: ${p.collected_at || '미상'})`}>
                       {p.published_at ? (
                         <span className="text-[var(--muted)]">{p.published_at.substring(0, 10)}</span>
                       ) : (
-                        <span className="text-amber-500 italic">날짜 없음</span>
+                        <span className="text-amber-500 italic text-[9px]">수집: {(p.collected_at || '').substring(0, 10) || '미상'}</span>
                       )}
                     </span>
                     <span className="text-xs font-bold w-16 shrink-0" style={{ color: colorMap[p.candidate] }}>{p.candidate}</span>
