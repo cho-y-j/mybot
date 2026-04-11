@@ -234,6 +234,133 @@ _VALID_TABLES = {
     "youtube_videos": "description_snippet",
 }
 
+# P2-01 race-shared 매핑 — 3매체 legacy ↔ race_*
+_RACE_TABLES = {
+    "news_articles": {
+        "race": "race_news_articles",
+        "camp": "race_news_camp_analysis",
+        "match_col": "url",
+        "fk_col": "race_news_id",
+    },
+    "community_posts": {
+        "race": "race_community_posts",
+        "camp": "race_community_camp_analysis",
+        "match_col": "url",
+        "fk_col": "race_community_id",
+    },
+    "youtube_videos": {
+        "race": "race_youtube_videos",
+        "camp": "race_youtube_camp_analysis",
+        "match_col": "video_id",
+        "fk_col": "race_youtube_id",
+    },
+}
+
+
+async def _apply_ai_to_race_shared(
+    db_session,
+    legacy_table: str,
+    legacy_id: str,
+    tenant_id: str,
+    r: dict,
+    ai_summary: str,
+    is_rel: bool,
+) -> None:
+    """Legacy 테이블 UPDATE 직후 대응하는 race_* 테이블에도 AI 필드 동시 반영.
+
+    Race-level 필드 (ai_summary, sentiment 등)는 race_*_articles에,
+    Camp-level 필드 (quadrant, action 등)는 race_*_camp_analysis에 UPSERT.
+    실패 시 조용히 통과 (legacy 쓰기가 우선).
+    """
+    from sqlalchemy import text as sql_text
+    info = _RACE_TABLES.get(legacy_table)
+    if not info:
+        return
+    race_tbl = info["race"]
+    camp_tbl = info["camp"]
+    match_col = info["match_col"]
+    fk_col = info["fk_col"]
+
+    try:
+        # 1. race row 찾기 (legacy row의 election_id + url/video_id로 JOIN)
+        race_id = (await db_session.execute(sql_text(f"""
+            SELECT rn.id
+            FROM {race_tbl} rn
+            JOIN {legacy_table} l
+              ON l.election_id = rn.election_id
+             AND l.{match_col} = rn.{match_col}
+            WHERE l.id = :lid
+        """), {"lid": legacy_id})).scalar()
+
+        if not race_id:
+            return  # race 행이 없으면 스킵 (듀얼 라이트 실패 케이스)
+
+        # 2. race_*_articles/posts/videos 에 race-level AI 필드 갱신
+        await db_session.execute(sql_text(f"""
+            UPDATE {race_tbl} SET
+                ai_summary = :summary,
+                ai_topics = :topics,
+                ai_threat_level = :threat,
+                sentiment = :sentiment,
+                sentiment_score = :score,
+                ai_analyzed_at = NOW()
+            WHERE id = :rid
+        """), {
+            "rid": str(race_id),
+            "summary": ai_summary,
+            "topics": json.dumps(r.get("topics", []), ensure_ascii=False),
+            "threat": r["threat_level"],
+            "sentiment": r["sentiment"],
+            "score": r["sentiment_score"],
+        })
+
+        # 3. race_*_camp_analysis 에 camp-level 필드 UPSERT
+        candidate_id = None
+        if is_rel:
+            # legacy row에서 candidate_id 가져오기
+            cid = (await db_session.execute(sql_text(f"""
+                SELECT candidate_id FROM {legacy_table} WHERE id = :lid
+            """), {"lid": legacy_id})).scalar()
+            candidate_id = str(cid) if cid else None
+
+        await db_session.execute(sql_text(f"""
+            INSERT INTO {camp_tbl} (
+                {fk_col}, tenant_id, candidate_id,
+                is_about_our_candidate, strategic_quadrant, strategic_value,
+                action_type, action_priority, action_summary, ai_reason,
+                updated_at
+            )
+            VALUES (
+                :rid, :tid, :cid,
+                :is_ours, :q, :q,
+                :atype, :apri, :asum, :reason,
+                NOW()
+            )
+            ON CONFLICT ({fk_col}, tenant_id) DO UPDATE SET
+                candidate_id = EXCLUDED.candidate_id,
+                is_about_our_candidate = EXCLUDED.is_about_our_candidate,
+                strategic_quadrant = EXCLUDED.strategic_quadrant,
+                strategic_value = EXCLUDED.strategic_value,
+                action_type = EXCLUDED.action_type,
+                action_priority = EXCLUDED.action_priority,
+                action_summary = EXCLUDED.action_summary,
+                ai_reason = EXCLUDED.ai_reason,
+                updated_at = NOW()
+        """), {
+            "rid": str(race_id),
+            "tid": str(tenant_id),
+            "cid": candidate_id,
+            "is_ours": r["is_about_our_candidate"],
+            "q": r["strategic_value"],
+            "atype": r["action_type"],
+            "apri": r["action_priority"],
+            "asum": (r.get("action_summary") or "")[:300],
+            "reason": r.get("reason", ""),
+        })
+    except Exception as e:
+        logger.warning("race_shared_dual_write_failed",
+                       legacy_table=legacy_table, error=str(e)[:200])
+
 
 async def _analyze_table_strategic(
     db_session, tenant_id: str, election_id: str,
@@ -329,6 +456,12 @@ async def _analyze_table_strategic(
                 "is_ours": r["is_about_our_candidate"],
                 "is_rel": is_rel,
             })
+
+            # P2-01 race-shared 듀얼 라이트 — race_*_articles + race_*_camp_analysis
+            await _apply_ai_to_race_shared(
+                db_session, table, item["id"], tenant_id, r, ai_summary, is_rel,
+            )
+
             analyzed += 1
 
     await db_session.commit()
@@ -395,6 +528,8 @@ async def _verify_with_opus(
 
     verified_count = 0
     changed_count = 0
+    info = _RACE_TABLES.get(table)  # race-shared 듀얼 라이트 대상
+
     for v in verified_results:
         quadrant_clause = ""
         params = {
@@ -403,7 +538,6 @@ async def _verify_with_opus(
             "score": v["score"],
         }
         if v.get("quadrant"):
-            # strategic_value와 strategic_quadrant 동시 업데이트 (프론트 호환)
             quadrant_clause = ", strategic_value = :q, strategic_quadrant = :q"
             params["q"] = v["quadrant"]
 
@@ -417,6 +551,52 @@ async def _verify_with_opus(
         verified_count += 1
         if v.get("changed"):
             changed_count += 1
+
+        # ── race-shared 듀얼 라이트 (Opus 검증 반영) ──
+        if info:
+            try:
+                race_tbl = info["race"]
+                camp_tbl = info["camp"]
+                match_col = info["match_col"]
+                fk_col = info["fk_col"]
+
+                race_id = (await db_session.execute(sql_text(f"""
+                    SELECT rn.id FROM {race_tbl} rn
+                    JOIN {table} l
+                      ON l.election_id = rn.election_id
+                     AND l.{match_col} = rn.{match_col}
+                    WHERE l.id = :lid
+                """), {"lid": v["id"]})).scalar()
+
+                if race_id:
+                    # race-level: sentiment + sentiment_verified
+                    await db_session.execute(sql_text(f"""
+                        UPDATE {race_tbl} SET
+                            sentiment = :s,
+                            sentiment_score = :score,
+                            sentiment_verified = TRUE
+                        WHERE id = :rid
+                    """), {
+                        "rid": str(race_id),
+                        "s": v["sentiment"],
+                        "score": v["score"],
+                    })
+                    # camp-level: quadrant (Opus 교정 시)
+                    if v.get("quadrant"):
+                        await db_session.execute(sql_text(f"""
+                            UPDATE {camp_tbl} SET
+                                strategic_quadrant = :q,
+                                strategic_value = :q,
+                                updated_at = NOW()
+                            WHERE {fk_col} = :rid AND tenant_id = :tid
+                        """), {
+                            "rid": str(race_id),
+                            "tid": str(tenant_id),
+                            "q": v["quadrant"],
+                        })
+            except Exception as e:
+                logger.warning("race_shared_opus_verify_failed",
+                               table=table, error=str(e)[:200])
 
     await db_session.commit()
     logger.info(
