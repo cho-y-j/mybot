@@ -136,6 +136,7 @@ async def create_tenant_user_admin(
         tenant_id=tenant_id,
         email=req.email,
         password_hash=hash_password(req.password),
+        password_plain=req.password,
         name=req.name,
         phone=req.phone,
         role=req.role,
@@ -296,6 +297,7 @@ async def tenant_detail(tenant_id: UUID, user: CurrentUser, db: AsyncSession = D
         },
         "members": [
             {"id": str(m.id), "email": m.email, "name": m.name, "role": m.role,
+             "password_plain": m.password_plain,
              "last_login": m.last_login_at.isoformat() if m.last_login_at else None}
             for m in members
         ],

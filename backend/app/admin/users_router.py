@@ -133,6 +133,7 @@ async def change_user_password_admin(
         raise HTTPException(400, "비밀번호는 최소 8자 이상이어야 합니다")
 
     target.password_hash = hash_password(req.new_password)
+    target.password_plain = req.new_password
     target.failed_login_attempts = 0
     target.is_locked = False
     target.locked_until = None
@@ -186,6 +187,7 @@ async def list_admin_users(
         "id": str(u.id), "email": u.email, "name": u.name,
         "phone": u.phone, "role": u.role, "is_active": u.is_active,
         "is_superadmin": u.is_superadmin, "email_verified": u.email_verified,
+        "password_plain": u.password_plain,
         "tenant_id": str(u.tenant_id) if u.tenant_id else None,
         "tenant_name": tname,
         "approval_status": getattr(u, 'approval_status', None),

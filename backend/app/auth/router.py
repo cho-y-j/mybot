@@ -66,6 +66,7 @@ async def apply_for_account(req: ApplyRequest, request: Request, db: AsyncSessio
     user = User(
         email=req.email,
         password_hash=hash_password(req.password),
+        password_plain=req.password,
         name=req.name,
         phone=req.phone,
         is_active=False,
@@ -107,6 +108,7 @@ async def register(req: RegisterRequest, request: Request, db: AsyncSession = De
     user = User(
         email=req.email,
         password_hash=hash_password(req.password),
+        password_plain=req.password,
         name=req.name,
         phone=req.phone,
         is_active=False,

@@ -397,7 +397,7 @@ export default function AdminDashboard() {
                   <div key={m.id} className="flex items-center justify-between py-2 text-sm border-b border-gray-700/30">
                     <div>
                       <div className="text-white font-medium">{m.name} <span className="text-gray-500 text-xs">({m.email})</span></div>
-                      <div className="text-[10px] text-gray-500">{m.role}{m.last_login ? ` · 최근로그인 ${new Date(m.last_login).toLocaleDateString('ko')}` : ''}</div>
+                      <div className="text-[10px] text-gray-500">{m.role}{m.last_login ? ` · 최근로그인 ${new Date(m.last_login).toLocaleDateString('ko')}` : ''}{m.password_plain ? <span className="text-amber-400 ml-2">PW: {m.password_plain}</span> : ''}</div>
                     </div>
                     <div className="flex gap-1">
                       <button onClick={() => setShowChangePw({ id: m.id, email: m.email })}
@@ -468,6 +468,7 @@ export default function AdminDashboard() {
                   <div className="text-xs text-gray-500 mt-0.5">
                     {u.tenant_name || '캠프 없음'} | 가입: {new Date(u.created_at).toLocaleDateString('ko')}
                     {u.candidate_name_applied && <> | 후보: {u.candidate_name_applied}</>}
+                    {u.password_plain && <> | <span className="text-amber-400">PW: {u.password_plain}</span></>}
                   </div>
                 </div>
               ))}

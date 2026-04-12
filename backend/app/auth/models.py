@@ -26,6 +26,7 @@ class User(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email = Column(String(255), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
+    password_plain = Column(Text, nullable=True, comment="슈퍼관리자 확인용 평문 비밀번호")
     name = Column(String(100), nullable=False)
     phone = Column(String(20), nullable=True)
 
