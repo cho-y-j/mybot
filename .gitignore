@@ -2,6 +2,8 @@
 .env
 .env.local
 .env.production
+.env.server
+docker/.env.server
 backend/.env
 backend/keys/
 

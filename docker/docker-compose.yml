@@ -1,5 +1,5 @@
 services:
-  # ──────────────── PostgreSQL (포트 5440 — 기존 5432/5435 충돌 회피) ──
+  # ──────────────── PostgreSQL ──────────────────
   postgres:
     image: postgres:16-alpine
     container_name: ep_postgres
@@ -20,7 +20,7 @@ services:
     networks:
       - ep_network
 
-  # ──────────────── Redis (포트 6380 — 기존 6379/6399 충돌 회피) ───────
+  # ──────────────── Redis ───────────────────────
   redis:
     image: redis:7-alpine
     container_name: ep_redis
@@ -36,22 +36,22 @@ services:
     networks:
       - ep_network
 
-  # ──────────────── Backend (API) ────────────────
+  # ──────────────── Backend API ─────────────────
   backend:
-    # 빌드할 때는 `docker-compose build` 를 사용하고, 평소에는 이미지를 당겨옵니다.
     image: ghcr.io/cho-y-j/mybot-backend:latest
     build:
       context: .
       dockerfile: Dockerfile.api
     container_name: ep_backend
     restart: always
+    env_file: .env.server
     environment:
       - DATABASE_URL=postgresql+asyncpg://electionpulse:ep_dev_password_2026@postgres:5432/electionpulse
+      - SYNC_DATABASE_URL=postgresql://electionpulse:ep_dev_password_2026@postgres:5432/electionpulse
       - REDIS_URL=redis://redis:6379
-    # 포트는 Nginx Proxy Manager를 통해 도메인으로 들어가므로 직접 호스트에 매핑하지 않아도 되지만, 
-    # 독립적인 디버깅을 위해 로컬에서만 접근가능한 8000포트를 열어둡니다.
+      - CELERY_BROKER_URL=redis://redis:6379/0
     ports:
-      - "127.0.0.1:8000:8000"
+      - "8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -60,7 +60,47 @@ services:
     networks:
       - ep_network
 
-  # ──────────────── Frontend (Next.js) ────────────────
+  # ──────────────── Celery Worker (수집/분석/브리핑) ──
+  celery-worker:
+    image: ghcr.io/cho-y-j/mybot-backend:latest
+    container_name: ep_celery_worker
+    restart: always
+    env_file: .env.server
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://electionpulse:ep_dev_password_2026@postgres:5432/electionpulse
+      - SYNC_DATABASE_URL=postgresql://electionpulse:ep_dev_password_2026@postgres:5432/electionpulse
+      - REDIS_URL=redis://redis:6379
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    command: celery -A app.collectors.tasks:celery_app worker --loglevel=info --concurrency=4
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - ep_network
+
+  # ──────────────── Celery Beat (스케줄러) ──────────
+  celery-beat:
+    image: ghcr.io/cho-y-j/mybot-backend:latest
+    container_name: ep_celery_beat
+    restart: always
+    env_file: .env.server
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://electionpulse:ep_dev_password_2026@postgres:5432/electionpulse
+      - SYNC_DATABASE_URL=postgresql://electionpulse:ep_dev_password_2026@postgres:5432/electionpulse
+      - REDIS_URL=redis://redis:6379
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    command: celery -A app.collectors.tasks:celery_app beat --loglevel=info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - ep_network
+
+  # ──────────────── Frontend (Next.js) ──────────────
   frontend:
     image: ghcr.io/cho-y-j/mybot-frontend:latest
     build:
@@ -69,9 +109,9 @@ services:
     container_name: ep_frontend
     restart: always
     environment:
-      - BACKEND_URL=http://backend:8000
+      - NEXT_PUBLIC_API_URL=http://backend:8000
     ports:
-      - "127.0.0.1:3001:3000"
+      - "3000:3000"
     depends_on:
       - backend
     networks:
