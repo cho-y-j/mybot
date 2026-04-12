@@ -39,6 +39,9 @@ logs/
 # Docker volumes
 docker/volumes/
 
+# Nginx Proxy Manager data
+data/npm/
+
 # Build
 dist/
 build/
