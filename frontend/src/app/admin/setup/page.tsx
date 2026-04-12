@@ -1,8 +1,10 @@
 'use client';
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 
-export default function AdminSetupPage() {
+export const dynamic = 'force-dynamic';
+
+function AdminSetupContent() {
   const searchParams = useSearchParams();
   const tenantId = searchParams?.get('tenant') || '';
 
@@ -175,5 +177,13 @@ export default function AdminSetupPage() {
         </button>
       </form>
     </div>
+  );
+}
+
+export default function AdminSetupPage() {
+  return (
+    <Suspense fallback={<div className="text-center py-12 text-gray-500">로딩 중...</div>}>
+      <AdminSetupContent />
+    </Suspense>
   );
 }

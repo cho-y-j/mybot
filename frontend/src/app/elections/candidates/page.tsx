@@ -1,9 +1,11 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { api } from '@/services/api';
 
-export default function CandidatesPage() {
+export const dynamic = 'force-dynamic';
+
+function CandidatesContent() {
   const searchParams = useSearchParams();
   const urlElectionId = searchParams?.get('id') || '';
   const [electionId, setElectionId] = useState(urlElectionId);
@@ -204,5 +206,13 @@ export default function CandidatesPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function CandidatesPage() {
+  return (
+    <Suspense fallback={<div className="card text-center py-12 text-gray-500">로딩 중...</div>}>
+      <CandidatesContent />
+    </Suspense>
   );
 }
