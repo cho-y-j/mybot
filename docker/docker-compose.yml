@@ -17,6 +17,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - ep_network
 
   # ──────────────── Redis (포트 6380 — 기존 6379/6399 충돌 회피) ───────
   redis:
@@ -31,7 +33,55 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - ep_network
+
+  # ──────────────── Backend (API) ────────────────
+  backend:
+    # 빌드할 때는 `docker-compose build` 를 사용하고, 평소에는 이미지를 당겨옵니다.
+    image: ghcr.io/cho-y-j/mybot-backend:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: ep_backend
+    restart: always
+    environment:
+      - DATABASE_URL=postgresql://electionpulse:ep_dev_password_2026@postgres:5432/electionpulse
+      - REDIS_URL=redis://redis:6379
+    # 포트는 Nginx Proxy Manager를 통해 도메인으로 들어가므로 직접 호스트에 매핑하지 않아도 되지만, 
+    # 독립적인 디버깅을 위해 로컬에서만 접근가능한 8000포트를 열어둡니다.
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - ep_network
+
+  # ──────────────── Frontend (Next.js) ────────────────
+  frontend:
+    image: ghcr.io/cho-y-j/mybot-frontend:latest
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
+    container_name: ep_frontend
+    restart: always
+    environment:
+      - BACKEND_URL=http://backend:8000
+    ports:
+      - "127.0.0.1:3001:3000"
+    depends_on:
+      - backend
+    networks:
+      - ep_network
 
 volumes:
   ep_postgres_data:
   ep_redis_data:
+
+networks:
+  ep_network:
+    external: true
+    name: ep_network
