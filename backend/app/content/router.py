@@ -3,7 +3,7 @@ ElectionPulse - Content Tools API
 키워드 분석, 해시태그 추천, 블로그 태그, 선거법 체크, 콘텐츠 제안
 """
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
@@ -647,10 +647,9 @@ async def generate_multi_tone(
 async def upload_file(
     user: CurrentUser,
     db: AsyncSession = Depends(get_db),
-    file: "UploadFile" = None,
+    file: UploadFile = File(None),
 ):
     """파일 업로드 → 자동 파싱 → DB 저장 (Excel/CSV)."""
-    from fastapi import UploadFile, File
     import tempfile, os
 
     if not file:

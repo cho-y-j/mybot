@@ -46,7 +46,7 @@ services:
     container_name: ep_backend
     restart: always
     environment:
-      - DATABASE_URL=postgresql://electionpulse:ep_dev_password_2026@postgres:5432/electionpulse
+      - DATABASE_URL=postgresql+asyncpg://electionpulse:ep_dev_password_2026@postgres:5432/electionpulse
       - REDIS_URL=redis://redis:6379
     # 포트는 Nginx Proxy Manager를 통해 도메인으로 들어가므로 직접 호스트에 매핑하지 않아도 되지만, 
     # 독립적인 디버깅을 위해 로컬에서만 접근가능한 8000포트를 열어둡니다.
