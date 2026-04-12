@@ -57,6 +57,8 @@ def _run_async(coro):
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor() as pool:
                 return pool.submit(asyncio.run, coro).result()
+        if loop.is_closed():
+            return asyncio.run(coro)
         return loop.run_until_complete(coro)
     except RuntimeError:
         return asyncio.run(coro)
