@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import Image from 'next/image';
 
 const features = [
   {
@@ -132,24 +131,21 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Dashboard Preview */}
+      {/* Stats Bar */}
       <section className="relative pb-20">
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="relative">
-            {/* Glow behind the image */}
-            <div className="absolute inset-0 bg-gradient-to-t from-blue-600/10 via-purple-600/5 to-transparent rounded-2xl blur-2xl" />
-            <div className="relative rounded-2xl overflow-hidden border border-white/10 shadow-2xl shadow-blue-900/20" style={{ perspective: '1200px' }}>
-              <div style={{ transform: 'rotateX(2deg) rotateY(-1deg)' }}>
-                <Image
-                  src="/landing/dashboard.png"
-                  alt="CampAI 대시보드"
-                  width={1920}
-                  height={1080}
-                  className="w-full h-auto"
-                  priority
-                />
+        <div className="max-w-5xl mx-auto px-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[
+              { num: '24/7', label: '실시간 모니터링', color: 'from-blue-500 to-blue-600' },
+              { num: 'AI', label: 'Opus 전략 분석', color: 'from-purple-500 to-purple-600' },
+              { num: '4분면', label: '강점/약점/기회/위협', color: 'from-cyan-500 to-blue-500' },
+              { num: 'PDF', label: '일일/주간 보고서', color: 'from-violet-500 to-purple-600' },
+            ].map((s, i) => (
+              <div key={i} className="text-center p-6 rounded-2xl border border-white/5 bg-white/[0.02]">
+                <div className={`text-3xl font-black bg-gradient-to-r ${s.color} bg-clip-text text-transparent`}>{s.num}</div>
+                <p className="mt-2 text-sm text-gray-400">{s.label}</p>
               </div>
-            </div>
+            ))}
           </div>
         </div>
       </section>
