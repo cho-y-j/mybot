@@ -469,7 +469,7 @@ def generate_report_pdf(
                 report.text(stripped)
 
     # 저장
-    output_dir = Path(tempfile.gettempdir()) / "electionpulse_reports"
+    output_dir = Path("/app/data/reports") if Path("/app/data").exists() else Path(tempfile.gettempdir()) / "electionpulse_reports"
     output_dir.mkdir(exist_ok=True)
     safe_name = re.sub(r'[^\w\-]', '_', election_name)[:30]
     filename = f"{report_date}_{safe_name}_{report_type}.pdf"
