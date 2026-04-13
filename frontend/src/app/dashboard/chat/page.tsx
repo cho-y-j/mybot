@@ -196,9 +196,21 @@ export default function ChatPage() {
                   </div>
                 </div>
               )}
-              <p className={`text-[10px] mt-1 ${msg.role === 'user' ? 'text-blue-200' : 'text-gray-300'}`}>
-                {msg.time}
-              </p>
+              <div className={`flex items-center gap-2 mt-1 ${msg.role === 'user' ? 'text-blue-200' : 'text-gray-300'}`}>
+                <p className="text-[10px]">{msg.time}</p>
+                {msg.id !== 'welcome' && (
+                  <button onClick={async () => {
+                    if (msg.id.startsWith('u-') || msg.id.startsWith('a-') || msg.id.startsWith('e-')) {
+                      setMessages(prev => prev.filter(m => m.id !== msg.id));
+                    } else {
+                      try {
+                        await api.deleteChatMessage(msg.id);
+                        setMessages(prev => prev.filter(m => m.id !== msg.id));
+                      } catch {}
+                    }
+                  }} className="text-[10px] opacity-40 hover:opacity-100 hover:text-red-400">삭제</button>
+                )}
+              </div>
             </div>
           </div>
         ))}

@@ -245,6 +245,27 @@ async def chat_history(
     } for m in reversed(rows)]
 
 
+@router.delete("/message/{message_id}")
+async def delete_chat_message(
+    message_id: str,
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """챗 메시지 개별 삭제."""
+    from app.chat.models import ChatMessage
+    from uuid import UUID as _UUID
+    item = (await db.execute(
+        select(ChatMessage).where(ChatMessage.id == _UUID(message_id))
+    )).scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="메시지를 찾을 수 없습니다")
+    if str(item.tenant_id) != user["tenant_id"]:
+        raise HTTPException(status_code=403, detail="권한 없음")
+    await db.delete(item)
+    await db.commit()
+    return {"message": "삭제 완료"}
+
+
 @router.delete("/history")
 async def clear_chat_history(
     user: CurrentUser,

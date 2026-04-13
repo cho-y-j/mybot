@@ -530,6 +530,10 @@ class ApiClient {
     return this.request<any[]>(`/chat/history${q}`);
   }
 
+  deleteChatMessage(messageId: string) {
+    return this.request<any>(`/chat/message/${messageId}`, { method: 'DELETE' });
+  }
+
   clearChatHistory(electionId?: string) {
     const q = electionId ? `?election_id=${electionId}` : '';
     return this.request<any>(`/chat/history${q}`, { method: 'DELETE' });
