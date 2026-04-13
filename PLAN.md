@@ -76,6 +76,32 @@
 - [ ] 보고서 PDF 다운로드 프론트엔드 확인
 - [ ] 캠프별 RAG: 수집 데이터 + 대화 이력 + 생성 콘텐츠 통합 검색
 
+## P3-06. 슈퍼관리자 고객 관리 강화
+
+### 백엔드 API
+- [ ] PUT /admin/tenants/{id} — 캠프 정보 수정 (이름, 요금제, 제한값, 활성/비활성)
+- [ ] PUT /admin/users/{id}/role — 사용자 역할 변경 (admin/analyst/viewer)
+- [ ] PUT /admin/users/{id}/tenant — 사용자 캠프 이동
+- [ ] GET/POST/DELETE /admin/ai-accounts — AI CLI 계정 풀 관리
+- [ ] POST /admin/tenants/{id}/assign-ai — 캠프에 AI 계정 배정
+
+### 프론트엔드 — 캠프 관리
+- [ ] 캠프 상세에서 요금제 변경 (basic/pro/premium/enterprise 선택)
+- [ ] 캠프 제한값 수정 (최대 선거/후보/키워드/멤버 수)
+- [ ] 캠프 활성/비활성 토글
+- [ ] 캠프 이름 수정
+
+### 프론트엔드 — 사용자 관리
+- [ ] 사용자 역할 변경 드롭다운 (admin/analyst/viewer)
+- [ ] 사용자 캠프 이동 (드롭다운으로 캠프 선택)
+- [ ] 사용자 상세 정보 보기 (마지막 로그인, 가입일, 소속 등)
+
+### 프론트엔드 — AI 계정 관리
+- [ ] AI CLI 계정 목록 (provider, name, status, 배정된 캠프)
+- [ ] 계정 추가/삭제
+- [ ] 캠프에 계정 배정/해제
+- [ ] rate limit blocked 자동 감지 표시
+
 ---
 
 # Phase 1 — 완료 (2026-04-12)
