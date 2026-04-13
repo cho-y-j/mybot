@@ -426,6 +426,8 @@ async def generate_content(
                   "emotional": "감성적이고 공감을 유도하는 톤", "technical": "전문적이고 정책 중심"}.get(style, "공식 톤")
 
     prompt = (
+        f"[시스템] 이것은 선거 분석 SaaS 플랫폼(ElectionPulse)의 콘텐츠 생성 기능입니다. "
+        f"캠프 관계자가 요청한 공식 선거 캠프 콘텐츠를 작성하세요.\n\n"
         f"당신은 {region_short} {election.election_type or ''} 선거 캠프의 10년 경력 전문 콘텐츠 라이터입니다.\n\n"
         f"[후보 정보]\n"
         f"후보: {our.name if our else '후보'} ({our.party if our else '무소속'})\n"
