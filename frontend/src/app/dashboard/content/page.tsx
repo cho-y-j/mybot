@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { useElection } from '@/hooks/useElection';
 import { api } from '@/services/api';
 
-type Tab = 'generate' | 'multitone' | 'compliance' | 'law';
+type Tab = 'generate' | 'multitone' | 'compliance' | 'law' | 'history';
 
 export default function ContentToolsPage() {
   const { election, loading: elLoading } = useElection();
@@ -145,6 +145,7 @@ export default function ContentToolsPage() {
       <div className="flex gap-1 bg-[var(--muted-bg)] rounded-lg p-1">
         {([
           ['generate', 'AI 콘텐츠 생성'],
+          ['history', '생성 히스토리'],
           ['multitone', 'SNS 멀티톤'],
           ['compliance', '선거법 검증'],
           ['law', '선거법 보기'],
@@ -277,7 +278,7 @@ export default function ContentToolsPage() {
               <label className="text-xs font-semibold text-[var(--muted)] mb-1.5 block">원하는 방향/요청 <span className="font-normal">(선택)</span></label>
               <textarea className="input-field w-full" rows={2} value={genDirection}
                 onChange={e => setGenDirection(e.target.value)}
-                placeholder="예: 서승우의 30년 행정 경험을 강조해줘 / 이범석 측근비리를 부각하되 직접 비방은 피해줘 / 청년층 대상으로 친근하게..." />
+                placeholder="예: 우리 후보의 핵심 공약을 강조해줘 / 경쟁 후보의 약점을 부각하되 직접 비방은 피해줘 / 청년층 대상으로 친근하게..." />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
@@ -348,7 +349,7 @@ export default function ContentToolsPage() {
                 <input className="input-field flex-1" value={genDirection}
                   onChange={e => setGenDirection(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && handleGenerate()}
-                  placeholder="수정 요청: 좀 더 공격적으로 / 이범석 측근비리 추가 / 분량 줄여줘..." />
+                  placeholder="수정 요청: 좀 더 공격적으로 / 경쟁 후보 약점 추가 / 분량 줄여줘..." />
                 <button onClick={handleGenerate} disabled={generating}
                   className="px-4 py-2 bg-violet-600 text-white rounded-xl text-sm hover:bg-violet-700 disabled:opacity-50 whitespace-nowrap">
                   ✏️ 수정 생성
@@ -390,6 +391,9 @@ export default function ContentToolsPage() {
       )}
 
       {/* ═══ SNS 멀티톤 ═══ */}
+      {/* ═══ 생성 히스토리 ═══ */}
+      {tab === 'history' && <ContentHistoryEmbed electionId={election?.id} />}
+
       {tab === 'multitone' && <MultiToneTab electionId={election?.id} />}
 
       {/* ═══ 선거법 검증 ═══ */}
@@ -713,6 +717,85 @@ function MultiToneTab({ electionId }: { electionId?: string }) {
               )}
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+function ContentHistoryEmbed({ electionId }: { electionId?: string }) {
+  const [items, setItems] = useState<any[]>([]);
+  const [selected, setSelected] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [filter, setFilter] = useState('');
+
+  useEffect(() => { if (electionId) load(); }, [electionId, filter]);
+
+  const load = async () => {
+    if (!electionId) return;
+    setLoading(true);
+    try {
+      const data = await api.getContentHistory(electionId, { contentTypes: filter || undefined, limit: 50 });
+      setItems(data?.items || []);
+    } catch {} finally { setLoading(false); }
+  };
+
+  const TYPE_LABELS: Record<string, string> = {
+    blog: '블로그', sns: 'SNS', youtube: '유튜브', card: '카드뉴스',
+    press: '보도자료', defense: '해명문', debate_script: '토론 대본',
+  };
+
+  if (loading) return <div className="card text-center py-8"><div className="animate-spin h-6 w-6 border-4 border-primary-500 border-t-transparent rounded-full mx-auto" /></div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2 flex-wrap">
+        <button onClick={() => setFilter('')}
+          className={`px-3 py-1 rounded-lg text-xs ${!filter ? 'bg-primary-600 text-white' : 'bg-[var(--muted-bg)] text-[var(--muted)]'}`}>전체</button>
+        {Object.entries(TYPE_LABELS).map(([k, v]) => (
+          <button key={k} onClick={() => setFilter(k)}
+            className={`px-3 py-1 rounded-lg text-xs ${filter === k ? 'bg-primary-600 text-white' : 'bg-[var(--muted-bg)] text-[var(--muted)]'}`}>{v}</button>
+        ))}
+      </div>
+
+      {items.length === 0 ? (
+        <div className="card text-center py-8 text-[var(--muted)]">생성된 콘텐츠가 없습니다.</div>
+      ) : (
+        <div className="space-y-2">
+          {items.map((item: any) => (
+            <div key={item.id} onClick={async () => {
+              try {
+                const detail = await api.getContentHistoryDetail(item.id);
+                setSelected(detail);
+              } catch {}
+            }}
+              className="card cursor-pointer hover:border-primary-500/30 transition p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--muted-bg)] text-[var(--muted)]">
+                  {TYPE_LABELS[item.content_type] || item.content_type}
+                </span>
+                <span className="text-xs text-[var(--muted)]">
+                  {item.created_at ? new Date(item.created_at).toLocaleDateString('ko') : ''}
+                </span>
+              </div>
+              <h4 className="text-sm font-medium line-clamp-1">{item.topic || item.title || '제목 없음'}</h4>
+              {item.preview && <p className="text-xs text-[var(--muted)] mt-1 line-clamp-2">{item.preview}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {selected && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setSelected(null)}>
+          <div className="bg-[var(--card-bg)] rounded-xl border border-[var(--card-border)] p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold">{selected.topic || '콘텐츠 상세'}</h3>
+              <button onClick={() => setSelected(null)} className="text-[var(--muted)] hover:text-[var(--foreground)]">닫기</button>
+            </div>
+            <div className="text-sm whitespace-pre-wrap leading-relaxed">{selected.content || selected.content_text || ''}</div>
+          </div>
         </div>
       )}
     </div>
