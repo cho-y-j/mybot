@@ -590,6 +590,41 @@ export default function YouTubePage() {
                     </a>
                   ))}
                 </div>
+                {d.videos.length > 9 && (
+                  <button onClick={() => {
+                    const el = document.getElementById(`yt-more-${d.name}`);
+                    if (el) el.style.display = el.style.display === 'none' ? 'grid' : 'none';
+                  }} className="mt-3 w-full py-2 text-sm text-[var(--muted)] hover:text-primary-500 border border-[var(--card-border)] rounded-lg transition">
+                    더보기 (+{d.videos.length - 9}건)
+                  </button>
+                )}
+                <div id={`yt-more-${d.name}`} style={{ display: 'none' }} className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                  {[...d.videos]
+                    .sort((a: any, b: any) => (b.published_at || b.collected_at || '').localeCompare(a.published_at || a.collected_at || ''))
+                    .slice(9).map((v: any, i: number) => (
+                    <a key={i} href={`https://www.youtube.com/watch?v=${v.video_id}`}
+                      target="_blank" rel="noopener noreferrer"
+                      className="rounded-xl border border-[var(--card-border)] p-3 hover:border-blue-500/30 transition block">
+                      {v.thumbnail_url ? (
+                        <img src={v.thumbnail_url} alt={v.title} className="w-full h-28 object-cover rounded-lg mb-2" />
+                      ) : (
+                        <div className="bg-[var(--muted-bg)] rounded-lg h-28 flex items-center justify-center mb-2">
+                          <svg className="w-10 h-10 text-[var(--muted)]" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                        </div>
+                      )}
+                      <h4 className="font-medium text-sm line-clamp-2">{v.title}</h4>
+                      <div className="flex items-center gap-3 mt-2 text-xs text-[var(--muted)]">
+                        <span>조회 {(v.views || 0).toLocaleString()}</span>
+                        <span>좋아요 {(v.likes || 0).toLocaleString()}</span>
+                        {v.id && <button onClick={async (e) => {
+                          e.preventDefault(); e.stopPropagation();
+                          if (!confirm('이 영상을 삭제하시겠습니까?')) return;
+                          try { await api.deleteYoutubeItem(v.id); loadData(); } catch {}
+                        }} className="ml-auto text-gray-400 hover:text-red-400">삭제</button>}
+                      </div>
+                    </a>
+                  ))}
+                </div>
               </div>
             )
           ))}
