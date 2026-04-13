@@ -41,13 +41,12 @@ class SmartSetupRequest(BaseModel):
 
 def _get_default_schedule_templates() -> list[dict]:
     """
-    기본 스케줄 템플릿 — 수집 직후 브리핑 통합 (3회).
+    기본 스케줄 템플릿 — 4회 스케줄.
 
     07:00  수집 + 오전 브리핑 (밤사이 데이터 + 출근 전 보고)
     13:00  수집 + 오후 브리핑 (오전 활동 + 점심 후 확인)
-    18:00  수집 + 일일 종합 보고서 (퇴근 시간 도착)
-
-    각 시간에 수집 후 즉시 AI 분석 + 보고서 생성 + 텔레그램 발송.
+    17:30  마감 수집 (일일 보고서용 데이터 확보)
+    18:00  일일 종합 보고서 (수집된 데이터로 보고서만 생성 + 텔레그램)
     """
     return [
         {
@@ -63,8 +62,14 @@ def _get_default_schedule_templates() -> list[dict]:
             "config": {"briefing_type": "afternoon", "send_telegram": True},
         },
         {
+            "name": "마감 수집 (17:30)",
+            "schedule_type": "full_collection",
+            "fixed_times": ["17:30"],
+            "config": {},
+        },
+        {
             "name": "일일 종합 보고서 (18:00)",
-            "schedule_type": "full_with_briefing",
+            "schedule_type": "briefing",
             "fixed_times": ["18:00"],
             "config": {"briefing_type": "daily", "send_telegram": True},
         },

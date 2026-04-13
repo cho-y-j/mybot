@@ -36,7 +36,7 @@ celery_app.conf.update(
     timezone="Asia/Seoul",
     enable_utc=True,
     task_track_started=True,
-    task_time_limit=600,
+    task_time_limit=1800,
     worker_max_tasks_per_child=100,
 )
 
