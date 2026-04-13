@@ -352,3 +352,110 @@ async def tenant_detail(tenant_id: UUID, user: CurrentUser, db: AsyncSession = D
             for r in reports
         ],
     }
+
+
+# ──── 캠프 수정 ────
+
+from pydantic import BaseModel as _BM
+
+
+class TenantUpdateReq(_BM):
+    name: str | None = None
+    plan: str | None = None
+    is_active: bool | None = None
+    max_elections: int | None = None
+    max_candidates: int | None = None
+    max_keywords: int | None = None
+    max_members: int | None = None
+
+
+@router.put("/tenants/{tenant_id}")
+async def update_tenant(
+    tenant_id: UUID, req: TenantUpdateReq,
+    user: CurrentUser, db: AsyncSession = Depends(get_db),
+):
+    """캠프 정보 수정 (이름, 요금제, 제한값, 활성/비활성)."""
+    require_superadmin(user)
+    tenant = (await db.execute(select(Tenant).where(Tenant.id == tenant_id))).scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(404, "캠프를 찾을 수 없습니다")
+
+    changed = []
+    if req.name is not None:
+        tenant.name = req.name
+        changed.append(f"name={req.name}")
+    if req.plan is not None and req.plan in ("basic", "pro", "premium", "enterprise"):
+        tenant.plan = req.plan
+        changed.append(f"plan={req.plan}")
+    if req.is_active is not None:
+        tenant.is_active = req.is_active
+        changed.append(f"active={req.is_active}")
+    if req.max_elections is not None:
+        tenant.max_elections = req.max_elections
+    if req.max_candidates is not None:
+        tenant.max_candidates = req.max_candidates
+    if req.max_keywords is not None:
+        tenant.max_keywords = req.max_keywords
+    if req.max_members is not None:
+        tenant.max_members = req.max_members
+
+    db.add(AuditLog(
+        user_id=user["id"], action="admin_update_tenant",
+        resource_type="tenant", resource_id=str(tenant_id),
+        details=_json.dumps({"changed": changed}, ensure_ascii=False),
+    ))
+    await db.commit()
+    return {"message": f"캠프 수정 완료: {', '.join(changed) or '변경 없음'}"}
+
+
+# ──── 사용자 역할/캠프 변경 ────
+
+class UserRoleReq(_BM):
+    role: str
+
+
+@router.put("/users/{user_id}/role")
+async def change_user_role(
+    user_id: UUID, req: UserRoleReq,
+    user: CurrentUser, db: AsyncSession = Depends(get_db),
+):
+    """사용자 역할 변경."""
+    require_superadmin(user)
+    if req.role not in ("super_admin", "admin", "analyst", "viewer"):
+        raise HTTPException(400, "유효하지 않은 역할입니다")
+    target = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not target:
+        raise HTTPException(404, "사용자를 찾을 수 없습니다")
+    target.role = req.role
+    db.add(AuditLog(
+        user_id=user["id"], action="admin_change_role",
+        resource_type="user", resource_id=str(user_id),
+        details=_json.dumps({"email": target.email, "role": req.role}, ensure_ascii=False),
+    ))
+    await db.commit()
+    return {"message": f"{target.email} 역할 → {req.role}"}
+
+
+class UserTenantReq(_BM):
+    tenant_id: str | None
+
+
+@router.put("/users/{user_id}/tenant")
+async def change_user_tenant(
+    user_id: UUID, req: UserTenantReq,
+    user: CurrentUser, db: AsyncSession = Depends(get_db),
+):
+    """사용자 캠프 이동."""
+    require_superadmin(user)
+    target = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not target:
+        raise HTTPException(404, "사용자를 찾을 수 없습니다")
+    old_tid = str(target.tenant_id) if target.tenant_id else "없음"
+    target.tenant_id = UUID(req.tenant_id) if req.tenant_id else None
+    db.add(AuditLog(
+        user_id=user["id"], action="admin_move_tenant",
+        resource_type="user", resource_id=str(user_id),
+        details=_json.dumps({"email": target.email, "from": old_tid, "to": req.tenant_id}, ensure_ascii=False),
+    ))
+    await db.commit()
+    return {"message": f"{target.email} 캠프 이동 완료"}

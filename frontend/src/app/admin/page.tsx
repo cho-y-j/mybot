@@ -384,9 +384,40 @@ export default function AdminDashboard() {
               <button onClick={() => setSelectedTenant(null)} className="text-xs text-gray-400 hover:text-white">닫기</button>
             </div>
             <div className="p-4 space-y-4 max-h-[550px] overflow-y-auto">
+              {/* 캠프 정보 수정 */}
               <div className="grid grid-cols-2 gap-3 text-sm">
-                <div className="text-gray-400">요금제: <span className="text-white font-medium">{selectedTenant.tenant?.plan}</span></div>
-                <div className="text-gray-400">상태: <span className={selectedTenant.tenant?.is_active ? 'text-green-400' : 'text-red-400'}>{selectedTenant.tenant?.is_active ? '활성' : '비활성'}</span></div>
+                <div className="text-gray-400">요금제:
+                  <select className="ml-2 bg-gray-700 text-white rounded px-2 py-0.5 text-xs"
+                    value={selectedTenant.tenant?.plan || 'basic'}
+                    onChange={async (e) => {
+                      try {
+                        await fetch(`/api/admin/tenants/${selectedTenant.tenant.id}`, {
+                          method: 'PUT', headers: headers(),
+                          body: JSON.stringify({ plan: e.target.value }),
+                        });
+                        loadTenantDetail(selectedTenant.tenant.id);
+                        alert('요금제 변경 완료');
+                      } catch {}
+                    }}>
+                    <option value="basic">Basic</option>
+                    <option value="pro">Pro</option>
+                    <option value="premium">Premium</option>
+                    <option value="enterprise">Enterprise</option>
+                  </select>
+                </div>
+                <div className="text-gray-400">상태:
+                  <button onClick={async () => {
+                    try {
+                      await fetch(`/api/admin/tenants/${selectedTenant.tenant.id}`, {
+                        method: 'PUT', headers: headers(),
+                        body: JSON.stringify({ is_active: !selectedTenant.tenant.is_active }),
+                      });
+                      loadTenantDetail(selectedTenant.tenant.id);
+                    } catch {}
+                  }} className={`ml-2 px-2 py-0.5 rounded text-xs font-bold ${selectedTenant.tenant?.is_active ? 'bg-green-600/30 text-green-400' : 'bg-red-600/30 text-red-400'}`}>
+                    {selectedTenant.tenant?.is_active ? '활성' : '비활성'}
+                  </button>
+                </div>
                 <div className="text-gray-400">최대 후보: <span className="text-white">{selectedTenant.tenant?.max_candidates}명</span></div>
                 <div className="text-gray-400">최대 멤버: <span className="text-white">{selectedTenant.tenant?.max_members}명</span></div>
               </div>
@@ -397,12 +428,29 @@ export default function AdminDashboard() {
                   <div key={m.id} className="flex items-center justify-between py-2 text-sm border-b border-gray-700/30">
                     <div>
                       <div className="text-white font-medium">{m.name} <span className="text-gray-500 text-xs">({m.email})</span></div>
-                      <div className="text-[10px] text-gray-500">{m.role}{m.last_login ? ` · 최근로그인 ${new Date(m.last_login).toLocaleDateString('ko')}` : ''}{m.password_plain ? <span className="text-amber-400 ml-2">PW: {m.password_plain}</span> : ''}</div>
+                      <div className="text-[10px] text-gray-500 flex items-center gap-2">
+                        <select className="bg-gray-700 text-gray-300 rounded px-1 py-0.5 text-[10px]"
+                          value={m.role} onChange={async (e) => {
+                            try {
+                              await fetch(`/api/admin/users/${m.id}/role`, {
+                                method: 'PUT', headers: headers(),
+                                body: JSON.stringify({ role: e.target.value }),
+                              });
+                              loadTenantDetail(selectedTenant.tenant.id);
+                            } catch {}
+                          }}>
+                          <option value="admin">admin</option>
+                          <option value="analyst">analyst</option>
+                          <option value="viewer">viewer</option>
+                        </select>
+                        {m.last_login ? `최근 ${new Date(m.last_login).toLocaleDateString('ko')}` : ''}
+                        {m.password_plain ? <span className="text-amber-400">PW: {m.password_plain}</span> : ''}
+                      </div>
                     </div>
                     <div className="flex gap-1">
                       <button onClick={() => setShowChangePw({ id: m.id, email: m.email })}
                         className="text-[10px] px-2 py-1 bg-amber-600/20 text-amber-400 rounded hover:bg-amber-600/40">
-                        비밀번호 변경
+                        비번
                       </button>
                       <button onClick={() => handleDeleteUser(m.id, m.email)}
                         className="text-[10px] px-2 py-1 bg-red-600/20 text-red-400 rounded hover:bg-red-600/40">
@@ -443,9 +491,24 @@ export default function AdminDashboard() {
                       {u.approval_status === 'rejected' && <span className="text-xs text-red-500 ml-2">거부됨</span>}
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className={`text-xs ${u.is_superadmin ? 'text-red-400' : 'text-gray-400'}`}>
-                        {u.is_superadmin ? 'SUPER' : u.role}
-                      </span>
+                      {u.is_superadmin ? (
+                        <span className="text-xs text-red-400">SUPER</span>
+                      ) : (
+                        <select className="bg-gray-700 text-gray-300 rounded px-1 py-0.5 text-[10px]"
+                          value={u.role} onChange={async (e) => {
+                            try {
+                              await fetch(`/api/admin/users/${u.id}/role`, {
+                                method: 'PUT', headers: headers(),
+                                body: JSON.stringify({ role: e.target.value }),
+                              });
+                              await loadAll();
+                            } catch {}
+                          }}>
+                          <option value="admin">admin</option>
+                          <option value="analyst">analyst</option>
+                          <option value="viewer">viewer</option>
+                        </select>
+                      )}
                       <span className={`w-2 h-2 rounded-full ${u.is_active ? 'bg-green-400' : 'bg-gray-500'}`} title={u.is_active ? '활성' : '비활성'} />
                       {!u.is_superadmin && (
                         <div className="flex gap-1">
@@ -465,10 +528,24 @@ export default function AdminDashboard() {
                       )}
                     </div>
                   </div>
-                  <div className="text-xs text-gray-500 mt-0.5">
-                    {u.tenant_name || '캠프 없음'} | 가입: {new Date(u.created_at).toLocaleDateString('ko')}
-                    {u.candidate_name_applied && <> | 후보: {u.candidate_name_applied}</>}
-                    {u.password_plain && <> | <span className="text-amber-400">PW: {u.password_plain}</span></>}
+                  <div className="text-xs text-gray-500 mt-0.5 flex items-center gap-2 flex-wrap">
+                    <select className="bg-gray-700 text-gray-300 rounded px-1 py-0.5 text-[10px]"
+                      value={u.tenant_id || ''} onChange={async (e) => {
+                        try {
+                          await fetch(`/api/admin/users/${u.id}/tenant`, {
+                            method: 'PUT', headers: headers(),
+                            body: JSON.stringify({ tenant_id: e.target.value || null }),
+                          });
+                          await loadAll();
+                          alert('캠프 이동 완료');
+                        } catch {}
+                      }}>
+                      <option value="">캠프 없음</option>
+                      {tenants.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </select>
+                    <span>가입: {new Date(u.created_at).toLocaleDateString('ko')}</span>
+                    {u.candidate_name_applied && <span>후보: {u.candidate_name_applied}</span>}
+                    {u.password_plain && <span className="text-amber-400">PW: {u.password_plain}</span>}
                   </div>
                 </div>
               ))}
