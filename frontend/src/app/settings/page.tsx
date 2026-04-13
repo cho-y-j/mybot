@@ -11,6 +11,10 @@ export default function SettingsPage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
+  // 텔레그램 가이드/봇 수정
+  const [showTgGuide, setShowTgGuide] = useState(false);
+  const [showBotEdit, setShowBotEdit] = useState(false);
+
   // 비밀번호 변경
   const [pwCurrent, setPwCurrent] = useState('');
   const [pwNew, setPwNew] = useState('');
@@ -182,18 +186,71 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* 텔레그램 봇 연결 */}
+      {/* 텔레그램 알림 설정 */}
       <div className="card">
-        <h3 className="font-semibold mb-4">텔레그램 봇</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold">텔레그램 알림</h3>
+          <button onClick={() => setShowTgGuide(!showTgGuide)}
+            className="text-xs text-blue-500 hover:underline">
+            {showTgGuide ? '안내 닫기' : '설정 방법 안내'}
+          </button>
+        </div>
+
+        {showTgGuide && (
+          <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm space-y-3 border border-blue-200 dark:border-blue-800">
+            <h4 className="font-bold text-blue-700 dark:text-blue-300">텔레그램 알림 받기 설정 안내</h4>
+
+            <div>
+              <p className="font-semibold text-blue-600 dark:text-blue-400">1단계: 텔레그램 봇 만들기 (Bot Token 얻기)</p>
+              <ol className="list-decimal ml-5 text-gray-600 dark:text-gray-300 space-y-1 mt-1">
+                <li>텔레그램 앱에서 <strong>@BotFather</strong>를 검색하고 대화를 시작합니다.</li>
+                <li>채팅창에 <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">/newbot</code>을 입력합니다.</li>
+                <li>봇 이름을 입력합니다. (예: 우리캠프 알림봇)</li>
+                <li>봇 사용자명을 입력합니다. 반드시 <strong>Bot</strong>으로 끝나야 합니다. (예: MyCampAlarmBot)</li>
+                <li>완료되면 BotFather가 토큰을 보내줍니다:<br/>
+                  <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded text-xs">7123456789:AAHbX3xJzQ1kVfE9r8wLmN2pYdS...</code></li>
+              </ol>
+            </div>
+
+            <div>
+              <p className="font-semibold text-blue-600 dark:text-blue-400">2단계: Chat ID 알아내기</p>
+              <ol className="list-decimal ml-5 text-gray-600 dark:text-gray-300 space-y-1 mt-1">
+                <li>방금 만든 봇을 텔레그램에서 찾아 <strong>/start</strong> 메시지를 보냅니다.</li>
+                <li>웹 브라우저에 아래 주소를 입력합니다:<br/>
+                  <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded text-xs break-all">https://api.telegram.org/bot여기에토큰붙여넣기/getUpdates</code></li>
+                <li>화면에서 <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">{'"chat":{"id":숫자'}</code> 부분을 찾습니다.</li>
+                <li>그 숫자가 <strong>Chat ID</strong>입니다. (예: 987654321)</li>
+              </ol>
+            </div>
+
+            <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded border border-green-200 dark:border-green-800">
+              <p className="text-green-700 dark:text-green-300 font-medium">기본 봇이 이미 설정되어 있습니다. Chat ID만 아래에 입력하면 바로 알림을 받을 수 있습니다!</p>
+            </div>
+          </div>
+        )}
+
         {tgData?.bot_connected ? (
-          <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg mb-4">
-            <span className="w-3 h-3 bg-green-500 rounded-full" />
-            <span className="font-medium text-green-700">연결됨: @{tgData.bot_username}</span>
+          <div className="space-y-3 mb-4">
+            <div className="flex items-center gap-3 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
+              <span className="w-3 h-3 bg-green-500 rounded-full" />
+              <span className="font-medium text-green-700 dark:text-green-300">연결됨: @{tgData.bot_username}</span>
+              <button onClick={() => setShowBotEdit(!showBotEdit)}
+                className="ml-auto text-xs text-gray-400 hover:text-blue-500">토큰 변경</button>
+            </div>
+            {showBotEdit && (
+              <form onSubmit={handleConnectBot} className="flex gap-2">
+                <input className="input-field flex-1" value={botForm.bot_token}
+                  onChange={(e) => setBotForm({ bot_token: e.target.value })}
+                  placeholder="새 Bot Token 입력" required />
+                <button type="submit" className="btn-primary text-sm">변경</button>
+                <button type="button" onClick={() => setShowBotEdit(false)} className="btn-secondary text-sm">취소</button>
+              </form>
+            )}
           </div>
         ) : (
           <form onSubmit={handleConnectBot} className="space-y-3 mb-4">
             <p className="text-sm text-gray-500">
-              @BotFather에서 봇을 만들고 토큰을 입력하세요. 고객의 봇을 사용합니다.
+              봇 토큰을 입력하세요. 기본 봇이 없으면 위 안내를 참고해 만드세요.
             </p>
             <input className="input-field" value={botForm.bot_token}
               onChange={(e) => setBotForm({ bot_token: e.target.value })}
