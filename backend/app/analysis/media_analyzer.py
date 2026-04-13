@@ -438,6 +438,7 @@ async def _analyze_table_strategic(
                     action_priority = :apri,
                     action_summary = :asum,
                     is_about_our_candidate = :is_ours,
+                    is_relevant = :is_rel,
                     ai_analyzed_at = NOW(),
                     candidate_id = CASE WHEN :is_rel THEN candidate_id ELSE NULL END
                 WHERE id = :id

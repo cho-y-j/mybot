@@ -158,6 +158,8 @@ class NewsArticle(Base):
     ai_threat_level = Column(String(20), nullable=True)
     ai_analyzed_at = Column(DateTime(timezone=True), nullable=True)
 
+    is_relevant = Column(Boolean, default=True, comment="AI 판별: 관련 글 여부 (동명이인 등 false)")
+
     published_at = Column(DateTime(timezone=True), nullable=True)
     collected_at = Column(DateTime(timezone=True), default=utcnow)
     platform = Column(String(50), default="naver", comment="naver|daum|google")
@@ -204,6 +206,8 @@ class CommunityPost(Base):
     ai_threat_level = Column(String(20), nullable=True)
     ai_analyzed_at = Column(DateTime(timezone=True), nullable=True)
 
+    is_relevant = Column(Boolean, default=True, comment="AI 판별: 관련 글 여부 (동명이인 등 false)")
+
     published_at = Column(DateTime(timezone=True), nullable=True)
     collected_at = Column(DateTime(timezone=True), default=utcnow)
 
@@ -246,6 +250,8 @@ class YouTubeVideo(Base):
     ai_topics = Column(JSONB, default=list)
     ai_threat_level = Column(String(20), nullable=True)
     ai_analyzed_at = Column(DateTime(timezone=True), nullable=True)
+
+    is_relevant = Column(Boolean, default=True, comment="AI 판별: 관련 글 여부 (동명이인 등 false)")
 
     published_at = Column(DateTime(timezone=True), nullable=True)
     collected_at = Column(DateTime(timezone=True), default=utcnow)

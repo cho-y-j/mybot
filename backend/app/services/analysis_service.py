@@ -81,6 +81,7 @@ async def get_analysis_overview(
             ).where(
                 NewsArticle.candidate_id.in_(cand_ids),
                 func.date(NewsArticle.collected_at) >= since,
+                NewsArticle.is_relevant == True,
             ).group_by(NewsArticle.candidate_id)
         )).all()
         for row in news_rows:
@@ -91,7 +92,7 @@ async def get_analysis_overview(
     if cand_ids:
         comm_rows = (await db.execute(
             select(CommunityPost.candidate_id, func.count().label("cnt"))
-            .where(CommunityPost.candidate_id.in_(cand_ids))
+            .where(CommunityPost.candidate_id.in_(cand_ids), CommunityPost.is_relevant == True)
             .group_by(CommunityPost.candidate_id)
         )).all()
         for row in comm_rows:
@@ -105,7 +106,7 @@ async def get_analysis_overview(
                 YouTubeVideo.candidate_id,
                 func.count().label("cnt"),
                 func.coalesce(func.sum(YouTubeVideo.views), 0).label("views"),
-            ).where(YouTubeVideo.candidate_id.in_(cand_ids))
+            ).where(YouTubeVideo.candidate_id.in_(cand_ids), YouTubeVideo.is_relevant == True)
             .group_by(YouTubeVideo.candidate_id)
         )).all()
         for row in yt_rows:
@@ -180,6 +181,7 @@ async def get_analysis_overview(
             ).where(
                 NewsArticle.candidate_id.in_(cand_ids),
                 func.date(NewsArticle.collected_at) >= since_7d,
+                NewsArticle.is_relevant == True,
             ).group_by(func.date(NewsArticle.collected_at), NewsArticle.candidate_id)
             .order_by(func.date(NewsArticle.collected_at))
         )).all()
@@ -202,6 +204,7 @@ async def get_analysis_overview(
         .where(
             NewsArticle.tenant_id.in_(all_tids), NewsArticle.election_id == election_id,
             NewsArticle.sentiment == "negative",
+            NewsArticle.is_relevant == True,
         )
         .order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.collected_at.desc())
         .limit(3)
@@ -254,6 +257,7 @@ async def get_analysis_overview(
             .where(
                 NewsArticle.candidate_id.in_(cand_ids),
                 NewsArticle.strategic_quadrant.isnot(None),
+                NewsArticle.is_relevant == True,
             ).group_by(NewsArticle.strategic_quadrant)
         )).all()
         for qname, qcount in quad_rows:
@@ -265,6 +269,7 @@ async def get_analysis_overview(
             .where(
                 CommunityPost.candidate_id.in_(cand_ids),
                 CommunityPost.strategic_quadrant.isnot(None),
+                CommunityPost.is_relevant == True,
             ).group_by(CommunityPost.strategic_quadrant)
         )).all()
         for qname, qcount in quad_comm:
@@ -350,6 +355,7 @@ async def get_media_overview(
                    ).where(
                 NewsArticle.candidate_id == c.id,
                 func.date(NewsArticle.collected_at) >= since,
+                NewsArticle.is_relevant == True,
             )
         )).one()
         news_count = news_row[0] or 0
@@ -360,6 +366,7 @@ async def get_media_overview(
             select(func.count(NewsArticle.id)).where(
                 NewsArticle.candidate_id == c.id,
                 func.date(NewsArticle.collected_at) == yesterday,
+                NewsArticle.is_relevant == True,
             )
         )).scalar() or 0
 
@@ -372,6 +379,7 @@ async def get_media_overview(
                    ).where(
                 YouTubeVideo.candidate_id == c.id,
                 func.date(YouTubeVideo.collected_at) >= since,
+                YouTubeVideo.is_relevant == True,
             )
         )).one()
         yt_count = yt_row[0] or 0
@@ -387,6 +395,7 @@ async def get_media_overview(
                    ).where(
                 CommunityPost.candidate_id == c.id,
                 func.date(CommunityPost.collected_at) >= since,
+                CommunityPost.is_relevant == True,
             )
         )).one()
         cm_count = cm_row[0] or 0

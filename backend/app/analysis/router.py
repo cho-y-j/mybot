@@ -378,9 +378,9 @@ async def refresh_ai_briefing(
 
     news_by_cand = []
     for c in candidates:
-        cnt = (await db.execute(select(func.count()).where(NewsArticle.candidate_id == c.id, func.date(NewsArticle.collected_at) >= since))).scalar() or 0
-        pos = (await db.execute(select(func.count()).where(NewsArticle.candidate_id == c.id, func.date(NewsArticle.collected_at) >= since, NewsArticle.sentiment == "positive"))).scalar() or 0
-        neg = (await db.execute(select(func.count()).where(NewsArticle.candidate_id == c.id, func.date(NewsArticle.collected_at) >= since, NewsArticle.sentiment == "negative"))).scalar() or 0
+        cnt = (await db.execute(select(func.count()).where(NewsArticle.candidate_id == c.id, func.date(NewsArticle.collected_at) >= since, NewsArticle.is_relevant == True))).scalar() or 0
+        pos = (await db.execute(select(func.count()).where(NewsArticle.candidate_id == c.id, func.date(NewsArticle.collected_at) >= since, NewsArticle.sentiment == "positive", NewsArticle.is_relevant == True))).scalar() or 0
+        neg = (await db.execute(select(func.count()).where(NewsArticle.candidate_id == c.id, func.date(NewsArticle.collected_at) >= since, NewsArticle.sentiment == "negative", NewsArticle.is_relevant == True))).scalar() or 0
         news_by_cand.append({"name": c.name, "is_ours": c.is_our_candidate, "count": cnt, "positive": pos, "negative": neg})
 
     score_board = [{"name": c.name, "is_ours": c.is_our_candidate, "news": n["count"], "sentiment_rate": round(n["positive"] / max(n["count"], 1) * 100)} for c, n in zip(candidates, news_by_cand)]
@@ -457,25 +457,27 @@ async def get_ai_threats(
     # 뉴스 위협
     news_threats = (await db.execute(text("""
         SELECT n.id, n.title, n.url, n.ai_summary, n.ai_reason, n.ai_threat_level,
-               n.collected_at, c.name as candidate
+               COALESCE(n.published_at, n.collected_at) as display_date, c.name as candidate
         FROM news_articles n
         JOIN candidates c ON n.candidate_id = c.id
         WHERE n.tenant_id = ANY(:tids) AND n.election_id = :eid
           AND n.ai_threat_level IN ('medium', 'high')
+          AND n.is_relevant = true
         ORDER BY
           CASE n.ai_threat_level WHEN 'high' THEN 1 ELSE 2 END,
-          n.collected_at DESC
+          COALESCE(n.published_at, n.collected_at) DESC
         LIMIT 20
     """), {"tids": all_tids, "eid": str(election_id)})).all()
 
     # 유튜브 위협
     yt_threats = (await db.execute(text("""
         SELECT v.id, v.title, v.video_id, v.ai_summary, v.ai_reason, v.ai_threat_level,
-               v.views, v.collected_at, c.name as candidate
+               v.views, COALESCE(v.published_at, v.collected_at) as display_date, c.name as candidate
         FROM youtube_videos v
         JOIN candidates c ON v.candidate_id = c.id
         WHERE v.tenant_id = ANY(:tids) AND v.election_id = :eid
           AND v.ai_threat_level IN ('medium', 'high')
+          AND v.is_relevant = true
         ORDER BY
           CASE v.ai_threat_level WHEN 'high' THEN 1 ELSE 2 END,
           v.views DESC NULLS LAST
@@ -485,14 +487,15 @@ async def get_ai_threats(
     # 커뮤니티 위협
     cm_threats = (await db.execute(text("""
         SELECT p.id, p.title, p.url, p.ai_summary, p.ai_reason, p.ai_threat_level,
-               p.collected_at, c.name as candidate
+               COALESCE(p.published_at, p.collected_at) as display_date, c.name as candidate
         FROM community_posts p
         JOIN candidates c ON p.candidate_id = c.id
         WHERE p.tenant_id = ANY(:tids) AND p.election_id = :eid
           AND p.ai_threat_level IN ('medium', 'high')
+          AND p.is_relevant = true
         ORDER BY
           CASE p.ai_threat_level WHEN 'high' THEN 1 ELSE 2 END,
-          p.collected_at DESC
+          COALESCE(p.published_at, p.collected_at) DESC
         LIMIT 20
     """), {"tids": all_tids, "eid": str(election_id)})).all()
 
@@ -551,6 +554,7 @@ async def get_community_posts_list(
     ).where(
         CommunityPost.tenant_id.in_(all_tids),
         CommunityPost.election_id == election_id,
+        CommunityPost.is_relevant == True,
         or_(
             func.date(CommunityPost.published_at) >= since,
             and_(CommunityPost.published_at.is_(None),

@@ -239,7 +239,8 @@ async def get_content_situations(
                 NewsArticle.tenant_id == tid,
                 NewsArticle.candidate_id == (our.id if our else None),
                 NewsArticle.sentiment == "negative",
-            ).order_by(NewsArticle.collected_at.desc()).limit(3)
+                NewsArticle.is_relevant == True,
+            ).order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.collected_at.desc()).limit(3)
         )).scalars().all()
         if neg_news:
             titles = [n.title[:40] for n in neg_news[:2]]
