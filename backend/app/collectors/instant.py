@@ -53,25 +53,25 @@ async def collect_news_now(db: AsyncSession, tenant_id: str, election_id: str) -
     collector = NaverCollector(settings.NAVER_CLIENT_ID, settings.NAVER_CLIENT_SECRET)
     analyzer = SentimentAnalyzer()
     total = 0
+    filtered_out = 0
     collected_articles = []  # For comment collection
+    raw_items = []  # AI 스크리닝 전 임시 리스트
+    our_cand = next((c for c in candidates if c.is_our_candidate), None)
+    rival_names = [c.name for c in candidates if not c.is_our_candidate]
 
     for cand in candidates:
         homonym = {
             "exclude": (cand.homonym_filters or []) + GLOBAL_HOMONYM_BLOCK,
             "require_any": require_any,
-            # 후보 이름이 본문에 반드시 있어야 함 (네이버가 동명이인/관련 인물 기사 반환해도 차단)
             "require_name": [cand.name],
         }
 
-        # 검색 키워드 — 후보별 키워드 + 직위/지역 보강 (이미 포함되어 있으면 중복 X)
         search_kws = []
         for keyword in (cand.search_keywords or [cand.name]):
             search_kws.append(keyword)
-        # 보강: "이름 + 직위", "이름 + 지역 + 직위" 두 형태 추가
         search_kws.append(f"{cand.name} {type_label}")
         if region_short:
             search_kws.append(f"{cand.name} {region_short} {type_label}")
-        # 중복 제거
         search_kws = list(dict.fromkeys(search_kws))
 
         for search_kw in search_kws:
@@ -79,10 +79,8 @@ async def collect_news_now(db: AsyncSession, tenant_id: str, election_id: str) -
 
             for article in articles:
                 url = article.get("url", "")
-                # 비뉴스 URL 필터
                 if any(x in url for x in ["help.naver", "naver.com/alias", "naver.com/search", "terms.naver", "policy.naver"]):
                     continue
-                # 제목이 너무 짧거나 뉴스가 아닌 것 필터
                 title = article.get("title", "")
                 if len(title) < 10 or any(x in title for x in ["접수해주세요", "이용약관", "고객센터"]):
                     continue
@@ -96,30 +94,75 @@ async def collect_news_now(db: AsyncSession, tenant_id: str, election_id: str) -
                 if exists:
                     continue
 
-                # published_at 파싱 (실제 날짜만 저장, 실패 시 NULL — 가짜 금지)
                 from app.collectors.filters import parse_published_at
                 pub_at = parse_published_at(article.get("pub_date"))
 
-                # 감성/분류는 AI 파이프라인(analyze_all_media)이 수집 후 자동 처리
-                db.add(NewsArticle(
-                    tenant_id=tenant_id,
-                    election_id=election_id,
-                    candidate_id=cand.id,
-                    title=article["title"],
-                    url=article["url"],
-                    source=article.get("source", ""),
-                    summary=article.get("description", "")[:300],
-                    platform="naver",
-                    published_at=pub_at,
-                ))
-                total += 1
-
-                # Track for comment collection
-                collected_articles.append({
-                    "url": article["url"],
+                # DB에 바로 저장하지 않고 임시 리스트에 추가
+                raw_items.append({
+                    "id": article["url"],  # 임시 ID로 URL 사용
                     "title": article["title"],
-                    "candidate": cand.name,
+                    "description": article.get("description", "")[:500],
+                    "url": article["url"],
+                    "source": article.get("source", ""),
+                    "published_at": pub_at,
+                    "candidate_id": str(cand.id),
+                    "candidate_name": cand.name,
+                    "homonym_hints": cand.homonym_filters or [],
                 })
+
+    # AI 스크리닝: 동명이인/무관 필터링 + 감성/전략 분류
+    if raw_items:
+        try:
+            from app.collectors.ai_screening import screen_collected_items
+            all_homonym_hints = []
+            for c in candidates:
+                all_homonym_hints.extend(c.homonym_filters or [])
+
+            screened = await screen_collected_items(
+                items=raw_items,
+                our_candidate_name=our_cand.name if our_cand else candidates[0].name,
+                rival_candidate_names=rival_names,
+                election_type=type_label,
+                region=f"{region_full} {region_sigungu}".strip(),
+                homonym_hints=list(set(all_homonym_hints)),
+                tenant_id=tenant_id,
+                db=db,
+            )
+            filtered_out = len(raw_items) - len(screened)
+        except Exception as e:
+            logger.error("ai_screening_failed_fallback", error=str(e)[:200])
+            screened = raw_items  # AI 실패 시 전부 통과
+
+        # 스크리닝 통과한 것만 DB에 저장
+        from uuid import UUID as _UUID
+        for item in screened:
+            ai_screened = item.get("ai_screened", False)
+            db.add(NewsArticle(
+                tenant_id=tenant_id,
+                election_id=election_id,
+                candidate_id=_UUID(item["candidate_id"]),
+                title=item["title"],
+                url=item["url"],
+                source=item.get("source", ""),
+                summary=item.get("description", "")[:300],
+                platform="naver",
+                published_at=item.get("published_at"),
+                is_relevant=True,
+                # AI 스크리닝 결과 바로 반영
+                sentiment=item.get("sentiment") if ai_screened else None,
+                sentiment_score=item.get("sentiment_score") if ai_screened else None,
+                strategic_quadrant=item.get("strategic_quadrant") if ai_screened else None,
+                ai_summary=item.get("ai_summary") if ai_screened else None,
+                ai_reason=item.get("ai_reason") if ai_screened else None,
+                ai_threat_level=item.get("threat_level") if ai_screened else None,
+            ))
+            total += 1
+
+            collected_articles.append({
+                "url": item["url"],
+                "title": item["title"],
+                "candidate": item["candidate_name"],
+            })
 
     # Collect comments for naver news articles
     comment_count = 0
@@ -131,8 +174,8 @@ async def collect_news_now(db: AsyncSession, tenant_id: str, election_id: str) -
         logger.error("news_comment_collection_error", error=str(e))
 
     await db.flush()
-    logger.info("instant_news_collected", tenant_id=tenant_id, total=total, comments=comment_count)
-    return {"type": "news", "collected": total, "comments": comment_count}
+    logger.info("instant_news_collected", tenant_id=tenant_id, total=total, filtered=filtered_out, comments=comment_count)
+    return {"type": "news", "collected": total, "filtered": filtered_out, "comments": comment_count}
 
 
 async def _collect_news_comments(
@@ -217,27 +260,24 @@ async def collect_community_now(db: AsyncSession, tenant_id: str, election_id: s
         settings.NAVER_CLIENT_ID, settings.NAVER_CLIENT_SECRET
     )
     cand_names = [c.name for c in candidates]
+    our_cand = next((c for c in candidates if c.is_our_candidate), None)
+    rival_names = [c.name for c in candidates if not c.is_our_candidate]
     total = 0
+    filtered_out = 0
+    raw_items = []
 
     for cand in candidates:
         keywords = cand.search_keywords or [cand.name]
-        # 직위/지역 기반 검색 키워드 보강 (교육감 하드코딩 제거)
-        search_keywords = []
-        for kw in keywords:
-            search_keywords.append(kw)
-        # 보강: "이름 + 직위", "이름 + 지역 + 직위"
+        search_keywords = list(keywords)
         search_keywords.append(f"{cand.name} {type_label}")
         if region_short:
             search_keywords.append(f"{cand.name} {region_short} {type_label}")
         search_keywords = list(dict.fromkeys(search_keywords))
 
         posts = await community_collector.collect_all(
-            keywords=search_keywords,
-            candidate_names=cand_names,
-            max_per_keyword=8,
+            keywords=search_keywords, candidate_names=cand_names, max_per_keyword=8,
         )
 
-        # 동명이인 필터링 (동적 + GLOBAL block)
         exclude_words = (cand.homonym_filters or []) + GLOBAL_HOMONYM_BLOCK
         base_relevance = ["선거", "후보", "공약", "캠프", "출마", "지지", "유세", "경선", "공천"]
         relevance_words = base_relevance + [w for w in [type_label, region_short, region_full, region_sigungu] if w]
@@ -248,50 +288,86 @@ async def collect_community_now(db: AsyncSession, tenant_id: str, election_id: s
             text_full = f"{title} {content}"
             text = text_full.lower()
 
-            # 1. GLOBAL/캠프별 차단 키워드
             if exclude_words and any(w.lower() in text for w in exclude_words):
                 continue
-
-            # 2. 후보 이름이 본문에 반드시 있어야 함 (네이버가 동명이인/관련 인물 결과 반환해도 차단)
             if cand.name not in text_full:
                 continue
-
-            # 3. 정치/지역 컨텍스트 단어가 하나라도 있어야 함
             if not any(w in text for w in relevance_words):
                 continue
 
             exists = (await db.execute(
-                select(CommunityPost).where(
-                    CommunityPost.tenant_id == tenant_id,
-                    CommunityPost.url == post["url"],
-                )
+                select(CommunityPost).where(CommunityPost.tenant_id == tenant_id, CommunityPost.url == post["url"])
             )).scalar_one_or_none()
             if exists:
                 continue
 
-            # published_at 파싱 (실제 날짜만 저장, 실패 시 NULL)
             from app.collectors.filters import parse_published_at
             pub_at = parse_published_at(post.get("pub_date") or post.get("published_at"))
 
+            raw_items.append({
+                "id": post["url"],
+                "title": post["title"],
+                "description": post.get("content_snippet", "")[:500],
+                "url": post["url"],
+                "source": post.get("source", ""),
+                "published_at": pub_at,
+                "candidate_id": str(cand.id),
+                "candidate_name": cand.name,
+                "issue_category": post.get("issue_category"),
+                "relevance_score": post.get("relevance_score", 0.0),
+                "engagement": post.get("engagement", {}),
+                "platform": post.get("platform", "naver_cafe"),
+            })
+
+    # AI 스크리닝
+    if raw_items:
+        try:
+            from app.collectors.ai_screening import screen_collected_items
+            all_homonym_hints = []
+            for c in candidates:
+                all_homonym_hints.extend(c.homonym_filters or [])
+
+            screened = await screen_collected_items(
+                items=raw_items,
+                our_candidate_name=our_cand.name if our_cand else candidates[0].name,
+                rival_candidate_names=rival_names,
+                election_type=type_label,
+                region=f"{region_full} {region_sigungu}".strip(),
+                homonym_hints=list(set(all_homonym_hints)),
+                tenant_id=tenant_id, db=db,
+            )
+            filtered_out = len(raw_items) - len(screened)
+        except Exception as e:
+            logger.error("ai_screening_community_fallback", error=str(e)[:200])
+            screened = raw_items
+
+        from uuid import UUID as _UUID
+        for item in screened:
+            ai_screened = item.get("ai_screened", False)
             db.add(CommunityPost(
-                tenant_id=tenant_id,
-                election_id=election_id,
-                candidate_id=cand.id,
-                title=post["title"],
-                url=post["url"],
-                source=post.get("source", ""),
-                content_snippet=post.get("content_snippet", "")[:200],
-                issue_category=post.get("issue_category"),
-                relevance_score=post.get("relevance_score", 0.0),
-                engagement=post.get("engagement", {}),
-                platform=post.get("platform", "naver_cafe"),
-                published_at=pub_at,
+                tenant_id=tenant_id, election_id=election_id,
+                candidate_id=_UUID(item["candidate_id"]),
+                title=item["title"], url=item["url"],
+                source=item.get("source", ""),
+                content_snippet=item.get("description", "")[:200],
+                issue_category=item.get("issue_category"),
+                relevance_score=item.get("relevance_score", 0.0),
+                engagement=item.get("engagement", {}),
+                platform=item.get("platform", "naver_cafe"),
+                published_at=item.get("published_at"),
+                is_relevant=True,
+                sentiment=item.get("sentiment") if ai_screened else None,
+                sentiment_score=item.get("sentiment_score") if ai_screened else None,
+                strategic_quadrant=item.get("strategic_quadrant") if ai_screened else None,
+                ai_summary=item.get("ai_summary") if ai_screened else None,
+                ai_reason=item.get("ai_reason") if ai_screened else None,
+                ai_threat_level=item.get("threat_level") if ai_screened else None,
             ))
             total += 1
 
     await db.flush()
-    logger.info("instant_community_collected", tenant_id=tenant_id, total=total)
-    return {"type": "community", "collected": total}
+    logger.info("instant_community_collected", tenant_id=tenant_id, total=total, filtered=filtered_out)
+    return {"type": "community", "collected": total, "filtered": filtered_out}
 
 
 async def collect_youtube_now(db: AsyncSession, tenant_id: str, election_id: str) -> dict:
@@ -323,28 +399,26 @@ async def collect_youtube_now(db: AsyncSession, tenant_id: str, election_id: str
     relevance_words = base_relevance + [w for w in [type_label, region_short, region_full, region_sigungu] if w]
 
     collector = YouTubeCollector(settings.YOUTUBE_API_KEY or settings.GOOGLE_API_KEY)
-    analyzer = SentimentAnalyzer()
+    our_cand = next((c for c in candidates if c.is_our_candidate), None)
+    rival_names = [c.name for c in candidates if not c.is_our_candidate]
     total = 0
-    filtered = 0
+    keyword_filtered = 0
+    raw_items = []
 
     for cand in candidates:
         exclude_words = (cand.homonym_filters or []) + GLOBAL_HOMONYM_BLOCK
 
-        # 검색 키워드: "이름 직위"로 검색하여 동명이인 최소화
         search_keywords = []
         for keyword in (cand.search_keywords or [cand.name]):
             if type_label not in keyword and region_short not in keyword:
                 search_keywords.append(f"{keyword} {type_label}")
             else:
                 search_keywords.append(keyword)
-        # 이름만으로도 1회 검색 (범위 넓힘)
         if cand.name not in search_keywords:
             search_keywords.append(f"{cand.name} {region_short} {type_label}")
 
-        for keyword in search_keywords[:3]:  # 최대 3개 키워드
-            # Regular videos
+        for keyword in search_keywords[:3]:
             videos = await collector.search_videos(keyword, max_results=5)
-            # Shorts
             shorts = await collector.search_shorts(keyword, max_results=3)
 
             for vid in videos + shorts:
@@ -353,26 +427,20 @@ async def collect_youtube_now(db: AsyncSession, tenant_id: str, election_id: str
                 text_full = f"{title} {desc}"
                 text = text_full.lower()
 
-                # 1. 동명이인 차단 키워드 (GLOBAL + 캠프별)
                 if exclude_words and any(w.lower() in text for w in exclude_words):
-                    filtered += 1
+                    keyword_filtered += 1
                     continue
-
-                # 2. 후보 이름이 제목/설명에 반드시 있어야 함
                 if cand.name not in text_full:
-                    filtered += 1
+                    keyword_filtered += 1
                     continue
-
-                # 3. 선거/지역 컨텍스트 단어가 하나라도 있어야 함
                 if not any(w in text for w in relevance_words):
-                    filtered += 1
+                    keyword_filtered += 1
                     continue
 
                 exists = (await db.execute(
                     select(YouTubeVideo).where(YouTubeVideo.tenant_id == tenant_id, YouTubeVideo.video_id == vid["video_id"])
                 )).scalar_one_or_none()
 
-                # published_at 파싱 (YouTube는 ISO 8601). 파싱 실패 시 NULL — 가짜 날짜 금지
                 from app.collectors.filters import parse_published_at
                 vid_pub_at = parse_published_at(vid.get("published_at"))
 
@@ -381,22 +449,70 @@ async def collect_youtube_now(db: AsyncSession, tenant_id: str, election_id: str
                         exists.views = vid["views"]
                         exists.likes = vid.get("likes", 0)
                         exists.comments_count = vid.get("comments_count", 0)
-                    # NULL published_at 백필
                     if exists.published_at is None and vid_pub_at is not None:
                         exists.published_at = vid_pub_at
                     continue
 
-                # 감성/4사분면은 AI 파이프라인이 수집 후 자동 처리
-                db.add(YouTubeVideo(
-                    tenant_id=tenant_id, election_id=election_id, candidate_id=cand.id,
-                    video_id=vid["video_id"], title=title, channel=vid.get("channel", ""),
-                    description_snippet=desc[:300],
-                    thumbnail_url=vid.get("thumbnail", ""),
-                    published_at=vid_pub_at,  # 실패 시 NULL
-                    views=vid.get("views", 0), likes=vid.get("likes", 0),
-                    comments_count=vid.get("comments_count", 0),
-                ))
-                total += 1
+                raw_items.append({
+                    "id": vid["video_id"],
+                    "title": title,
+                    "description": desc[:500],
+                    "video_id": vid["video_id"],
+                    "channel": vid.get("channel", ""),
+                    "thumbnail": vid.get("thumbnail", ""),
+                    "published_at": vid_pub_at,
+                    "views": vid.get("views", 0),
+                    "likes": vid.get("likes", 0),
+                    "comments_count": vid.get("comments_count", 0),
+                    "candidate_id": str(cand.id),
+                    "candidate_name": cand.name,
+                })
+
+    # AI 스크리닝
+    filtered_out = 0
+    if raw_items:
+        try:
+            from app.collectors.ai_screening import screen_collected_items
+            all_homonym_hints = []
+            for c in candidates:
+                all_homonym_hints.extend(c.homonym_filters or [])
+
+            screened = await screen_collected_items(
+                items=raw_items,
+                our_candidate_name=our_cand.name if our_cand else candidates[0].name,
+                rival_candidate_names=rival_names,
+                election_type=type_label,
+                region=f"{(election.region_sido or '')} {(election.region_sigungu or '')}".strip() if election else "",
+                homonym_hints=list(set(all_homonym_hints)),
+                tenant_id=tenant_id, db=db,
+            )
+            filtered_out = len(raw_items) - len(screened)
+        except Exception as e:
+            logger.error("ai_screening_youtube_fallback", error=str(e)[:200])
+            screened = raw_items
+
+        from uuid import UUID as _UUID
+        for item in screened:
+            ai_screened = item.get("ai_screened", False)
+            db.add(YouTubeVideo(
+                tenant_id=tenant_id, election_id=election_id,
+                candidate_id=_UUID(item["candidate_id"]),
+                video_id=item["video_id"], title=item["title"],
+                channel=item.get("channel", ""),
+                description_snippet=item.get("description", "")[:300],
+                thumbnail_url=item.get("thumbnail", ""),
+                published_at=item.get("published_at"),
+                views=item.get("views", 0), likes=item.get("likes", 0),
+                comments_count=item.get("comments_count", 0),
+                is_relevant=True,
+                sentiment=item.get("sentiment") if ai_screened else None,
+                sentiment_score=item.get("sentiment_score") if ai_screened else None,
+                strategic_quadrant=item.get("strategic_quadrant") if ai_screened else None,
+                ai_summary=item.get("ai_summary") if ai_screened else None,
+                ai_reason=item.get("ai_reason") if ai_screened else None,
+                ai_threat_level=item.get("threat_level") if ai_screened else None,
+            ))
+            total += 1
 
     # Collect comments for top videos per candidate
     comment_count = 0
@@ -410,19 +526,16 @@ async def collect_youtube_now(db: AsyncSession, tenant_id: str, election_id: str
         for v in vids:
             comments = await collector.get_video_comments(v.video_id, max_results=10)
             for c in comments:
-                # 댓글 sentiment는 AI 파이프라인이 필요 시 처리 (보조 데이터)
                 db.add(YouTubeComment(
-                    tenant_id=tenant_id,
-                    video_id=v.video_id,
-                    author=c.get("author", ""),
-                    text=c.get("text", "")[:500],
-                    like_count=c.get("likes", 0),
-                    candidate_name=cand.name,
+                    tenant_id=tenant_id, video_id=v.video_id,
+                    author=c.get("author", ""), text=c.get("text", "")[:500],
+                    like_count=c.get("likes", 0), candidate_name=cand.name,
                 ))
                 comment_count += 1
 
     await db.flush()
-    return {"type": "youtube", "collected": total, "comments": comment_count}
+    logger.info("instant_youtube_collected", tenant_id=tenant_id, total=total, keyword_filtered=keyword_filtered, ai_filtered=filtered_out)
+    return {"type": "youtube", "collected": total, "filtered": filtered_out, "comments": comment_count}
 
 
 async def collect_all_now(db: AsyncSession, tenant_id: str, election_id: str) -> dict:
