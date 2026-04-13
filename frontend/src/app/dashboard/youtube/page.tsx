@@ -550,9 +550,8 @@ export default function YouTubePage() {
                       return tb.localeCompare(ta);
                     })
                     .slice(0, 9).map((v: any, i: number) => (
-                    <a key={i} href={`https://www.youtube.com/watch?v=${v.video_id}`}
-                      target="_blank" rel="noopener noreferrer"
-                      className="rounded-xl border border-[var(--card-border)] p-3 hover:border-blue-500/30 transition block">
+                    <div key={i}
+                      className="rounded-xl border border-[var(--card-border)] p-3 hover:border-blue-500/30 transition">
                       {v.thumbnail_url ? (
                         <img src={v.thumbnail_url} alt={v.title} className="w-full h-28 object-cover rounded-lg mb-2" />
                       ) : (
@@ -569,7 +568,8 @@ export default function YouTubePage() {
                           {v.sentiment === 'positive' ? '긍정' : v.sentiment === 'negative' ? '부정' : '중립'}
                         </span>
                       </div>
-                      <h4 className="font-medium text-sm line-clamp-2">{v.title}</h4>
+                      <a href={`https://www.youtube.com/watch?v=${v.video_id}`} target="_blank" rel="noopener noreferrer"
+                        className="font-medium text-sm line-clamp-2 hover:text-blue-500 block">{v.title}</a>
                       <p className="text-xs text-[var(--muted)] mt-1">
                         {v.channel} | {v.published_at ? (
                           <span>{v.published_at}</span>
@@ -587,7 +587,7 @@ export default function YouTubePage() {
                           try { await api.deleteYoutubeItem(v.id); loadData(); } catch {}
                         }} className="ml-auto text-gray-400 hover:text-red-400">삭제</button>}
                       </div>
-                    </a>
+                    </div>
                   ))}
                 </div>
                 {d.videos.length > 9 && (
