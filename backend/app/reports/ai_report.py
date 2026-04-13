@@ -197,9 +197,9 @@ async def generate_ai_report(
             "news": cn.get("week", 0),
             "pos": cn.get("today_pos", 0),
             "neg": cn.get("today_neg", 0),
-            "community": cm.get("total", 0),
-            "yt_views": yt.get("total_views", 0),
-            "yt_count": yt.get("total_videos", 0),
+            "community": cm.get("count", 0) or cm.get("total", 0),
+            "yt_views": yt.get("views", 0) or yt.get("total_views", 0),
+            "yt_count": yt.get("count", 0) or yt.get("total_videos", 0),
             "search_vol": 0,
         })
 
