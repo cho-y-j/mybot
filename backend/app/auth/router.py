@@ -276,7 +276,10 @@ async def confirm_2fa(code: str, user: CurrentUser, db: AsyncSession = Depends(g
     return MessageResponse(message="2FA가 활성화되었습니다")
 
 
-class ChangePasswordRequest(BaseModel):
+from pydantic import BaseModel as _BaseModel
+
+
+class ChangePasswordRequest(_BaseModel):
     current_password: str
     new_password: str
 
