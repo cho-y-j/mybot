@@ -76,6 +76,20 @@
 - [ ] 보고서 PDF 다운로드 프론트엔드 확인
 - [ ] 캠프별 RAG: 수집 데이터 + 대화 이력 + 생성 콘텐츠 통합 검색
 
+## P3-07. 스케줄 구조 개선 + PDF 품질 통일 — 완료 (2026-04-13)
+- [x] task_time_limit 600초 → 1800초 (full_with_briefing 타임아웃 방지)
+- [x] 스케줄 분리: 17:30 마감 수집 (full_collection) + 18:00 일일 보고서 (briefing only)
+- [x] 기존 5개 테넌트 DB 스케줄 업데이트 + onboarding 템플릿 반영
+- [x] PDF D-day 누락 수정 (router.py 3곳 — election_date에서 직접 계산)
+- [x] PDF 차트+비교표 누락 수정 (router.py 3곳 — _collect_pdf_candidates 추가)
+- [ ] **내일 확인**: 07:00~07:20 오전 스케줄 5개 캠프 정상 동작
+
+## P3-08. 온보딩 선거 중복 생성 방지 — 완료 (2026-04-13)
+- [x] apply_setup에서 election_type + region + date로 기존 선거 검색
+- [x] 시도 단위 선거(교육감/도지사)는 sigungu 무시하고 매칭
+- [x] 기존 선거 있으면 tenant_elections에 연결만 추가
+- [x] 윤건영 중복 선거(7d84f58e) 정리 완료
+
 ## P3-06. 슈퍼관리자 고객 관리 강화
 
 ### 백엔드 API — 완료 (2026-04-13)

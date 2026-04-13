@@ -126,6 +126,16 @@ session.add(YouTubeVideo(..., published_at=pub_at))  # None이면 NULL 저장
 - **공용 (tenant_id 없음)**: `election_law_sections`, `PastElection`, 공공 `Survey`, `NEC` 데이터
 - **race-shared (election_id 기반, tenant_id 없음)**: 같은 선거의 뉴스/미디어는 race 단위로 한 번만 수집하는 것이 목표 (Phase 2)
 - **camp-private (tenant_id)**: 캠프 내부 메모, 커스텀 키워드, 사설 여론조사, 4사분면 관점 분석
+- **같은 선거 중복 수집 방지**: 같은 election_id에서 60분 이내 다른 캠프가 수집했으면 스킵, 캠프별 AI 관점 분석만 실행
+
+### 1.13. 온보딩 시 선거 중복 생성 금지 (2026-04-13)
+가입 시 동일한 선거가 이미 존재하면 **새로 만들지 않고 기존 election을 재사용**한다.
+- 매칭 키: `election_type + region_sido + region_sigungu + election_date`
+- **시도 단위 선거** (교육감 `superintendent`, 도지사 `governor`): `region_sigungu` 무시하고 매칭
+- 기초 단위 선거 (시장, 구청장, 의원 등): `region_sigungu` 포함 매칭
+- 기존 선거 있으면 → `tenant_elections`에 연결만 추가 + 후보 생성
+- 없으면 → 새 Election 생성 (기존 동작)
+- **election_name**: 프론트엔드에서 자동 생성 (`2026 {시도} {선거유형} 선거`), 사용자 자유 입력 금지
 
 ### 1.11. 검증 없이 완료 선언 금지
 수정 작업은 반드시 다음 순서로 진행:
@@ -209,6 +219,18 @@ session.add(YouTubeVideo(..., published_at=pub_at))  # None이면 NULL 저장
 - `/chat/history`: 이전 대화 불러오기 (페이지 재진입 시 복원)
 - `/chat/message/{id}` DELETE: 개별 메시지 삭제
 - `/chat/history` DELETE: 전체 대화 초기화
+
+### 2.2.5. 스케줄 구조 (2026-04-13 개정)
+```
+07:00~20  오전 수집+브리핑 (full_with_briefing) — 수집+분석+오전 브리핑
+13:00~20  오후 수집+브리핑 (full_with_briefing) — 수집+분석+오후 브리핑
+17:30~50  마감 수집 (full_collection) — 수집+분석만 (보고서 전 데이터 확보)
+18:00~20  일일 종합 보고서 (briefing) — 보고서+PDF+텔레그램만 (수집 안 함)
+09:00~20  주간 전략 보고서 (weekly_report) — 월요일만
+```
+- 캠프별 0~14분 오프셋 자동 분산 (AI 부하 분산)
+- `task_time_limit = 1800초` (30분)
+- 같은 election에서 60분 이내 수집 완료 시 → 다른 캠프는 수집 스킵, AI 관점 분석만
 
 ### 2.2.4. 모델 Tier 배정 (2026-04-13 확인/수정)
 | 기능 | 모델 | 변경 |
