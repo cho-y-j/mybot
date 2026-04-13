@@ -597,4 +597,9 @@ async def _call_claude_for_report(factsheet: str, system_prompt: str = None) -> 
     from app.services.ai_service import call_claude_text
     prompt = f"{system_prompt or REPORT_PROMPT_DAILY}\n\n[수집 데이터 팩트시트]\n{factsheet}"
     # Sonnet으로 생성 (안정적), Opus 검증은 별도 단계에서
+    # Opus 우선 (품질), 타임아웃 넉넉히 (스케줄 실행이라 기다릴 필요 없음)
+    result = await call_claude_text(prompt, timeout=600, context="ai_report_generation")
+    if result and len(result) > 200:
+        return result
+    # Opus 실패 시 Sonnet 폴백
     return await call_claude_text(prompt, timeout=300, context="ai_report_generation", model_tier="standard")
