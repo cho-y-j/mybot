@@ -33,20 +33,31 @@
 
 # Phase 3 — 현재 진행 중
 
-## P3-01. 챗 대화 이력 저장
-- [ ] ChatMessage 모델 생성 (tenant_id, election_id, user_id, role, content, created_at)
-- [ ] /chat/send 엔드포인트에서 질문+응답 DB 저장
-- [ ] 이전 대화를 AI 컨텍스트에 포함 (최근 N개)
-- [ ] 대화 삭제 API + 프론트엔드 UI
+## P3-01. 챗 대화 이력 저장 — 완료 (2026-04-13)
+- [x] ChatMessage 모델 생성 (`backend/app/chat/models.py`)
+- [x] /chat/send 엔드포인트에서 질문+응답 DB 저장
+- [x] /chat/history: 이전 대화 불러오기 (페이지 재진입 시 복원)
+- [x] /chat/message/{id} DELETE: 개별 메시지 삭제
+- [x] /chat/history DELETE: 전체 대화 초기화
+- [x] 프론트엔드: 대화 초기화 버튼 + 개별 삭제 버튼
+- [ ] **미완료**: 이전 대화를 AI 컨텍스트에 포함 (최근 N개) — 개별 맞춤 AI 작업 시 함께 처리
 
-## P3-02. 수집 데이터 삭제 기능
-- [ ] 뉴스/커뮤니티/유튜브 개별 항목 삭제 API
-- [ ] 프론트엔드: 각 목록에 삭제 버튼
-- [ ] "AI 자동수집 데이터입니다. 오류 발견 시 삭제해주세요" 안내 문구
-- [ ] 삭제 시 audit_log 기록
+## P3-02. 수집 데이터 삭제 기능 — 완료 (2026-04-13)
+- [x] DELETE /analysis/news/{id}, community/{id}, youtube/{id}
+- [x] 삭제 시 audit_log 기록
+- [x] 프론트엔드: 뉴스/유튜브/커뮤니티 목록 + 위기 영상에 삭제 버튼
+- [x] "AI 자동수집 데이터입니다. 오류 발견 시 삭제해주세요" 안내 문구
 
 ## P3-03. Celery 스케줄 수집에 AI 스크리닝 적용
 - [ ] tasks.py의 collect_news/community/youtube에도 ai_screening 적용
+- 현재 instant.py(수동 수집)에만 적용됨. 스케줄 수집은 기존 방식 유지 중.
+
+## P3-04. 개별 맞춤 AI (캠프 전용 AI 어시스턴트)
+- [ ] 이전 대화 이력을 AI 컨텍스트에 포함 (최근 10~20개)
+- [ ] 생성된 콘텐츠/보고서를 다음 대화/생성 시 참조
+- [ ] 캠프별 독립 CLI 프로세스 (동시 사용 시 병목 없음)
+- [ ] 챗에서 "이전에 생성한 보고서 수정해줘" 같은 맥락 연속 대화
+- [ ] 캠프별 RAG: 수집 데이터 + 대화 이력 + 생성 콘텐츠 통합 검색
 
 ---
 

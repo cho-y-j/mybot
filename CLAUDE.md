@@ -147,31 +147,41 @@ session.add(YouTubeVideo(..., published_at=pub_at))  # None이면 NULL 저장
 - **AI**: Claude CLI subprocess (기본) + Anthropic API (고객 키 사용 시)
 - **DB 포트**: 5440 (localhost)
 - **Redis 포트**: 6380 (localhost)
+- **Docker 배포**: GitHub Actions → GHCR → Watchtower 자동 배포 (2026-04-12 구축)
+  - Dockerfile.api에 Node.js + Claude CLI 포함
+  - 호스트 `~/.claude` → 컨테이너 마운트 (system_cli 인증)
+  - Nginx Proxy Manager: `ai.on1.kr` → `ep_frontend:3000`
 
-### 2.2. 정상 수집 → 분석 파이프라인 (이대로 되어야 함)
+### 2.2. 수집 → AI 스크리닝 → 분석 파이프라인 (2026-04-13 개정)
 ```
-[스케줄러] 
+[스케줄러 / 수동 수집]
     ↓ (선거·캠프별 트리거)
 [Collector] naver.py / youtube.py / community_collector.py
     ↓
-[수집 시점 게이트]
+[수집 시점 게이트 (코드 필터)]
    - 날짜 컷오프 (7일)
-   - homonym_filters
+   - homonym_filters (GLOBAL + 후보별)
    - 품질 필터 (views, 광고 패턴)
+   - 후보 이름 본문 포함 필수
     ↓
-[AI 배치 분석] media_analyzer.analyze_batch_strategic() 
-   - 8~10개씩 Sonnet 호출 (call_claude 경유)
-   - 반환: is_relevant, summary, reason, sentiment, 
-           sentiment_score, strategic_value, action_type,
-           action_priority, action_summary, topics, threat_level
+[AI 스크리닝] ai_screening.screen_collected_items() ← 2026-04-13 신규
+   - 수집된 raw 데이터를 DB 저장 전에 AI로 필터링
+   - 동명이인 구분 (야구감독/야구선수/국회의원 등)
+   - 후보별 homonym_hints를 AI 프롬프트에 명시적 전달
+   - is_relevant=false → DB에 저장하지 않음
+   - 통과한 항목에 감성/전략/요약도 바로 채움
+   - AI 실패 시 기존 동작 유지 (전부 통과)
     ↓
-[관련성 드롭] is_relevant=false 저장 안 함
+[DB 저장] is_relevant=true인 항목만 + AI 필드 채워진 상태로
+    ↓
+[AI 배치 분석 (미분석 보완)] media_analyzer.analyze_batch_strategic()
+   - 8~10개씩 Sonnet 호출 (뉴스/유튜브/커뮤니티 3매체 병렬 — asyncio.gather)
+   - homonym_hints를 프롬프트에 포함
+   - is_relevant 결과를 DB에 반영
     ↓
 [Opus 검증] sentiment.verify_batch_with_opus()
    - positive/negative 5개씩 재확인
    - sentiment_verified = TRUE 기록
-    ↓
-[DB 저장]
     ↓
 [후속 트리거]
    - ScheduleRun 기록
@@ -181,12 +191,45 @@ session.add(YouTubeVideo(..., published_at=pub_at))  # None이면 NULL 저장
 
 **수집과 분석은 분리되지 않는다.** 수집 직후 같은 태스크 안에서 분석이 끝나야 하며, DB에 저장되는 시점에는 모든 AI 필드가 채워져 있어야 한다.
 
+### 2.2.1. is_relevant 필터링 (2026-04-13 추가)
+- `news_articles`, `community_posts`, `youtube_videos` 테이블에 `is_relevant BOOLEAN DEFAULT true` 컬럼
+- AI 분석 시 동명이인/무관 판정 → `is_relevant = false` 업데이트
+- **모든 대시보드 쿼리에 `WHERE is_relevant = true` 필터 적용** (23개 쿼리 수정됨)
+- 날짜 정렬: `ORDER BY published_at DESC NULLS LAST, collected_at DESC` 통일
+
+### 2.2.2. 데이터 삭제 기능 (2026-04-13 추가)
+- 사용자가 오염된 수집 데이터를 직접 삭제 가능
+- `DELETE /analysis/news/{id}`, `DELETE /analysis/community/{id}`, `DELETE /analysis/youtube/{id}`
+- 삭제 시 `audit_logs`에 기록
+- 프론트엔드: 모든 데이터 목록(뉴스/유튜브/커뮤니티)에 삭제 버튼 + "AI 자동수집 데이터입니다. 오류 발견 시 삭제해주세요" 안내
+
+### 2.2.3. 챗 대화 이력 저장 (2026-04-13 추가)
+- `chat_messages` 테이블: tenant_id, election_id, user_id, role(user/ai), content, model_tier, created_at
+- `/chat/send` 시 질문+응답 자동 저장
+- `/chat/history`: 이전 대화 불러오기 (페이지 재진입 시 복원)
+- `/chat/message/{id}` DELETE: 개별 메시지 삭제
+- `/chat/history` DELETE: 전체 대화 초기화
+
+### 2.2.4. 모델 Tier 배정 (2026-04-13 확인/수정)
+| 기능 | 모델 | 변경 |
+|---|---|---|
+| 수집 AI 스크리닝 | Sonnet | - |
+| 배치 분석 (4분면) | Sonnet | - |
+| Opus 검증 | Opus | - |
+| 보고서 생성 | Opus | - |
+| 콘텐츠 생성 | **Opus** | Sonnet→Opus 변경 |
+| 멀티톤 | **Opus** | Sonnet→Opus 변경 |
+| 토론 대본 | Opus | - |
+| 챗 기본 | Sonnet | - |
+| 챗 선택 | Opus | 사용자 선택 |
+
 ### 2.3. 모델 Tier 매핑 (`ai_service.py` `DEFAULT_TIER`)
 변경 금지. 추가는 가능.
 
 ### 2.4. 데이터 저장 필드 (수집물 공통)
 - `tenant_id`, `election_id`, `candidate_id`, `url`, `title`, `platform`
 - `published_at` (필수, NULL 금지), `collected_at`
+- `is_relevant` (BOOLEAN, default true — AI 판별: 동명이인 등 false)
 - **AI 필드** (모두 수집 시점에 채워져야 함):
   - `ai_summary`, `ai_reason`, `ai_topics`, `ai_threat_level`
   - `sentiment`, `sentiment_score`, `sentiment_verified`
@@ -269,14 +312,17 @@ session.add(YouTubeVideo(..., published_at=pub_at))  # None이면 NULL 저장
 ### Backend 핵심
 - `backend/app/services/ai_service.py` — 모든 AI 호출의 단일 진입점
 - `backend/app/collectors/tasks.py` — Celery 스케줄 수집 태스크 (1700+줄, 분리 예정)
-- `backend/app/collectors/instant.py` — 사용자 트리거 즉시 수집
+- `backend/app/collectors/instant.py` — 사용자 트리거 즉시 수집 (AI 스크리닝 포함)
+- `backend/app/collectors/ai_screening.py` — 수집 단계 AI 스크리닝 (2026-04-13 신규)
 - `backend/app/collectors/naver.py` — 네이버 뉴스/블로그/카페
 - `backend/app/collectors/youtube.py` — YouTube Data API
 - `backend/app/analysis/sentiment.py` — 감성 분석 (SentimentAnalyzer)
-- `backend/app/analysis/media_analyzer.py` — 4사분면 배치 분석
+- `backend/app/analysis/media_analyzer.py` — 4사분면 배치 분석 (3매체 병렬, homonym_hints 전달)
+- `backend/app/chat/router.py` — AI 챗 (대화 이력 저장)
+- `backend/app/chat/models.py` — ChatMessage 모델 (2026-04-13 신규)
 - `backend/app/elections/onboarding.py` — 캠프 가입 자동화
 - `backend/app/elections/bootstrap.py` — 초기 분석 파이프라인
-- `backend/app/elections/models.py` — ORM 모델
+- `backend/app/elections/models.py` — ORM 모델 (is_relevant 필드 포함)
 
 ### Frontend
 - `frontend/src/app/dashboard/` — 주요 대시보드 페이지
