@@ -891,6 +891,16 @@ async def reclassify_community_issues(
 
 # ── 수집 데이터 삭제 ──
 
+async def _clear_analysis_cache(db: AsyncSession, tenant_id: str, election_id: str):
+    """삭제 후 관련 캐시 무효화."""
+    try:
+        await db.execute(text(
+            "DELETE FROM analysis_cache WHERE tenant_id = :tid AND election_id = :eid"
+        ), {"tid": tenant_id, "eid": election_id})
+    except Exception:
+        pass
+
+
 @router.delete("/news/{item_id}")
 async def delete_news(item_id: UUID, user: CurrentUser, db: AsyncSession = Depends(get_db)):
     """뉴스 기사 삭제."""
@@ -902,9 +912,11 @@ async def delete_news(item_id: UUID, user: CurrentUser, db: AsyncSession = Depen
     if str(item.tenant_id) != user["tenant_id"]:
         raise HTTPException(403, "권한 없음")
     title = item.title
+    eid = str(item.election_id)
     await db.delete(item)
     db.add(AuditLog(user_id=user["id"], action="delete_news", resource_type="news_article",
                      resource_id=str(item_id), details=_json.dumps({"title": title}, ensure_ascii=False)))
+    await _clear_analysis_cache(db, user["tenant_id"], eid)
     await db.commit()
     return {"message": "삭제 완료"}
 
@@ -920,9 +932,11 @@ async def delete_community(item_id: UUID, user: CurrentUser, db: AsyncSession = 
     if str(item.tenant_id) != user["tenant_id"]:
         raise HTTPException(403, "권한 없음")
     title = item.title
+    eid = str(item.election_id)
     await db.delete(item)
     db.add(AuditLog(user_id=user["id"], action="delete_community", resource_type="community_post",
                      resource_id=str(item_id), details=_json.dumps({"title": title}, ensure_ascii=False)))
+    await _clear_analysis_cache(db, user["tenant_id"], eid)
     await db.commit()
     return {"message": "삭제 완료"}
 
@@ -938,8 +952,10 @@ async def delete_youtube(item_id: UUID, user: CurrentUser, db: AsyncSession = De
     if str(item.tenant_id) != user["tenant_id"]:
         raise HTTPException(403, "권한 없음")
     title = item.title
+    eid = str(item.election_id)
     await db.delete(item)
     db.add(AuditLog(user_id=user["id"], action="delete_youtube", resource_type="youtube_video",
                      resource_id=str(item_id), details=_json.dumps({"title": title}, ensure_ascii=False)))
+    await _clear_analysis_cache(db, user["tenant_id"], eid)
     await db.commit()
     return {"message": "삭제 완료"}
