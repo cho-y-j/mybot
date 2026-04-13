@@ -4,19 +4,88 @@ ElectionPulse - Reports API
 """
 import os
 import uuid
+import logging
 from uuid import UUID
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, text
+from sqlalchemy import select, text, func, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.common.dependencies import CurrentUser
 from app.elections.models import Report, Election
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+async def _collect_pdf_candidates(db: AsyncSession, tenant_id: str, election_id: str) -> tuple[list, str]:
+    """PDF 보고서용 후보별 데이터 수집. (candidates_data, our_candidate_name) 반환."""
+    from app.common.election_access import get_election_tenant_ids, get_our_candidate_id
+    from app.elections.models import Candidate, NewsArticle, CommunityPost, YouTubeVideo, SearchTrend
+
+    try:
+        all_tids = await get_election_tenant_ids(db, election_id)
+        our_cand_id = await get_our_candidate_id(db, tenant_id, election_id)
+        since = date.today() - timedelta(days=7)
+
+        candidates = (await db.execute(
+            select(Candidate).where(
+                Candidate.election_id == election_id,
+                Candidate.tenant_id.in_(all_tids),
+                Candidate.enabled == True,
+            ).order_by(Candidate.priority)
+        )).scalars().all()
+
+        result = []
+        our_name = ""
+        for c in candidates:
+            is_ours = (str(c.id) == our_cand_id) if our_cand_id else c.is_our_candidate
+            if is_ours:
+                our_name = c.name
+
+            news_row = (await db.execute(
+                select(
+                    func.count().label("cnt"),
+                    func.sum(case((NewsArticle.sentiment == "positive", 1), else_=0)).label("pos"),
+                    func.sum(case((NewsArticle.sentiment == "negative", 1), else_=0)).label("neg"),
+                ).where(NewsArticle.candidate_id == c.id, func.date(NewsArticle.collected_at) >= since)
+            )).one()
+
+            comm_cnt = (await db.execute(
+                select(func.count()).where(CommunityPost.candidate_id == c.id)
+            )).scalar() or 0
+
+            yt_row = (await db.execute(
+                select(func.count().label("cnt"), func.coalesce(func.sum(YouTubeVideo.views), 0).label("views"))
+                .where(YouTubeVideo.candidate_id == c.id)
+            )).one()
+
+            search = (await db.execute(
+                select(SearchTrend.relative_volume)
+                .where(SearchTrend.keyword == c.name, SearchTrend.election_id == election_id)
+                .order_by(SearchTrend.checked_at.desc()).limit(1)
+            )).scalar() or 0
+
+            result.append({
+                "name": c.name,
+                "party": c.party,
+                "is_ours": is_ours,
+                "news": news_row.cnt or 0,
+                "pos": news_row.pos or 0,
+                "neg": news_row.neg or 0,
+                "community": comm_cnt,
+                "yt_count": yt_row.cnt or 0,
+                "yt_views": int(yt_row.views or 0),
+                "search_vol": float(search),
+            })
+
+        return result, our_name
+    except Exception as e:
+        logger.warning("collect_pdf_candidates_error", exc_info=True)
+        return [], ""
 
 
 @router.get("/{election_id}")
@@ -91,21 +160,21 @@ async def generate_report(
             result = await generate_daily_report(db, tid, str(election_id))
             report_text = result["text"]
 
-    # 3. PDF 생성
+    # 3. PDF 생성 (차트 포함)
     pdf_path = None
     try:
         from app.reports.pdf_generator import generate_report_pdf
-        pdf_meta = result.get("pdf_meta", {}) if use_ai and result else {}
         election_obj = (await db.execute(select(Election).where(Election.id == election_id))).scalar_one_or_none()
         d_day = (election_obj.election_date - date.today()).days if election_obj and election_obj.election_date else 0
+        candidates_data, our_candidate = await _collect_pdf_candidates(db, tid, str(election_id))
         pdf_path = generate_report_pdf(
             report_text=report_text,
             election_name=election_obj.name if election_obj else "",
             report_date=date.today().isoformat(),
             report_type=briefing_type,
-            our_candidate=pdf_meta.get("our_candidate", ""),
+            our_candidate=our_candidate,
             d_day=d_day,
-            candidates_data=pdf_meta.get("candidates_data"),
+            candidates_data=candidates_data,
         )
         if pdf_path:
             logger.info("report_pdf_generated", path=pdf_path)
@@ -209,14 +278,18 @@ async def update_report(
     if body.status == "confirmed":
         try:
             from app.reports.pdf_generator import generate_report_pdf
+            tid = str(user["tenant_id"])
             election = (await db.execute(select(Election).where(Election.id == election_id))).scalar_one_or_none()
             d_day = (election.election_date - date.today()).days if election and election.election_date else 0
+            candidates_data, our_candidate = await _collect_pdf_candidates(db, tid, str(election_id))
             pdf_path = generate_report_pdf(
                 report_text=body.content_text,
                 election_name=election.name if election else "",
                 report_date=report.report_date.isoformat() if report.report_date else "",
                 report_type=report.report_type or "daily",
                 d_day=d_day,
+                our_candidate=our_candidate,
+                candidates_data=candidates_data,
             )
             if pdf_path:
                 report.file_path_pdf = pdf_path
@@ -252,9 +325,11 @@ async def download_report_pdf(
     # 아니면 실시간 생성
     from app.reports.pdf_generator import generate_report_pdf
 
+    tid = str(user["tenant_id"])
     election = (await db.execute(select(Election).where(Election.id == election_id))).scalar_one_or_none()
     election_name = election.name if election else ""
     d_day = (election.election_date - date.today()).days if election and election.election_date else 0
+    candidates_data, our_candidate = await _collect_pdf_candidates(db, tid, str(election_id))
 
     pdf_path = generate_report_pdf(
         report_text=report.content_text or "",
@@ -262,6 +337,8 @@ async def download_report_pdf(
         report_date=report.report_date.isoformat() if report.report_date else "",
         report_type=report.report_type or "daily",
         d_day=d_day,
+        our_candidate=our_candidate,
+        candidates_data=candidates_data,
     )
 
     if not pdf_path:
