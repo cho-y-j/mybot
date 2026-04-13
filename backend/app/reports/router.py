@@ -97,13 +97,14 @@ async def generate_report(
         from app.reports.pdf_generator import generate_report_pdf
         pdf_meta = result.get("pdf_meta", {}) if use_ai and result else {}
         election_obj = (await db.execute(select(Election).where(Election.id == election_id))).scalar_one_or_none()
+        d_day = (election_obj.election_date - date.today()).days if election_obj and election_obj.election_date else 0
         pdf_path = generate_report_pdf(
             report_text=report_text,
             election_name=election_obj.name if election_obj else "",
             report_date=date.today().isoformat(),
             report_type=briefing_type,
             our_candidate=pdf_meta.get("our_candidate", ""),
-            d_day=pdf_meta.get("d_day", 0),
+            d_day=d_day,
             candidates_data=pdf_meta.get("candidates_data"),
         )
         if pdf_path:
@@ -209,11 +210,13 @@ async def update_report(
         try:
             from app.reports.pdf_generator import generate_report_pdf
             election = (await db.execute(select(Election).where(Election.id == election_id))).scalar_one_or_none()
+            d_day = (election.election_date - date.today()).days if election and election.election_date else 0
             pdf_path = generate_report_pdf(
                 report_text=body.content_text,
                 election_name=election.name if election else "",
                 report_date=report.report_date.isoformat() if report.report_date else "",
                 report_type=report.report_type or "daily",
+                d_day=d_day,
             )
             if pdf_path:
                 report.file_path_pdf = pdf_path
@@ -251,12 +254,14 @@ async def download_report_pdf(
 
     election = (await db.execute(select(Election).where(Election.id == election_id))).scalar_one_or_none()
     election_name = election.name if election else ""
+    d_day = (election.election_date - date.today()).days if election and election.election_date else 0
 
     pdf_path = generate_report_pdf(
         report_text=report.content_text or "",
         election_name=election_name,
         report_date=report.report_date.isoformat() if report.report_date else "",
         report_type=report.report_type or "daily",
+        d_day=d_day,
     )
 
     if not pdf_path:
