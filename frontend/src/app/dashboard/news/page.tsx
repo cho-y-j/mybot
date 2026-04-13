@@ -307,11 +307,11 @@ export default function NewsAnalysisPage() {
                     {news.sentiment === 'negative' && (
                       <span className="text-[9px] bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded font-bold">대응</span>
                     )}
-                    <button onClick={async (e) => {
+                    <span role="button" style={{cursor:'pointer'}} onClick={async (e) => {
                       e.preventDefault(); e.stopPropagation();
-                      if (!confirm('이 기사를 삭제하시겠습니까?')) return;
-                      try { await api.deleteNewsItem(news.id); loadData(); } catch {}
-                    }} className="text-[9px] text-gray-400 hover:text-red-400 px-1.5 py-0.5">삭제</button>
+                      if (!window.confirm('이 기사를 삭제하시겠습니까?')) return;
+                      try { await api.deleteNewsItem(news.id); await loadData(); } catch (err) { console.error(err); }
+                    }} className="text-[9px] text-gray-400 hover:text-red-400 px-1.5 py-0.5">삭제</span>
                   </div>
                 </div>
               </a>

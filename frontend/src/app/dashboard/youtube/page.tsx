@@ -131,10 +131,10 @@ export default function YouTubePage() {
                     <span className="text-red-500 font-bold">{v.candidate}</span>
                     <span className="flex-1 line-clamp-1">{v.title}</span>
                     <span className="text-xs text-red-400">조회 {(v.views || 0).toLocaleString()}</span>
-                    {v.id && <button onClick={async (e) => { e.preventDefault(); e.stopPropagation();
+                    {v.id && <span role="button" style={{cursor:'pointer'}} onClick={async (e) => { e.preventDefault(); e.stopPropagation();
                       if (!confirm('삭제하시겠습니까?')) return;
                       try { await api.deleteYoutubeItem(v.id); loadData(); } catch {}
-                    }} className="text-[9px] text-gray-400 hover:text-red-400">삭제</button>}
+                    }} className="text-[9px] text-gray-400 hover:text-red-400">삭제</span>}
                   </a>
                 ))}
               </div>
@@ -154,7 +154,7 @@ export default function YouTubePage() {
                     <span className="text-orange-500 font-bold">{v.candidate}</span>
                     <span className="flex-1 line-clamp-1">{v.title}</span>
                     <span className="text-xs text-orange-400">조회 {(v.views || 0).toLocaleString()}</span>
-                    {v.id && <button onClick={async (e) => { e.preventDefault(); e.stopPropagation();
+                    {v.id && <span role="button" style={{cursor:'pointer'}} onClick={async (e) => { e.preventDefault(); e.stopPropagation();
                       if (!confirm('삭제하시겠습니까?')) return;
                       try { await api.deleteYoutubeItem(v.id); loadData(); } catch {}
                     }} className="text-[9px] text-gray-400 hover:text-orange-400">삭제</button>}
@@ -581,11 +581,11 @@ export default function YouTubePage() {
                         <span>조회 {(v.views || 0).toLocaleString()}</span>
                         <span>좋아요 {(v.likes || 0).toLocaleString()}</span>
                         <span>댓글 {v.comments_count || 0}</span>
-                        {v.id && <button onClick={async (e) => {
+                        {v.id && <span role="button" style={{cursor:'pointer'}} onClick={async (e) => {
                           e.preventDefault(); e.stopPropagation();
-                          if (!confirm('이 영상을 삭제하시겠습니까?')) return;
-                          try { await api.deleteYoutubeItem(v.id); loadData(); } catch {}
-                        }} className="ml-auto text-gray-400 hover:text-red-400">삭제</button>}
+                          if (!window.confirm('이 영상을 삭제하시겠습니까?')) return;
+                          try { await api.deleteYoutubeItem(v.id); await loadData(); } catch (err) { console.error('delete failed', err); }
+                        }} className="ml-auto text-gray-400 hover:text-red-400">삭제</span>}
                       </div>
                     </div>
                   ))}
@@ -979,11 +979,11 @@ export default function YouTubePage() {
                     <span className="text-[10px] text-[var(--muted)] shrink-0">
                       {p.platform === 'naver_cafe' ? '카페' : p.platform === 'naver_blog' ? '블로그' : p.platform || ''}
                     </span>
-                    {p.id && <button onClick={async (e) => {
+                    {p.id && <span role="button" style={{cursor:'pointer'}} onClick={async (e) => {
                       e.preventDefault(); e.stopPropagation();
-                      if (!confirm('이 게시글을 삭제하시겠습니까?')) return;
-                      try { await api.deleteCommunityItem(p.id); loadData(); } catch {}
-                    }} className="text-[9px] text-gray-400 hover:text-red-400 shrink-0 px-1">삭제</button>}
+                      if (!window.confirm('이 게시글을 삭제하시겠습니까?')) return;
+                      try { await api.deleteCommunityItem(p.id); await loadData(); } catch (err) { console.error(err); }
+                    }} className="text-[9px] text-gray-400 hover:text-red-400 shrink-0 px-1">삭제</span>}
                   </a>
                 ))}
                 {filteredPosts.length === 0 && (
