@@ -157,7 +157,7 @@ export default function YouTubePage() {
                     {v.id && <span role="button" style={{cursor:'pointer'}} onClick={async (e) => { e.preventDefault(); e.stopPropagation();
                       if (!confirm('삭제하시겠습니까?')) return;
                       try { await api.deleteYoutubeItem(v.id); loadData(); } catch {}
-                    }} className="text-[9px] text-gray-400 hover:text-orange-400">삭제</button>}
+                    }} className="text-[9px] text-gray-400 hover:text-orange-400">삭제</span>}
                   </a>
                 ))}
               </div>
