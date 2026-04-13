@@ -99,6 +99,37 @@ def _check_pub_cutoff(pub_at, collected_fallback: datetime | None = None) -> tup
     return None, True
 
 
+def _check_recent_collection(session, election_id: str, media_type: str, within_minutes: int = 60) -> dict | None:
+    """같은 election에서 최근 N분 내에 다른 캠프가 이미 수집했는지 확인.
+
+    Returns: {"tenant_id": ..., "items": ..., "minutes_ago": ...} 또는 None
+    """
+    from app.elections.models import ScheduleRun, ScheduleConfig
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=within_minutes)
+
+    # ScheduleConfig와 JOIN해서 같은 election + 같은 media_type의 최근 성공 실행 찾기
+    rows = session.execute(
+        select(ScheduleRun, ScheduleConfig.tenant_id).join(
+            ScheduleConfig, ScheduleRun.schedule_id == ScheduleConfig.id
+        ).where(
+            ScheduleRun.status == "success",
+            ScheduleRun.completed_at >= cutoff,
+            ScheduleConfig.election_id == election_id,
+            ScheduleConfig.schedule_type == media_type,
+        ).order_by(ScheduleRun.completed_at.desc()).limit(1)
+    ).first()
+
+    if rows:
+        run, config_tenant_id = rows
+        mins = (datetime.now(timezone.utc) - run.completed_at).total_seconds() / 60
+        return {
+            "tenant_id": str(config_tenant_id),
+            "items": run.items_collected or 0,
+            "minutes_ago": round(mins, 1),
+        }
+    return None
+
+
 # 하위 호환: 기존 함수명 유지하되 새 함수로 래핑
 def _is_recent_or_fallback(pub_at, collected_fallback: datetime | None = None) -> datetime | None:
     """DEPRECATED: _check_pub_cutoff 사용 권장."""
@@ -165,6 +196,26 @@ def collect_news(self, tenant_id: str, election_id: str, schedule_id: str):
     session.commit()
 
     try:
+        # ── 같은 election에서 최근 수집이 있으면 수집 스킵, AI 분석만 실행 ──
+        recent = _check_recent_collection(session, election_id, "news", within_minutes=60)
+        if recent and recent["tenant_id"] != tenant_id:
+            logger.info("news_skip_recent_exists",
+                        tenant=tenant_id, other_tenant=recent["tenant_id"],
+                        minutes_ago=recent["minutes_ago"], items=recent["items"])
+            # 수집 스킵 → 캠프별 AI 분석(관점)만 실행
+            ai_result = {}
+            try:
+                ai_result = _run_async(_run_full_ai_pipeline(tenant_id, election_id))
+            except Exception as ai_err:
+                logger.error("news_skip_ai_error", error=str(ai_err)[:200])
+            run.status = "success"
+            run.completed_at = datetime.now(timezone.utc)
+            run.items_collected = 0
+            run.duration_seconds = (run.completed_at - run.started_at).total_seconds()
+            session.commit()
+            return {"status": "skipped_recent", "items": 0, "ai": ai_result,
+                    "reason": f"다른 캠프가 {recent['minutes_ago']}분 전 수집 완료"}
+
         candidates = session.execute(
             select(Candidate).where(
                 Candidate.election_id == election_id,
@@ -181,7 +232,6 @@ def collect_news(self, tenant_id: str, election_id: str, schedule_id: str):
         dropped_old = 0
         raw_items = []
 
-        # 선거 유형/지역 정보
         from app.elections.models import Election as _Election
         from app.elections.korea_data import ELECTION_ISSUES, REGIONS
         election = session.execute(select(_Election).where(_Election.id == election_id)).scalar_one_or_none()
@@ -349,6 +399,24 @@ def collect_community(self, tenant_id: str, election_id: str, schedule_id: str):
     session.commit()
 
     try:
+        # ── 같은 election에서 최근 수집이 있으면 스킵 ──
+        recent = _check_recent_collection(session, election_id, "community", within_minutes=60)
+        if recent and recent["tenant_id"] != tenant_id:
+            logger.info("community_skip_recent_exists",
+                        tenant=tenant_id, other_tenant=recent["tenant_id"],
+                        minutes_ago=recent["minutes_ago"])
+            ai_result = {}
+            try:
+                ai_result = _run_async(_run_full_ai_pipeline(tenant_id, election_id))
+            except Exception:
+                pass
+            run.status = "success"
+            run.completed_at = datetime.now(timezone.utc)
+            run.items_collected = 0
+            run.duration_seconds = (run.completed_at - run.started_at).total_seconds()
+            session.commit()
+            return {"status": "skipped_recent", "items": 0, "ai": ai_result}
+
         candidates = session.execute(
             select(Candidate).where(
                 Candidate.election_id == election_id,
@@ -510,6 +578,24 @@ def collect_youtube(self, tenant_id: str, election_id: str, schedule_id: str):
     session.commit()
 
     try:
+        # ── 같은 election에서 최근 수집이 있으면 스킵 ──
+        recent = _check_recent_collection(session, election_id, "youtube", within_minutes=60)
+        if recent and recent["tenant_id"] != tenant_id:
+            logger.info("youtube_skip_recent_exists",
+                        tenant=tenant_id, other_tenant=recent["tenant_id"],
+                        minutes_ago=recent["minutes_ago"])
+            ai_result = {}
+            try:
+                ai_result = _run_async(_run_full_ai_pipeline(tenant_id, election_id))
+            except Exception:
+                pass
+            run.status = "success"
+            run.completed_at = datetime.now(timezone.utc)
+            run.items_collected = 0
+            run.duration_seconds = (run.completed_at - run.started_at).total_seconds()
+            session.commit()
+            return {"status": "skipped_recent", "items": 0, "ai": ai_result}
+
         candidates = session.execute(
             select(Candidate).where(
                 Candidate.election_id == election_id,
