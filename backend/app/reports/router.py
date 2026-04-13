@@ -91,11 +91,32 @@ async def generate_report(
             result = await generate_daily_report(db, tid, str(election_id))
             report_text = result["text"]
 
-    # 3. DB 저장
+    # 3. PDF 생성
+    pdf_path = None
+    try:
+        from app.reports.pdf_generator import generate_report_pdf
+        pdf_meta = result.get("pdf_meta", {}) if use_ai and result else {}
+        election_obj = (await db.execute(select(Election).where(Election.id == election_id))).scalar_one_or_none()
+        pdf_path = generate_report_pdf(
+            report_text=report_text,
+            election_name=election_obj.name if election_obj else "",
+            report_date=date.today().isoformat(),
+            report_type=briefing_type,
+            our_candidate=pdf_meta.get("our_candidate", ""),
+            d_day=pdf_meta.get("d_day", 0),
+            candidates_data=pdf_meta.get("candidates_data"),
+        )
+        if pdf_path:
+            logger.info("report_pdf_generated", path=pdf_path)
+    except Exception as e:
+        logger.warning("report_pdf_failed", error=str(e)[:200])
+
+    # 4. DB 저장
     type_map = {
         "morning": "morning_brief",
         "afternoon": "afternoon_brief",
         "daily": "daily",
+        "weekly": "weekly",
     }
     report = Report(
         id=uuid.uuid4(),
@@ -104,6 +125,7 @@ async def generate_report(
         report_type=("ai_" + type_map.get(briefing_type, "daily")) if ai_generated else type_map.get(briefing_type, "daily"),
         title=report_text.split("\n")[0] if report_text else f"{briefing_type} 보고서",
         content_text=report_text,
+        file_path_pdf=pdf_path,
         report_date=date.today(),
         sent_via_telegram=False,
     )
