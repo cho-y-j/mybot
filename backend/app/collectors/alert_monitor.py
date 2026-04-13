@@ -40,7 +40,9 @@ SEVERITY_INFO = "info"          # 참고용
 class AlertMonitor:
     """실시간 위기 감지 모니터."""
 
-    def __init__(self, redis_url: str = "redis://localhost:6380/0"):
+    def __init__(self, redis_url: str | None = None):
+        from app.config import get_settings as _gs
+        redis_url = redis_url or _gs().REDIS_URL or "redis://redis:6379/0"
         self.redis_url = redis_url
         self._redis = None
 
@@ -282,8 +284,10 @@ async def check_db_alerts(
     redis_client = None
     try:
         import redis.asyncio as aioredis
+        from app.config import get_settings as _gs
+        _redis_url = _gs().REDIS_URL or "redis://redis:6379/0"
         redis_client = aioredis.from_url(
-            "redis://localhost:6380/0", decode_responses=True,
+            _redis_url, decode_responses=True,
         )
     except Exception as e:
         logger.warning("alert_redis_unavailable", error=str(e)[:200])
@@ -319,6 +323,7 @@ async def check_db_alerts(
           AND n.ai_analyzed_at > NOW() - INTERVAL '{since_minutes} minutes'
           AND n.sentiment_verified = TRUE
           AND n.is_about_our_candidate = TRUE
+          AND (n.is_relevant IS NULL OR n.is_relevant = TRUE)
           AND (
             n.strategic_value = 'weakness'
             OR n.ai_threat_level IN ('high', 'medium')
@@ -362,6 +367,7 @@ async def check_db_alerts(
           AND n.sentiment_verified = TRUE
           AND n.strategic_value = 'opportunity'
           AND n.ai_threat_level IN ('high', 'medium')
+          AND (n.is_relevant IS NULL OR n.is_relevant = TRUE)
         ORDER BY n.ai_analyzed_at DESC
         LIMIT 10
     """), {"tid": tenant_id, "eid": election_id})).all()
