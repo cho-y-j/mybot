@@ -140,6 +140,7 @@ export default function NewsAnalysisPage() {
         <div>
           <h1 className="text-2xl font-bold">뉴스 분석</h1>
           <p className="text-sm text-[var(--muted)]">수집 기간: {dateRange || '-'} | 기사 작성일 기준</p>
+          <p className="text-[10px] text-amber-500 mt-0.5">AI 자동수집 데이터입니다. 동명이인 등 오류 발견 시 삭제해주세요.</p>
         </div>
         <div className="flex items-center gap-2">
           {([
@@ -302,9 +303,16 @@ export default function NewsAnalysisPage() {
                       <p className="text-[10px] text-[var(--muted)] mt-1 opacity-50">요약 없음</p>
                     )}
                   </div>
-                  {news.sentiment === 'negative' && (
-                    <span className="text-[9px] bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded font-bold flex-shrink-0 mt-1">대응</span>
-                  )}
+                  <div className="flex flex-col gap-1 flex-shrink-0 mt-1">
+                    {news.sentiment === 'negative' && (
+                      <span className="text-[9px] bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded font-bold">대응</span>
+                    )}
+                    <button onClick={async (e) => {
+                      e.preventDefault(); e.stopPropagation();
+                      if (!confirm('이 기사를 삭제하시겠습니까?')) return;
+                      try { await api.deleteNewsItem(news.id); loadData(); } catch {}
+                    }} className="text-[9px] text-gray-400 hover:text-red-400 px-1.5 py-0.5">삭제</button>
+                  </div>
                 </div>
               </a>
             ))}

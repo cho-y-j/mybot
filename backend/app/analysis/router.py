@@ -887,3 +887,59 @@ async def reclassify_community_issues(
         "changed": changed,
         "election_type": e_type,
     }
+
+
+# ── 수집 데이터 삭제 ──
+
+@router.delete("/news/{item_id}")
+async def delete_news(item_id: UUID, user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    """뉴스 기사 삭제."""
+    from app.auth.models import AuditLog
+    import json as _json
+    item = (await db.execute(select(NewsArticle).where(NewsArticle.id == item_id))).scalar_one_or_none()
+    if not item:
+        raise HTTPException(404, "항목을 찾을 수 없습니다")
+    if str(item.tenant_id) != user["tenant_id"]:
+        raise HTTPException(403, "권한 없음")
+    title = item.title
+    await db.delete(item)
+    db.add(AuditLog(user_id=user["id"], action="delete_news", resource_type="news_article",
+                     resource_id=str(item_id), details=_json.dumps({"title": title}, ensure_ascii=False)))
+    await db.commit()
+    return {"message": "삭제 완료"}
+
+
+@router.delete("/community/{item_id}")
+async def delete_community(item_id: UUID, user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    """커뮤니티 게시글 삭제."""
+    from app.auth.models import AuditLog
+    import json as _json
+    item = (await db.execute(select(CommunityPost).where(CommunityPost.id == item_id))).scalar_one_or_none()
+    if not item:
+        raise HTTPException(404, "항목을 찾을 수 없습니다")
+    if str(item.tenant_id) != user["tenant_id"]:
+        raise HTTPException(403, "권한 없음")
+    title = item.title
+    await db.delete(item)
+    db.add(AuditLog(user_id=user["id"], action="delete_community", resource_type="community_post",
+                     resource_id=str(item_id), details=_json.dumps({"title": title}, ensure_ascii=False)))
+    await db.commit()
+    return {"message": "삭제 완료"}
+
+
+@router.delete("/youtube/{item_id}")
+async def delete_youtube(item_id: UUID, user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    """유튜브 영상 삭제."""
+    from app.auth.models import AuditLog
+    import json as _json
+    item = (await db.execute(select(YouTubeVideo).where(YouTubeVideo.id == item_id))).scalar_one_or_none()
+    if not item:
+        raise HTTPException(404, "항목을 찾을 수 없습니다")
+    if str(item.tenant_id) != user["tenant_id"]:
+        raise HTTPException(403, "권한 없음")
+    title = item.title
+    await db.delete(item)
+    db.add(AuditLog(user_id=user["id"], action="delete_youtube", resource_type="youtube_video",
+                     resource_id=str(item_id), details=_json.dumps({"title": title}, ensure_ascii=False)))
+    await db.commit()
+    return {"message": "삭제 완료"}

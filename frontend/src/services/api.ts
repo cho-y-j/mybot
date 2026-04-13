@@ -523,6 +523,30 @@ class ApiClient {
   getCurrentSubscription() {
     return this.request<any>('/billing/current');
   }
+
+  // 챗 이력
+  getChatHistory(electionId?: string) {
+    const q = electionId ? `?election_id=${electionId}` : '';
+    return this.request<any[]>(`/chat/history${q}`);
+  }
+
+  clearChatHistory(electionId?: string) {
+    const q = electionId ? `?election_id=${electionId}` : '';
+    return this.request<any>(`/chat/history${q}`, { method: 'DELETE' });
+  }
+
+  // 수집 데이터 삭제
+  deleteNewsItem(itemId: string) {
+    return this.request<any>(`/analysis/news/${itemId}`, { method: 'DELETE' });
+  }
+
+  deleteCommunityItem(itemId: string) {
+    return this.request<any>(`/analysis/community/${itemId}`, { method: 'DELETE' });
+  }
+
+  deleteYoutubeItem(itemId: string) {
+    return this.request<any>(`/analysis/youtube/${itemId}`, { method: 'DELETE' });
+  }
 }
 
 export const api = new ApiClient();

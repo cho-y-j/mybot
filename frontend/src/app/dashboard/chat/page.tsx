@@ -30,20 +30,49 @@ export default function ChatPage() {
   const [modelTier, setModelTier] = useState<'fast' | 'standard' | 'premium'>('standard');
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // 초기 인사
+  // 이전 대화 이력 불러오기 + 초기 인사
   useEffect(() => {
-    if (election && ourCandidate && messages.length === 0) {
+    if (!election || !ourCandidate) return;
+    api.getChatHistory(election.id).then((history: any[]) => {
+      if (history && history.length > 0) {
+        const loaded: Message[] = history.map((m: any) => ({
+          id: m.id,
+          role: m.role as 'user' | 'ai',
+          content: m.content,
+          time: new Date(m.created_at).toLocaleTimeString('ko'),
+        }));
+        setMessages(loaded);
+      } else {
+        setMessages([{
+          id: 'welcome',
+          role: 'ai',
+          content: `안녕하세요! **${election.name}** 분석 AI입니다.\n\n` +
+            `**${ourCandidate.name}** 후보 중심으로 수집된 데이터를 기반으로 답변합니다.\n` +
+            `뉴스, 감성분석, 검색트렌드, 유튜브, 여론조사 등 모든 데이터를 활용합니다.\n\n` +
+            `무엇이 궁금하신가요?`,
+          time: new Date().toLocaleTimeString('ko'),
+        }]);
+      }
+    }).catch(() => {
       setMessages([{
-        id: 'welcome',
-        role: 'ai',
-        content: `안녕하세요! **${election.name}** 분석 AI입니다.\n\n` +
-          `**${ourCandidate.name}** 후보 중심으로 수집된 데이터를 기반으로 답변합니다.\n` +
-          `뉴스, 감성분석, 검색트렌드, 유튜브, 여론조사 등 모든 데이터를 활용합니다.\n\n` +
-          `무엇이 궁금하신가요?`,
+        id: 'welcome', role: 'ai',
+        content: `안녕하세요! **${election.name}** 분석 AI입니다.\n무엇이 궁금하신가요?`,
         time: new Date().toLocaleTimeString('ko'),
       }]);
-    }
+    });
   }, [election, ourCandidate]);
+
+  const handleClearHistory = async () => {
+    if (!confirm('대화 이력을 모두 삭제하시겠습니까?')) return;
+    try {
+      await api.clearChatHistory(election?.id);
+      setMessages([{
+        id: 'welcome', role: 'ai',
+        content: '대화 이력이 삭제되었습니다. 새로운 대화를 시작하세요.',
+        time: new Date().toLocaleTimeString('ko'),
+      }]);
+    } catch {}
+  };
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -104,6 +133,11 @@ export default function ChatPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <button onClick={handleClearHistory}
+            className="px-3 py-1.5 text-xs text-red-400 bg-red-500/10 rounded-lg hover:bg-red-500/20"
+            title="대화 이력 삭제">
+            대화 초기화
+          </button>
           {/* 모델 선택 토글 */}
           <div className="flex bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5 gap-0.5">
             {([

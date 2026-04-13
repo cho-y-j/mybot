@@ -95,6 +95,23 @@ async def chat_send(
         if line.startswith("===")
     ]
 
+    # 대화 이력 저장 (질문 + 응답)
+    try:
+        from app.chat.models import ChatMessage
+        db.add(ChatMessage(
+            tenant_id=tid, election_id=election_id,
+            user_id=user["id"], role="user", content=req.message,
+            model_tier=req.model_tier,
+        ))
+        db.add(ChatMessage(
+            tenant_id=tid, election_id=election_id,
+            user_id=user["id"], role="ai", content=reply,
+            model_tier=req.model_tier,
+        ))
+        await db.commit()
+    except Exception as e:
+        logger.warning("chat_save_failed", error=str(e)[:200])
+
     return ChatResponse(
         reply=reply,
         context_used=sections_used,
@@ -191,3 +208,67 @@ def _generate_data_response(question: str, context: str) -> str:
     response_parts.append("_위 데이터는 실시간 수집된 실제 데이터입니다._")
 
     return "\n".join(response_parts)
+
+
+@router.get("/history")
+async def chat_history(
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+    election_id: Optional[str] = None,
+    limit: int = 50,
+):
+    """챗 대화 이력 조회."""
+    from app.chat.models import ChatMessage
+    tid = user["tenant_id"]
+
+    if not election_id:
+        election = (await db.execute(
+            select(Election).where(Election.tenant_id == tid, Election.is_active == True)
+        )).scalar_one_or_none()
+        if not election:
+            return []
+        election_id = str(election.id)
+
+    rows = (await db.execute(
+        select(ChatMessage).where(
+            ChatMessage.tenant_id == tid,
+            ChatMessage.election_id == election_id,
+        ).order_by(ChatMessage.created_at.desc()).limit(limit)
+    )).scalars().all()
+
+    return [{
+        "id": str(m.id),
+        "role": m.role,
+        "content": m.content,
+        "model_tier": m.model_tier,
+        "created_at": m.created_at.isoformat(),
+    } for m in reversed(rows)]
+
+
+@router.delete("/history")
+async def clear_chat_history(
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+    election_id: Optional[str] = None,
+):
+    """챗 대화 이력 전체 삭제."""
+    from app.chat.models import ChatMessage
+    from sqlalchemy import delete
+    tid = user["tenant_id"]
+
+    if not election_id:
+        election = (await db.execute(
+            select(Election).where(Election.tenant_id == tid, Election.is_active == True)
+        )).scalar_one_or_none()
+        if election:
+            election_id = str(election.id)
+
+    if election_id:
+        await db.execute(
+            delete(ChatMessage).where(
+                ChatMessage.tenant_id == tid,
+                ChatMessage.election_id == election_id,
+            )
+        )
+        await db.commit()
+    return {"message": "대화 이력이 삭제되었습니다."}
