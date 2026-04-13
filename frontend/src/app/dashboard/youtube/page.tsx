@@ -93,6 +93,7 @@ export default function YouTubePage() {
           <p className="text-sm text-[var(--muted)]">
             {data?.period || `최근 ${period}일`} | 유튜브 {totalAll}건 + 커뮤니티 {(communityData?.candidates || []).reduce((s: number, c: any) => s + (c.total_posts || 0), 0)}건
           </p>
+          <p className="text-[10px] text-amber-500 mt-0.5">AI 자동수집 데이터입니다. 동명이인 등 오류 발견 시 삭제해주세요.</p>
         </div>
         <div className="flex items-center gap-2">
           {([
@@ -130,6 +131,10 @@ export default function YouTubePage() {
                     <span className="text-red-500 font-bold">{v.candidate}</span>
                     <span className="flex-1 line-clamp-1">{v.title}</span>
                     <span className="text-xs text-red-400">조회 {(v.views || 0).toLocaleString()}</span>
+                    {v.id && <button onClick={async (e) => { e.preventDefault(); e.stopPropagation();
+                      if (!confirm('삭제하시겠습니까?')) return;
+                      try { await api.deleteYoutubeItem(v.id); loadData(); } catch {}
+                    }} className="text-[9px] text-gray-400 hover:text-red-400">삭제</button>}
                   </a>
                 ))}
               </div>
@@ -149,6 +154,10 @@ export default function YouTubePage() {
                     <span className="text-orange-500 font-bold">{v.candidate}</span>
                     <span className="flex-1 line-clamp-1">{v.title}</span>
                     <span className="text-xs text-orange-400">조회 {(v.views || 0).toLocaleString()}</span>
+                    {v.id && <button onClick={async (e) => { e.preventDefault(); e.stopPropagation();
+                      if (!confirm('삭제하시겠습니까?')) return;
+                      try { await api.deleteYoutubeItem(v.id); loadData(); } catch {}
+                    }} className="text-[9px] text-gray-400 hover:text-orange-400">삭제</button>}
                   </a>
                 ))}
               </div>
@@ -572,6 +581,11 @@ export default function YouTubePage() {
                         <span>조회 {(v.views || 0).toLocaleString()}</span>
                         <span>좋아요 {(v.likes || 0).toLocaleString()}</span>
                         <span>댓글 {v.comments_count || 0}</span>
+                        {v.id && <button onClick={async (e) => {
+                          e.preventDefault(); e.stopPropagation();
+                          if (!confirm('이 영상을 삭제하시겠습니까?')) return;
+                          try { await api.deleteYoutubeItem(v.id); loadData(); } catch {}
+                        }} className="ml-auto text-gray-400 hover:text-red-400">삭제</button>}
                       </div>
                     </a>
                   ))}
@@ -930,6 +944,11 @@ export default function YouTubePage() {
                     <span className="text-[10px] text-[var(--muted)] shrink-0">
                       {p.platform === 'naver_cafe' ? '카페' : p.platform === 'naver_blog' ? '블로그' : p.platform || ''}
                     </span>
+                    {p.id && <button onClick={async (e) => {
+                      e.preventDefault(); e.stopPropagation();
+                      if (!confirm('이 게시글을 삭제하시겠습니까?')) return;
+                      try { await api.deleteCommunityItem(p.id); loadData(); } catch {}
+                    }} className="text-[9px] text-gray-400 hover:text-red-400 shrink-0 px-1">삭제</button>}
                   </a>
                 ))}
                 {filteredPosts.length === 0 && (
