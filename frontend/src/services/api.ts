@@ -413,19 +413,19 @@ class ApiClient {
   }
 
   // ─── AI Chat (긴 타임아웃) ──────────────────────────────────
-  async sendChat(message: string, electionId?: string, modelTier?: string) {
+  async sendChat(message: string, electionId?: string, modelTier?: string, sessionId?: string) {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
     if (this.accessToken) headers['Authorization'] = `Bearer ${this.accessToken}`;
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 120000); // 2분 타임아웃
+    const timeout = setTimeout(() => controller.abort(), 120000);
     try {
       const res = await fetch(`${API_BASE}/chat/send`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ message, election_id: electionId, model_tier: modelTier }),
+        body: JSON.stringify({ message, election_id: electionId, model_tier: modelTier, session_id: sessionId }),
         signal: controller.signal,
       });
       if (!res.ok) {
@@ -524,19 +524,22 @@ class ApiClient {
     return this.request<any>('/billing/current');
   }
 
-  // 챗 이력
-  getChatHistory(electionId?: string) {
+  // 챗 세션
+  getChatSessions(electionId?: string) {
     const q = electionId ? `?election_id=${electionId}` : '';
-    return this.request<any[]>(`/chat/history${q}`);
+    return this.request<any[]>(`/chat/sessions${q}`);
+  }
+
+  getChatSessionMessages(sessionId: string) {
+    return this.request<any[]>(`/chat/sessions/${sessionId}/messages`);
+  }
+
+  deleteChatSession(sessionId: string) {
+    return this.request<any>(`/chat/sessions/${sessionId}`, { method: 'DELETE' });
   }
 
   deleteChatMessage(messageId: string) {
     return this.request<any>(`/chat/message/${messageId}`, { method: 'DELETE' });
-  }
-
-  clearChatHistory(electionId?: string) {
-    const q = electionId ? `?election_id=${electionId}` : '';
-    return this.request<any>(`/chat/history${q}`, { method: 'DELETE' });
   }
 
   // 수집 데이터 삭제

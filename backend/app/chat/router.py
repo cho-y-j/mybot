@@ -25,12 +25,14 @@ settings = get_settings()
 class ChatRequest(BaseModel):
     message: str
     election_id: Optional[str] = None
+    session_id: Optional[str] = None  # 기존 세션에 이어서 대화
     model_tier: Optional[str] = None  # fast / standard / premium
 
 
 class ChatResponse(BaseModel):
     reply: str
-    context_used: list[str] = []  # 어떤 데이터를 참고했는지
+    session_id: str
+    context_used: list[str] = []
     timestamp: str
 
 
@@ -80,32 +82,68 @@ async def chat_send(
             raise HTTPException(status_code=404, detail="활성 선거가 없습니다")
         election_id = str(election.id)
 
+    # 세션 처리: 기존 세션 or 새 세션 생성
+    from app.chat.models import ChatSession, ChatMessage
+    from uuid import UUID as _UUID
+
+    session_id = None
+    if req.session_id:
+        session_obj = (await db.execute(
+            select(ChatSession).where(ChatSession.id == _UUID(req.session_id), ChatSession.tenant_id == tid)
+        )).scalar_one_or_none()
+        if session_obj:
+            session_id = session_obj.id
+            session_obj.updated_at = datetime.now(timezone.utc)
+
+    if not session_id:
+        # 새 세션 생성 (제목: 첫 메시지 앞 30자)
+        session_obj = ChatSession(
+            tenant_id=tid, election_id=election_id,
+            user_id=user["id"],
+            title=req.message[:30] + ("..." if len(req.message) > 30 else ""),
+        )
+        db.add(session_obj)
+        await db.flush()
+        session_id = session_obj.id
+
+    # 이전 대화 이력을 AI 컨텍스트에 포함 (최근 10개)
+    prev_msgs = (await db.execute(
+        select(ChatMessage).where(ChatMessage.session_id == session_id)
+        .order_by(ChatMessage.created_at.desc()).limit(10)
+    )).scalars().all()
+    chat_history = "\n".join([
+        f"{'사용자' if m.role == 'user' else 'AI'}: {m.content[:200]}"
+        for m in reversed(prev_msgs)
+    ])
+
     # DB에서 관련 데이터 자동 수집
     context = await build_chat_context(db, tid, election_id, req.message)
 
-    # AI 호출 (고객 API키 → 배정 CLI → 시스템 CLI 자동 전환)
+    # 이전 대화 이력을 컨텍스트에 추가
+    if chat_history:
+        context = f"[이전 대화 이력]\n{chat_history}\n\n{context}"
+
+    # AI 호출
     reply = await _get_ai_response(
         req.message, context, tenant_id=tid, db=db, model_tier=req.model_tier,
     )
 
-    # 사용된 컨텍스트 섹션 추출
     sections_used = [
         line.replace("=== ", "").replace(" ===", "")
         for line in context.split("\n")
         if line.startswith("===")
     ]
 
-    # 대화 이력 저장 (질문 + 응답)
+    # 대화 저장
     try:
-        from app.chat.models import ChatMessage
         db.add(ChatMessage(
-            tenant_id=tid, election_id=election_id,
-            user_id=user["id"], role="user", content=req.message,
+            tenant_id=tid, election_id=election_id, user_id=user["id"],
+            session_id=session_id, role="user", content=req.message,
             model_tier=req.model_tier,
         ))
         db.add(ChatMessage(
-            tenant_id=tid, election_id=election_id,
-            user_id=user["id"], role="ai", content=reply,
+            tenant_id=tid, election_id=election_id, user_id=user["id"],
+            session_id=session_id, role="ai", content=reply,
             model_tier=req.model_tier,
         ))
         await db.commit()
@@ -114,6 +152,7 @@ async def chat_send(
 
     return ChatResponse(
         reply=reply,
+        session_id=str(session_id),
         context_used=sections_used,
         timestamp=datetime.now(timezone.utc).isoformat(),
     )
@@ -210,15 +249,14 @@ def _generate_data_response(question: str, context: str) -> str:
     return "\n".join(response_parts)
 
 
-@router.get("/history")
-async def chat_history(
+@router.get("/sessions")
+async def list_sessions(
     user: CurrentUser,
     db: AsyncSession = Depends(get_db),
     election_id: Optional[str] = None,
-    limit: int = 50,
 ):
-    """챗 대화 이력 조회."""
-    from app.chat.models import ChatMessage
+    """대화 세션 목록 (최신순)."""
+    from app.chat.models import ChatSession
     tid = user["tenant_id"]
 
     if not election_id:
@@ -230,10 +268,40 @@ async def chat_history(
         election_id = str(election.id)
 
     rows = (await db.execute(
-        select(ChatMessage).where(
-            ChatMessage.tenant_id == tid,
-            ChatMessage.election_id == election_id,
-        ).order_by(ChatMessage.created_at.desc()).limit(limit)
+        select(ChatSession).where(
+            ChatSession.tenant_id == tid,
+            ChatSession.election_id == election_id,
+        ).order_by(ChatSession.updated_at.desc()).limit(50)
+    )).scalars().all()
+
+    return [{
+        "id": str(s.id),
+        "title": s.title,
+        "created_at": s.created_at.isoformat(),
+        "updated_at": s.updated_at.isoformat(),
+    } for s in rows]
+
+
+@router.get("/sessions/{session_id}/messages")
+async def get_session_messages(
+    session_id: str,
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """특정 세션의 메시지 목록."""
+    from app.chat.models import ChatSession, ChatMessage
+    from uuid import UUID as _UUID
+    tid = user["tenant_id"]
+
+    session = (await db.execute(
+        select(ChatSession).where(ChatSession.id == _UUID(session_id), ChatSession.tenant_id == tid)
+    )).scalar_one_or_none()
+    if not session:
+        raise HTTPException(404, "세션을 찾을 수 없습니다")
+
+    rows = (await db.execute(
+        select(ChatMessage).where(ChatMessage.session_id == _UUID(session_id))
+        .order_by(ChatMessage.created_at)
     )).scalars().all()
 
     return [{
@@ -242,7 +310,28 @@ async def chat_history(
         "content": m.content,
         "model_tier": m.model_tier,
         "created_at": m.created_at.isoformat(),
-    } for m in reversed(rows)]
+    } for m in rows]
+
+
+@router.delete("/sessions/{session_id}")
+async def delete_session(
+    session_id: str,
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """대화 세션 삭제 (메시지도 CASCADE 삭제)."""
+    from app.chat.models import ChatSession
+    from uuid import UUID as _UUID
+    tid = user["tenant_id"]
+
+    session = (await db.execute(
+        select(ChatSession).where(ChatSession.id == _UUID(session_id), ChatSession.tenant_id == tid)
+    )).scalar_one_or_none()
+    if not session:
+        raise HTTPException(404, "세션을 찾을 수 없습니다")
+    await db.delete(session)
+    await db.commit()
+    return {"message": "대화가 삭제되었습니다."}
 
 
 @router.delete("/message/{message_id}")
@@ -251,45 +340,16 @@ async def delete_chat_message(
     user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
-    """챗 메시지 개별 삭제."""
+    """메시지 개별 삭제."""
     from app.chat.models import ChatMessage
     from uuid import UUID as _UUID
     item = (await db.execute(
         select(ChatMessage).where(ChatMessage.id == _UUID(message_id))
     )).scalar_one_or_none()
     if not item:
-        raise HTTPException(status_code=404, detail="메시지를 찾을 수 없습니다")
+        raise HTTPException(404, "메시지를 찾을 수 없습니다")
     if str(item.tenant_id) != user["tenant_id"]:
-        raise HTTPException(status_code=403, detail="권한 없음")
+        raise HTTPException(403, "권한 없음")
     await db.delete(item)
     await db.commit()
     return {"message": "삭제 완료"}
-
-
-@router.delete("/history")
-async def clear_chat_history(
-    user: CurrentUser,
-    db: AsyncSession = Depends(get_db),
-    election_id: Optional[str] = None,
-):
-    """챗 대화 이력 전체 삭제."""
-    from app.chat.models import ChatMessage
-    from sqlalchemy import delete
-    tid = user["tenant_id"]
-
-    if not election_id:
-        election = (await db.execute(
-            select(Election).where(Election.tenant_id == tid, Election.is_active == True)
-        )).scalar_one_or_none()
-        if election:
-            election_id = str(election.id)
-
-    if election_id:
-        await db.execute(
-            delete(ChatMessage).where(
-                ChatMessage.tenant_id == tid,
-                ChatMessage.election_id == election_id,
-            )
-        )
-        await db.commit()
-    return {"message": "대화 이력이 삭제되었습니다."}
