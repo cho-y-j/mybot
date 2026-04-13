@@ -50,6 +50,8 @@ services:
       - SYNC_DATABASE_URL=postgresql://electionpulse:ep_dev_password_2026@postgres:5432/electionpulse
       - REDIS_URL=redis://redis:6379
       - CELERY_BROKER_URL=redis://redis:6379/0
+    volumes:
+      - /home/cho/.claude:/home/appuser/.claude:ro
     ports:
       - "8000:8000"
     depends_on:
@@ -71,6 +73,8 @@ services:
       - SYNC_DATABASE_URL=postgresql://electionpulse:ep_dev_password_2026@postgres:5432/electionpulse
       - REDIS_URL=redis://redis:6379
       - CELERY_BROKER_URL=redis://redis:6379/0
+    volumes:
+      - /home/cho/.claude:/home/appuser/.claude:ro
     command: celery -A app.collectors.tasks:celery_app worker --loglevel=info --concurrency=4
     depends_on:
       postgres:
@@ -91,6 +95,8 @@ services:
       - SYNC_DATABASE_URL=postgresql://electionpulse:ep_dev_password_2026@postgres:5432/electionpulse
       - REDIS_URL=redis://redis:6379
       - CELERY_BROKER_URL=redis://redis:6379/0
+    volumes:
+      - /home/cho/.claude:/home/appuser/.claude:ro
     command: celery -A app.collectors.tasks:celery_app beat --loglevel=info
     depends_on:
       postgres:
