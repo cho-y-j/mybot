@@ -135,6 +135,13 @@ class ApiClient {
     return this.request<any>('/auth/me');
   }
 
+  changePassword(currentPassword: string, newPassword: string) {
+    return this.request<any>('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    });
+  }
+
   // ─── Tenant ─────────────────────────────────────────────────
   createTenant(data: { name: string; slug: string; plan?: string }) {
     return this.request<any>('/tenants', { method: 'POST', body: JSON.stringify(data) });

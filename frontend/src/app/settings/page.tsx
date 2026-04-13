@@ -11,6 +11,27 @@ export default function SettingsPage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
+  // 비밀번호 변경
+  const [pwCurrent, setPwCurrent] = useState('');
+  const [pwNew, setPwNew] = useState('');
+  const [pwConfirm, setPwConfirm] = useState('');
+  const [pwChanging, setPwChanging] = useState(false);
+
+  const handleChangePassword = async () => {
+    setMessage(''); setError('');
+    if (!pwCurrent || !pwNew) { setError('현재 비밀번호와 새 비밀번호를 입력하세요'); return; }
+    if (pwNew !== pwConfirm) { setError('새 비밀번호가 일치하지 않습니다'); return; }
+    if (pwNew.length < 8) { setError('비밀번호는 최소 8자 이상이어야 합니다'); return; }
+    setPwChanging(true);
+    try {
+      await api.changePassword(pwCurrent, pwNew);
+      setMessage('비밀번호가 변경되었습니다');
+      setPwCurrent(''); setPwNew(''); setPwConfirm('');
+    } catch (e: any) {
+      setError(e.message || '비밀번호 변경 실패');
+    } finally { setPwChanging(false); }
+  };
+
   useEffect(() => { loadAll(); }, []);
 
   const loadAll = async () => {
@@ -101,6 +122,33 @@ export default function SettingsPage() {
 
       {message && <div className="bg-success-50 text-success-600 p-3 rounded-lg text-sm">{message}</div>}
       {error && <div className="bg-danger-50 text-danger-600 p-3 rounded-lg text-sm">{error}</div>}
+
+      {/* 비밀번호 변경 */}
+      <div className="card">
+        <h3 className="font-semibold mb-4">비밀번호 변경</h3>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">현재 비밀번호</label>
+            <input type="password" className="input-field" value={pwCurrent}
+              onChange={e => setPwCurrent(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">새 비밀번호 (최소 8자)</label>
+            <input type="password" className="input-field" value={pwNew}
+              onChange={e => setPwNew(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">새 비밀번호 확인</label>
+            <input type="password" className={`input-field ${pwConfirm && pwNew !== pwConfirm ? 'border-red-500' : ''}`}
+              value={pwConfirm} onChange={e => setPwConfirm(e.target.value)} />
+            {pwConfirm && pwNew !== pwConfirm && <p className="text-xs text-red-500 mt-1">비밀번호가 일치하지 않습니다</p>}
+          </div>
+          <button onClick={handleChangePassword} disabled={pwChanging || !pwCurrent || !pwNew || pwNew !== pwConfirm}
+            className="btn-primary disabled:opacity-50">
+            {pwChanging ? '변경 중...' : '비밀번호 변경'}
+          </button>
+        </div>
+      </div>
 
       {/* 조직 */}
       {!tenant ? (

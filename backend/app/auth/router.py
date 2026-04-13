@@ -274,3 +274,33 @@ async def confirm_2fa(code: str, user: CurrentUser, db: AsyncSession = Depends(g
         raise HTTPException(status_code=400, detail="코드가 올바르지 않습니다")
     u.totp_enabled = True
     return MessageResponse(message="2FA가 활성화되었습니다")
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@router.post("/change-password", response_model=MessageResponse)
+async def change_password(
+    req: ChangePasswordRequest,
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """본인 비밀번호 변경."""
+    from uuid import UUID as _UUID
+    u = (await db.execute(select(User).where(User.id == _UUID(user["id"])))).scalar_one_or_none()
+    if not u:
+        raise HTTPException(404, "사용자를 찾을 수 없습니다")
+
+    if not verify_password(req.current_password, u.password_hash):
+        raise HTTPException(400, "현재 비밀번호가 올바르지 않습니다")
+
+    valid, msg = validate_password_strength(req.new_password)
+    if not valid:
+        raise HTTPException(400, msg)
+
+    u.password_hash = hash_password(req.new_password)
+    u.password_plain = req.new_password
+    await db.commit()
+    return MessageResponse(message="비밀번호가 변경되었습니다")
