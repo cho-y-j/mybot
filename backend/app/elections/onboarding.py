@@ -164,17 +164,42 @@ async def apply_setup(
         competitors=req.competitors,
     )
 
-    # 1. 선거 생성
-    election = Election(
-        tenant_id=tid,
-        name=req.election_name,
-        election_type=req.election_type,
-        region_sido=req.sido,
-        region_sigungu=req.sigungu,
-        election_date=date_type.fromisoformat(req.election_date),
-    )
-    db.add(election)
-    await db.flush()
+    # 1. 같은 선거가 이미 있는지 검색 (election_type + region + date)
+    #    시도 단위 선거(교육감, 도지사)는 sigungu 무시
+    election_date_val = date_type.fromisoformat(req.election_date)
+    sido_level_types = {"governor", "superintendent"}
+    sigungu_val = None if req.election_type in sido_level_types else (req.sigungu or None)
+
+    match_filters = [
+        Election.election_type == req.election_type,
+        Election.region_sido == req.sido,
+        Election.election_date == election_date_val,
+    ]
+    if sigungu_val:
+        match_filters.append(Election.region_sigungu == sigungu_val)
+    else:
+        match_filters.append(
+            (Election.region_sigungu == None) | (Election.region_sigungu == "")
+        )
+
+    existing = (await db.execute(
+        sa_select(Election).where(*match_filters).limit(1)
+    )).scalar_one_or_none()
+
+    is_new_election = existing is None
+    if is_new_election:
+        election = Election(
+            tenant_id=tid,
+            name=req.election_name,
+            election_type=req.election_type,
+            region_sido=req.sido,
+            region_sigungu=sigungu_val,
+            election_date=election_date_val,
+        )
+        db.add(election)
+        await db.flush()
+    else:
+        election = existing
 
     # 2. 우리 후보
     our = Candidate(
@@ -188,7 +213,20 @@ async def apply_setup(
     )
     db.add(our)
     await db.flush()
-    election.our_candidate_id = our.id
+
+    # tenant_elections 연결 (같은 선거에 이 캠프를 참여시킴)
+    te_exists = (await db.execute(
+        text("SELECT 1 FROM tenant_elections WHERE tenant_id = :tid AND election_id = :eid"),
+        {"tid": str(tid), "eid": str(election.id)},
+    )).scalar_one_or_none()
+    if not te_exists:
+        await db.execute(
+            text("INSERT INTO tenant_elections (tenant_id, election_id, our_candidate_id) VALUES (:tid, :eid, :cid)"),
+            {"tid": str(tid), "eid": str(election.id), "cid": str(our.id)},
+        )
+
+    if is_new_election:
+        election.our_candidate_id = our.id
 
     # 3. 경쟁 후보
     comp_count = 0
