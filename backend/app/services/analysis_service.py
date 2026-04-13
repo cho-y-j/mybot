@@ -516,6 +516,7 @@ async def get_community_data(
             "issues": dict(issues.most_common(10)),
             "daily_trend": [{"date": k, "count": v} for k, v in sorted(daily.items())[-7:]],
             "hot_posts": [{
+                "id": str(p.id),
                 "title": p.title,
                 "url": p.url,
                 "source": p.source,
@@ -601,6 +602,7 @@ async def get_youtube_data(
         for v in videos:
             if (v.views or 0) >= 5000 and v.sentiment == "negative":
                 danger_videos.append({
+                    "id": str(v.id),
                     "video_id": v.video_id,
                     "title": v.title,
                     "channel": v.channel,
@@ -648,6 +650,7 @@ async def get_youtube_data(
             "shorts_views": sum(v.views or 0 for v in shorts),
             "regular_views": sum(v.views or 0 for v in regulars),
             "videos": [{
+                "id": str(v.id),
                 "video_id": v.video_id,
                 "title": v.title,
                 "channel": v.channel,
