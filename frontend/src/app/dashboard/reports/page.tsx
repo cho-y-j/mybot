@@ -214,6 +214,15 @@ export default function ReportsPage() {
                 {r.has_pdf && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">PDF</span>}
                 {r.sent_telegram && <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400">TG</span>}
                 {r.ai_generated && <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400">AI</span>}
+                <span role="button" style={{cursor:'pointer'}} onClick={async (e) => {
+                  e.stopPropagation();
+                  if (!window.confirm('이 보고서를 삭제하시겠습니까?')) return;
+                  try {
+                    await api.deleteReport(elections[0]?.id, r.id);
+                    setReports(prev => prev.filter(p => p.id !== r.id));
+                    if (selectedReport?.id === r.id) setSelectedReport(null);
+                  } catch {}
+                }} className="text-[10px] text-gray-400 hover:text-red-400 ml-auto">삭제</span>
               </div>
             </button>
           ))}

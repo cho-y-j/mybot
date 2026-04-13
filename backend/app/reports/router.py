@@ -295,3 +295,30 @@ async def send_report_to_telegram(
         report.sent_at = datetime.now(timezone.utc)
 
     return {"message": f"텔레그램 {sent}명에게 발송 완료", "sent": sent}
+
+
+@router.delete("/{election_id}/{report_id}")
+async def delete_report(
+    election_id: UUID,
+    report_id: UUID,
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """보고서 삭제."""
+    tid = user["tenant_id"]
+    report = (await db.execute(
+        select(Report).where(Report.id == report_id, Report.tenant_id == tid)
+    )).scalar_one_or_none()
+    if not report:
+        raise HTTPException(status_code=404)
+
+    # PDF 파일도 삭제
+    if report.file_path_pdf:
+        try:
+            os.remove(report.file_path_pdf)
+        except Exception:
+            pass
+
+    await db.delete(report)
+    await db.commit()
+    return {"message": "보고서가 삭제되었습니다."}

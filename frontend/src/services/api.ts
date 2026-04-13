@@ -210,6 +210,10 @@ class ApiClient {
     return this.request<any>(`/reports/${electionId}/${reportId}`);
   }
 
+  deleteReport(electionId: string, reportId: string) {
+    return this.request<any>(`/reports/${electionId}/${reportId}`, { method: 'DELETE' });
+  }
+
   generateReport(electionId: string, type: string = 'daily', topic?: string) {
     const params = new URLSearchParams({ report_type: type });
     if (topic) params.set('topic', topic);
