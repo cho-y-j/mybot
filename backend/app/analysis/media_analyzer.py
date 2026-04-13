@@ -19,6 +19,7 @@ async def analyze_batch_strategic(
     region: str = "",
     tenant_id: str | None = None,
     db = None,
+    **kwargs,
 ) -> list[dict]:
     """
     여러 콘텐츠를 한 번의 Claude 호출로 전략 분석.
@@ -40,10 +41,15 @@ async def analyze_batch_strategic(
         for i, it in enumerate(items)
     ])
 
+    # homonym_hints가 kwargs로 전달될 수 있음
+    homonym_hints = kwargs.get("homonym_hints", [])
+    homonym_str = ", ".join(homonym_hints) if homonym_hints else "없음"
+
     prompt = f"""당신은 {region_clause}{election_type} 선거 캠프의 전략 분석관입니다.
 
 ★ 우리 후보: {our_candidate_name} ({region_clause}{election_type} 후보)
 ★ 경쟁 후보: {rivals_str}
+★ 동명이인 주의: {homonym_str} — 이 키워드가 포함된 글은 우리 후보와 무관할 가능성 높음!
 
 아래 {len(items)}개 콘텐츠를 각각 분석하여 4사분면 전략 분류하세요.
 
@@ -212,19 +218,26 @@ async def _get_election_context(db_session, election_id: str) -> dict:
     region_short = REGIONS.get(sido, {}).get("short", "") if sido else ""
     region = f"{region_short} {sigungu}".strip() or sido or ""
 
-    # 후보 명단
+    # 후보 명단 + 동명이인 필터
     cand_rows = (await db_session.execute(sql_text("""
-        SELECT name, is_our_candidate FROM candidates
+        SELECT name, is_our_candidate, homonym_filters FROM candidates
         WHERE election_id = :eid AND enabled = TRUE
     """), {"eid": election_id})).all()
     our_name = next((r[0] for r in cand_rows if r[1]), "")
     rival_names = [r[0] for r in cand_rows if not r[1]]
+    # 모든 후보의 동명이인 힌트 수집
+    all_homonym_hints = []
+    for r in cand_rows:
+        if r[2]:  # homonym_filters JSONB
+            hints = r[2] if isinstance(r[2], list) else []
+            all_homonym_hints.extend(hints)
 
     return {
         "type_label": type_label,
         "region": region,
         "our_name": our_name,
         "rival_names": rival_names,
+        "homonym_hints": list(set(all_homonym_hints)),
     }
 
 
@@ -409,6 +422,7 @@ async def _analyze_table_strategic(
             region=ctx["region"],
             tenant_id=tenant_id,
             db=db_session,
+            homonym_hints=ctx.get("homonym_hints", []),
         )
         # id로 매핑
         result_by_id = {r.get("id"): r for r in results if r.get("id")}
