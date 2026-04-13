@@ -36,10 +36,10 @@ DEFAULT_TIER = {
     "telegram_briefing": "fast",
     "alert_check": "fast",
     "keyword_extract": "fast",
-    # standard (Sonnet) — 창작·대화
-    "content_generate": "standard",
-    "content_generation": "standard",
-    "multi_tone": "standard",
+    # premium (Opus) — 콘텐츠 생성 (성능 우선)
+    "content_generate": "premium",
+    "content_generation": "premium",
+    "multi_tone": "premium",
     "chat": "standard",
     "chat_standard": "standard",
     "swing_voter": "standard",
