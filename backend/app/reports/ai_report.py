@@ -155,7 +155,16 @@ async def generate_ai_report(
     # 2. 데이터 팩트시트 생성
     factsheet = _format_factsheet(data_context)
 
-    # 2.5. 이전 보고서 요약 주입 (연속성)
+    # 2.5. 캠프 메모리 (이전 생성 콘텐츠 참조)
+    try:
+        from app.services.camp_context import build_camp_memory
+        camp_mem = await build_camp_memory(db, tenant_id, election_id, max_reports=0, max_content=3)
+        if camp_mem:
+            factsheet += f"\n{camp_mem}"
+    except Exception:
+        pass
+
+    # 2.6. 이전 보고서 요약 주입 (연속성)
     try:
         from app.elections.models import Report
         prev_reports = (await db.execute(

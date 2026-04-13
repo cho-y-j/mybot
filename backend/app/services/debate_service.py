@@ -224,7 +224,13 @@ async def generate_debate_script(
         f"- 수집된 뉴스/커뮤니티 반응을 인용하여 구체적 근거 제시"
     )
 
-    result = await call_claude(prompt, timeout=90, context="debate_script", tenant_id=tenant_id, db=db)
+    # 캠프 메모리 (이전 보고서/콘텐츠 참조)
+    from app.services.camp_context import build_camp_memory
+    camp_memory = await build_camp_memory(db, tenant_id, str(election_id), max_reports=2, max_content=3)
+    if camp_memory:
+        prompt += f"\n{camp_memory}"
+
+    result = await call_claude(prompt, timeout=120, context="debate_script", tenant_id=tenant_id, db=db)
 
     if result:
         # 선거법 검증

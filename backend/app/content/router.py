@@ -451,7 +451,13 @@ async def generate_content(
         f"한국어로 작성해주세요. 콘텐츠 본문만 출력하세요."
     )
 
-    generated = await call_claude_text(prompt, timeout=90, context="content_generation", tenant_id=user["tenant_id"], db=db)
+    # 캠프 메모리 (이전 보고서/콘텐츠 참조)
+    from app.services.camp_context import build_camp_memory
+    camp_memory = await build_camp_memory(db, user["tenant_id"], str(election_id), max_reports=2, max_content=3)
+    if camp_memory:
+        prompt += f"\n{camp_memory}"
+
+    generated = await call_claude_text(prompt, timeout=120, context="content_generation", tenant_id=user["tenant_id"], db=db)
 
     if not generated:
         return {"error": "AI 생성 실패", "content": None, "ai_generated": False}
