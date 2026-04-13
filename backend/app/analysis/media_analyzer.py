@@ -652,9 +652,12 @@ async def analyze_all_media(db_session, tenant_id: str, election_id: str, limit_
     Returns:
         총 사분면 통계 + 각 매체별 결과
     """
-    news_result = await analyze_unanalyzed_news(db_session, tenant_id, election_id, limit_per_type)
-    yt_result = await analyze_unanalyzed_youtube(db_session, tenant_id, election_id, limit_per_type)
-    cm_result = await analyze_unanalyzed_community(db_session, tenant_id, election_id, limit_per_type)
+    import asyncio as _aio
+    news_result, yt_result, cm_result = await _aio.gather(
+        analyze_unanalyzed_news(db_session, tenant_id, election_id, limit_per_type),
+        analyze_unanalyzed_youtube(db_session, tenant_id, election_id, limit_per_type),
+        analyze_unanalyzed_community(db_session, tenant_id, election_id, limit_per_type),
+    )
 
     total_q = {"strength": 0, "weakness": 0, "opportunity": 0, "threat": 0, "neutral": 0}
     for r in (news_result, yt_result, cm_result):
