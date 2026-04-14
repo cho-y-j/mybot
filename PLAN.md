@@ -84,7 +84,7 @@
 - [x] PDF 차트+비교표 누락 수정 (router.py 3곳 — _collect_pdf_candidates 추가)
 - [x] 07:00 스케줄 실패 원인 분석 (2026-04-14) — 3가지 원인 발견 및 수정
 
-## P3-09. 인프라 안정화 — 진행 중 (2026-04-14)
+## P3-09. 인프라 안정화 — 완료 (2026-04-14)
 - [x] **보안**: PostgreSQL/Redis 포트 localhost 바인딩 (외부 브루트포스 차단)
   - 원인: `0.0.0.0:5440` 노출 → admin 브루트포스 29회 → DB 인증 간헐 실패 → 500 에러
   - 수정: `127.0.0.1:5440`, `127.0.0.1:6380`으로 변경
@@ -93,8 +93,16 @@
 - [x] **안정성**: Claude CLI 토큰 keep-alive (4시간 주기 Celery beat)
 - [x] **안정성**: Claude CLI 실패 시 stderr 로깅 + 1회 재시도
 - [x] **버그**: SQLAlchemy 세션 상태 에러 수정 (rollback 실패 방어)
-- [ ] **배포**: docker-compose 변경사항 서버 반영 (컨테이너 재시작 필요)
-- [ ] **배포 후 확인**: DB 비밀번호 강화 + 13시 스케줄 정상 작동 확인
+- [x] **근본 원인**: Docker DNS 충돌 수정 (`postgres` → `ep_postgres`, `redis` → `ep_redis`)
+  - 같은 네트워크에 ep_postgres + mk_postgres 공존 → DNS 랜덤 반환 → 간헐적 500
+  - 10/10 연결 성공 확인
+- [x] **배포**: docker-compose 변경사항 서버 반영 완료
+
+## P3-10. 코드 버그 수정 — 완료 (2026-04-14)
+- [x] ORM 모델 action_* 필드 누락 수정 (토론 생성 500 에러)
+  - NewsArticle, CommunityPost, YouTubeVideo에 action_type/priority/summary, is_about_our_candidate 추가
+- [x] content/router.py `func` import 누락 수정 (콘텐츠 상황 분석 에러)
+- [ ] 콘텐츠 생성 시 영문 출력 간헐 발생 — CLI 모드 관련 추적 필요
 
 ## P3-08. 온보딩 선거 중복 생성 방지 — 완료 (2026-04-13)
 - [x] apply_setup에서 election_type + region + date로 기존 선거 검색

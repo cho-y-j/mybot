@@ -162,6 +162,7 @@ session.add(YouTubeVideo(..., published_at=pub_at))  # None이면 NULL 저장
   - 호스트 `~/.claude` → 컨테이너 마운트 (**:rw** — 토큰 갱신 필요)
   - Nginx Proxy Manager: `ai.on1.kr` → `ep_frontend:3000`
   - **포트 바인딩 룰**: `ports: "127.0.0.1:PORT:PORT"` 형식 필수 (2026-04-14 보안 사고)
+  - **DB/Redis 호스트명**: `ep_postgres`, `ep_redis` 사용 (서비스명 `postgres`/`redis` 금지 — 같은 네트워크의 mk_postgres와 DNS 충돌, 2026-04-14)
   - Claude CLI 토큰 keep-alive: Celery beat 4시간 주기 (`system.claude_token_keepalive`)
 
 ### 2.2. 수집 → AI 스크리닝 → 분석 파이프라인 (2026-04-13 개정)
