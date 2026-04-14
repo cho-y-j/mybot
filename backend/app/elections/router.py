@@ -34,7 +34,11 @@ async def list_elections(
 ):
     """내 테넌트의 선거 목록 조회 (공유 선거 포함)."""
     from sqlalchemy import or_, text as sql_text
-    tid = user["tenant_id"]
+    tid = user.get("tenant_id")
+
+    # tenant_id 없는 사용자 (superadmin 등) → 빈 목록
+    if not tid:
+        return []
 
     # 자기 tenant 선거 + tenant_elections 매핑된 선거
     shared_ids = (await db.execute(sql_text(
