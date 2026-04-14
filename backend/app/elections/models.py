@@ -158,6 +158,12 @@ class NewsArticle(Base):
     ai_threat_level = Column(String(20), nullable=True)
     ai_analyzed_at = Column(DateTime(timezone=True), nullable=True)
 
+    # 전략 액션
+    action_type = Column(String(20), nullable=True, comment="promote|defend|attack|monitor|ignore")
+    action_priority = Column(String(10), nullable=True, comment="high|medium|low")
+    action_summary = Column(Text, nullable=True)
+    is_about_our_candidate = Column(Boolean, nullable=True)
+
     is_relevant = Column(Boolean, default=True, comment="AI 판별: 관련 글 여부 (동명이인 등 false)")
 
     published_at = Column(DateTime(timezone=True), nullable=True)
@@ -206,6 +212,12 @@ class CommunityPost(Base):
     ai_threat_level = Column(String(20), nullable=True)
     ai_analyzed_at = Column(DateTime(timezone=True), nullable=True)
 
+    # 전략 액션
+    action_type = Column(String(20), nullable=True, comment="promote|defend|attack|monitor|ignore")
+    action_priority = Column(String(10), nullable=True, comment="high|medium|low")
+    action_summary = Column(Text, nullable=True)
+    is_about_our_candidate = Column(Boolean, nullable=True)
+
     is_relevant = Column(Boolean, default=True, comment="AI 판별: 관련 글 여부 (동명이인 등 false)")
 
     published_at = Column(DateTime(timezone=True), nullable=True)
@@ -250,6 +262,12 @@ class YouTubeVideo(Base):
     ai_topics = Column(JSONB, default=list)
     ai_threat_level = Column(String(20), nullable=True)
     ai_analyzed_at = Column(DateTime(timezone=True), nullable=True)
+
+    # 전략 액션
+    action_type = Column(String(20), nullable=True, comment="promote|defend|attack|monitor|ignore")
+    action_priority = Column(String(10), nullable=True, comment="high|medium|low")
+    action_summary = Column(Text, nullable=True)
+    is_about_our_candidate = Column(Boolean, nullable=True)
 
     is_relevant = Column(Boolean, default=True, comment="AI 판별: 관련 글 여부 (동명이인 등 false)")
 
