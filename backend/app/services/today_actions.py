@@ -61,7 +61,7 @@ async def get_today_actions(
                 "detail": " / ".join(t[:40] for t in titles) if titles else "",
                 "action": "해명 콘텐츠 생성",
                 "action_link": "/easy/content?type=defense&topic=" + (titles[0][:60] if titles else "부정 보도 대응"),
-                "secondary": {"label": "자세히 보기", "link": "/dashboard/news?sentiment=negative"},
+                "secondary": {"label": "자세히 보기", "link": "/easy/news?sentiment=negative"},
             })
     except Exception as e:
         logger.warning("today_crisis_error", error=str(e)[:200])
@@ -92,7 +92,7 @@ async def get_today_actions(
                 "detail": (top.ai_summary or top.title or "")[:100],
                 "action": "관련 SNS 포스팅 만들기",
                 "action_link": f"/easy/content?type=sns&topic={(top.title or '')[:60]}",
-                "secondary": {"label": "전체 기회", "link": "/dashboard/analysis?tab=opportunity"},
+                "secondary": {"label": "전체 기회", "link": "/easy/news?tab=opportunity"},
             })
     except Exception as e:
         logger.warning("today_opportunity_error", error=str(e)[:200])

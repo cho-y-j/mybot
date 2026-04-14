@@ -159,15 +159,15 @@ export default function EasyHome() {
       <div>
         <h2 className="text-lg font-bold mb-3">📊 오늘 수집 현황</h2>
         <div className="grid grid-cols-3 gap-3">
-          <Link href="/dashboard/news" className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 text-center hover:border-blue-500 transition">
+          <Link href="/easy/news" className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 text-center hover:border-blue-500 transition">
             <div className="text-2xl font-black text-blue-500">{summary.news_today}</div>
             <div className="text-xs text-[var(--muted)] mt-1">📰 뉴스</div>
           </Link>
-          <Link href="/dashboard/analysis" className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 text-center hover:border-green-500 transition">
+          <Link href="/easy/reports" className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 text-center hover:border-green-500 transition">
             <div className="text-2xl font-black text-green-500">{summary.comm_today}</div>
             <div className="text-xs text-[var(--muted)] mt-1">💬 커뮤니티</div>
           </Link>
-          <Link href="/dashboard/youtube" className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 text-center hover:border-red-500 transition">
+          <Link href="/easy/youtube" className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 text-center hover:border-red-500 transition">
             <div className="text-2xl font-black text-red-500">{summary.yt_today}</div>
             <div className="text-xs text-[var(--muted)] mt-1">📺 유튜브</div>
           </Link>
@@ -193,7 +193,7 @@ export default function EasyHome() {
             <div className="text-3xl mb-2">🎨</div>
             <div className="font-semibold text-sm">카드뉴스</div>
           </Link>
-          <Link href="/dashboard/debate"
+          <Link href="/easy/debate"
             className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 text-center hover:border-blue-500 transition">
             <div className="text-3xl mb-2">🎤</div>
             <div className="font-semibold text-sm">토론 대본</div>
