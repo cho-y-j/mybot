@@ -278,7 +278,7 @@ export default function TenantsPage() {
                     {editElection?.id === e.id ? (
                       <div className="flex gap-2 flex-1">
                         <input className="flex-1 px-2 py-0.5 bg-gray-700 text-white rounded text-xs border border-gray-600"
-                          value={editElection.name} onChange={ev => setEditElection({ ...editElection, name: ev.target.value })} />
+                          value={editElection?.name || ''} onChange={ev => editElection && setEditElection({ ...editElection, name: ev.target.value })} />
                         <button onClick={handleUpdateElectionName} className="text-xs text-green-400">저장</button>
                         <button onClick={() => setEditElection(null)} className="text-xs text-gray-400">취소</button>
                       </div>
