@@ -52,14 +52,13 @@ async def store_embedding(
     preview = (content or "")[:300]
 
     try:
-        # 기존 삭제 후 insert (심플하고 안전)
-        await db.execute(text("""
-            DELETE FROM embeddings WHERE source_type = :stype AND source_id = :sid AND tenant_id = :tid
-        """), {"stype": source_type, "sid": source_id, "tid": tenant_id})
-        await db.execute(text("""
-            INSERT INTO embeddings (tenant_id, election_id, source_type, source_id, title, content_preview, embedding)
-            VALUES (:tid, :eid, :stype, :sid, :title, :preview, :emb::vector)
-        """), {
+        await db.execute(text(
+            "DELETE FROM embeddings WHERE source_type = :stype AND source_id = cast(:sid as uuid) AND tenant_id = cast(:tid as uuid)"
+        ), {"stype": source_type, "sid": source_id, "tid": tenant_id})
+        await db.execute(text(
+            "INSERT INTO embeddings (tenant_id, election_id, source_type, source_id, title, content_preview, embedding)"
+            " VALUES (cast(:tid as uuid), cast(:eid as uuid), :stype, cast(:sid as uuid), :title, :preview, cast(:emb as vector))"
+        ), {
             "tid": tenant_id, "eid": election_id,
             "stype": source_type, "sid": source_id,
             "title": title, "preview": preview, "emb": vec_str,
@@ -96,10 +95,10 @@ async def search_similar(
     try:
         rows = (await db.execute(text(f"""
             SELECT source_type, source_id, title, content_preview,
-                   1 - (embedding <=> :qvec::vector) as similarity
+                   1 - (embedding <=> cast(:qvec as vector)) as similarity
             FROM embeddings
-            WHERE tenant_id = :tid {type_filter}
-            ORDER BY embedding <=> :qvec::vector
+            WHERE tenant_id = cast(:tid as uuid) {type_filter}
+            ORDER BY embedding <=> cast(:qvec as vector)
             LIMIT :lim
         """), {"tid": tenant_id, "qvec": vec_str, "lim": limit})).fetchall()
 
