@@ -847,12 +847,14 @@ async def generate_history_ai_strategy(
     ta = sections.get("turnout_analysis", {})
     pc = sections.get("political_context", {})
 
-    our = (await db.execute(
-        select(Candidate).where(
-            Candidate.election_id == election.id,
-            Candidate.is_our_candidate == True,
-        )
-    )).scalar_one_or_none()
+    # election-shared: tenant_elections 기준으로 우리 후보 찾기
+    from app.common.election_access import get_our_candidate_id
+    _my_id = await get_our_candidate_id(db, tenant_id, election.id)
+    our = None
+    if _my_id:
+        our = (await db.execute(
+            select(Candidate).where(Candidate.id == _my_id)
+        )).scalar_one_or_none()
 
     # 강세/약세 시군 추출
     strong_districts = [c["district"] for c in sg.get("cells", []) if c["strength"] in ("prog_strong", "prog_lean")][:5]
@@ -1341,13 +1343,12 @@ async def _generate_ai_analysis(
     import subprocess
     import json
 
-    # 우리 후보 정보
-    our = (await db.execute(
-        select(Candidate).where(
-            Candidate.election_id == election.id,
-            Candidate.is_our_candidate == True,
-        )
-    )).scalar_one_or_none()
+    # 우리 후보 정보 (deprecated helper — tenant_id 컨텍스트 없음, legacy election.our_candidate_id 사용)
+    our = None
+    if election.our_candidate_id:
+        our = (await db.execute(
+            select(Candidate).where(Candidate.id == election.our_candidate_id)
+        )).scalar_one_or_none()
 
     # AI에게 보낼 팩트시트
     factsheet = f"""

@@ -2,6 +2,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { useElection } from '@/hooks/useElection';
 import { api } from '@/services/api';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface Message {
   id: string;
@@ -235,12 +237,20 @@ export default function ChatPage() {
                     <span className="text-xs font-medium text-[var(--muted)]">AI 어시스턴트</span>
                   </div>
                 )}
-                <div className="text-sm whitespace-pre-wrap leading-relaxed"
-                  dangerouslySetInnerHTML={{
-                    __html: msg.content
-                      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                      .replace(/\n/g, '<br/>')
-                  }} />
+                <div className="text-sm leading-relaxed prose prose-sm dark:prose-invert max-w-none
+                  prose-headings:mt-3 prose-headings:mb-2 prose-p:my-2
+                  prose-table:my-3 prose-table:border prose-table:border-collapse prose-table:w-full
+                  prose-th:bg-[var(--card-bg)] prose-th:border prose-th:border-[var(--card-border)] prose-th:p-2 prose-th:font-semibold prose-th:text-left
+                  prose-td:border prose-td:border-[var(--card-border)] prose-td:p-2
+                  prose-ul:my-2 prose-ol:my-2 prose-li:my-0.5
+                  prose-code:bg-[var(--card-bg)] prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-xs
+                  prose-strong:text-current">
+                  {msg.role === 'user' ? (
+                    <span className="whitespace-pre-wrap">{msg.content}</span>
+                  ) : (
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                  )}
+                </div>
                 {msg.context && msg.context.length > 0 && (
                   <div className="mt-2 pt-2 border-t border-[var(--card-border)]">
                     <p className="text-[10px] text-[var(--muted)] mb-1">참고 데이터:</p>

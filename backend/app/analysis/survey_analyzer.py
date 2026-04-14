@@ -44,13 +44,14 @@ async def analyze_survey_deep(
     if not election:
         return {"error": "선거 정보 없음"}
 
-    # 우리 후보 (election 객체의 id 사용)
-    our = (await db.execute(
-        select(Candidate).where(
-            Candidate.election_id == election.id,
-            Candidate.is_our_candidate == True,
-        )
-    )).scalar_one_or_none()
+    # 우리 후보 (election-shared: tenant_elections 기준)
+    from app.common.election_access import get_our_candidate_id
+    _my_id = await get_our_candidate_id(db, tenant_id, election.id)
+    our = None
+    if _my_id:
+        our = (await db.execute(
+            select(Candidate).where(Candidate.id == _my_id)
+        )).scalar_one_or_none()
 
     # 여론조사 데이터 조회 (같은 테넌트 또는 같은 지역 — 공유)
     from sqlalchemy import or_
