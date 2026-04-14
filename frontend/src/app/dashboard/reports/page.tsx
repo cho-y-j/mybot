@@ -195,8 +195,8 @@ export default function ReportsPage() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* 보고서 목록 */}
-        <div className="space-y-2 max-h-[700px] overflow-y-auto">
+        {/* 보고서 목록 — 모바일에서 보고서 선택 시 숨김 */}
+        <div className={`space-y-2 max-h-[700px] overflow-y-auto ${selectedReport ? 'hidden lg:block' : ''}`}>
           {[...reports].sort((a, b) => (b.date || '').localeCompare(a.date || '')).map((r) => (
             <button key={r.id} onClick={() => viewReport(r.id)}
               className={`w-full text-left p-3 rounded-lg border transition ${
@@ -241,6 +241,11 @@ export default function ReportsPage() {
               {/* 헤더 */}
               <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                 <div>
+                  {/* 모바일 뒤로가기 */}
+                  <button onClick={() => setSelectedReport(null)}
+                    className="lg:hidden text-sm text-blue-500 mb-2 flex items-center gap-1">
+                    ← 목록으로
+                  </button>
                   <h3 className="font-semibold">{selectedReport.title}</h3>
                   <div className="flex items-center gap-2 mt-1">
                     <span className={`text-[10px] px-1.5 py-0.5 rounded text-white ${typeColors[selectedReport.type || selectedReport.report_type] || 'bg-gray-500'}`}>
@@ -306,9 +311,9 @@ export default function ReportsPage() {
                   </div>
                 </div>
               ) : showPdf && pdfBlobUrl ? (
-                <iframe src={pdfBlobUrl} className="w-full rounded-lg border" style={{ height: '700px' }} />
+                <iframe src={pdfBlobUrl} className="w-full rounded-lg border h-[400px] lg:h-[700px]" />
               ) : (
-                <pre className="text-sm whitespace-pre-wrap font-sans bg-[var(--muted-bg)] p-4 rounded-lg max-h-[600px] overflow-y-auto leading-relaxed">
+                <pre className="text-sm whitespace-pre-wrap font-sans bg-[var(--muted-bg)] p-4 rounded-lg max-h-[calc(100vh-200px)] lg:max-h-[600px] overflow-y-auto leading-relaxed">
                   {selectedReport.content || selectedReport.content_text || '(내용 없음)'}
                 </pre>
               )}
