@@ -255,7 +255,68 @@
   - 신용한: tenant_elections 연결 추가
   - 김성근/윤건영: 후보 5명 등록 + homonym_filters 복사
 
-## P5-99. 다음 할 일 (미착수)
+## P5-07. Candidate 테이블 election 단위 통합 — 완료 (2026-04-15)
+- [x] 기존 문제: 캠프마다 candidate 레코드 복제 → candidate_id 매칭 실패 (모든 캠프 통합분석 0건)
+- [x] 신규: UNIQUE(election_id, name) — 같은 선거의 같은 이름 후보 1개 레코드
+- [x] FK 테이블 10개 candidate_id 재배정 (news/community/youtube/strategic_views/sentiment_daily/ad_campaigns/keywords/tenant_elections/elections)
+- [x] 15명 → 10명 (3개 선거, 중복 제거)
+- [x] "내 후보" 판정: `tenant_elections.our_candidate_id` 기준
+- [x] 신규 헬퍼: common/election_access.py (list_election_candidates, get_or_create_candidate)
+- [x] 20+ 파일 리팩터 (onboarding, router, analysis_service, chat/context_builder 등)
+
+## P5-08. 챗 마크다운 표 렌더링 — 완료 (2026-04-15)
+- [x] react-markdown + remark-gfm 설치 (GitHub Flavored Markdown)
+- [x] @tailwindcss/typography 플러그인
+- [x] 시스템 프롬프트 강화: "비교/수치 데이터는 반드시 표로"
+- [x] ⚠️💡 이모지로 위험/기회 강조
+
+## P5-09. 챗 과거 선거 NEC 데이터 자동 포함 — 완료 (2026-04-15)
+- [x] history/strategy/competitor/candidate/일반 질문 시 모두 포함
+- [x] _build_history_context 강화: 역대 당선자 상위 5명 + 정당 우세도 + 투표율 평균 + 과거 공약
+- [x] 챗 예시 질문 4개 추가 (역대 선거, 공약 차별화, 선거법 검토)
+
+---
+
+# Phase 6 — 최고 수준 AI 품질 (2026-04-15 시작)
+
+**목표**: 사실에 근거한 출처 각주 기반 AI — 업계 최상위 수준
+
+## P6-01. 네이버 실시간 검색 보강 (첫 단계)
+- [ ] `services/realtime_search.py` 신규:
+  - 네이버 뉴스 API로 최근 24시간 기사 실시간 조회
+  - AI 컨텍스트에 최신 5~10건 포함 (수집 안 된 최신 이슈도 커버)
+- [ ] 챗 router에서 question 분석 → 최신성 필요 시 호출
+  - 트리거: "오늘", "방금", "최근", "속보", 또는 질문에 시사 키워드
+- [ ] 응답 시 `source` 메타 포함 ({url, title, source, published_at})
+- **검수**: "오늘 김진균 후보 뉴스?" → 네이버 실시간 결과 포함 확인
+
+## P6-02. 출처 각주 시스템
+- [ ] AI 프롬프트에 "주장마다 [N] 각주를 달고 맨 아래 참고문헌 목록"
+- [ ] context_builder에서 각 데이터 조각에 [1], [2]... ID 부여
+- [ ] 챗 페이지 프론트엔드: 각주 클릭 시 소스 상세 팝업
+- **검수**: AI 답변에 [1][2] 각주 + 참고문헌 자동 출력
+
+## P6-03. Claude CLI 웹서치 허용 + 자기 검증
+- [ ] `--permission-mode default` + `--allowedTools WebFetch,WebSearch` 실험
+- [ ] Max 계정 웹서치 가능 여부 확인
+- [ ] 자기 검증 루프: 답변 후 "수집 데이터에 없는 주장이 있나?" 재검토
+- **검수**: 할루시네이션 발생률 측정 (전/후 비교)
+
+## P6-04. 신뢰도 라벨 + 반대 근거
+- [ ] 각 주장에 확인됨/추정/불확실 라벨
+- [ ] 편향 방지: "하지만 다른 데이터는..." 반대 근거 제시
+- [ ] 프롬프트에 "편향 체크" 단계 추가
+- **검수**: 답변의 확실성 수준이 표시되는지
+
+## P6-05. 모델 Tier 동적 선택
+- [ ] 간단 팩트 질문 → Haiku (빠름, 저렴)
+- [ ] 복잡 분석/전략 → Opus (품질)
+- [ ] 질문 의도 분류 AI → 적절한 모델 선택
+- **검수**: 응답 시간 + 품질 벤치마크
+
+---
+
+# Phase 5 미완료 (다음)
 - [ ] 이메일 알림 (SMTP 키 발급 필요)
 - [ ] 랜딩 페이지 (ai.on1.kr 접속 시 소개 페이지)
 - [ ] 결제/요금제 연동 (Toss)
