@@ -154,12 +154,15 @@ async def call_claude(
     tenant_id: str | None = None,
     db=None,
     model_tier: str | None = None,
+    web_search: bool = False,
 ) -> dict | None:
     """
     AI 호출 — 자동 전환:
     1순위: 고객 Anthropic API 키 (있으면)
     2순위: 배정된 CLI 계정 (config_dir)
     3순위: 시스템 기본 CLI
+
+    web_search=True 시 CLI에 WebSearch/WebFetch 도구 허용 (사실 검증용).
     """
     model = get_model_for_context(context, model_tier)
     tier_label = model_tier or get_tier_for_context(context)
@@ -186,12 +189,19 @@ async def call_claude(
         import os
         env = {**os.environ, "CLAUDE_CONFIG_DIR": config_dir}
 
+    # 웹서치 사용 시 플래그 구성
+    extra_args = []
+    if web_search:
+        extra_args = ["--permission-mode", "default", "--allowedTools", "WebSearch,WebFetch"]
+    else:
+        extra_args = ["--permission-mode", "plan"]
+
     for attempt in range(2):
         try:
             proc = await asyncio.create_subprocess_exec(
                 claude_path, "-p", prompt,
                 "--model", model,
-                "--permission-mode", "plan",
+                *extra_args,
                 "--no-session-persistence",
                 "--system-prompt", CLI_SYSTEM_PROMPT,
                 stdout=asyncio.subprocess.PIPE,
@@ -204,7 +214,7 @@ async def call_claude(
                 text = stdout.decode("utf-8").strip()
                 if len(text) > 10:
                     src = "assigned_cli" if config_dir else "system_cli"
-                    logger.info("claude_json_ok", context=context, model=model, tier=tier_label, source=src, length=len(text))
+                    logger.info("claude_json_ok", context=context, model=model, tier=tier_label, source=src, length=len(text), web_search=web_search)
                     return _extract_json(text)
 
             stderr_text = stderr.decode("utf-8", errors="ignore") if stderr else ""
@@ -256,9 +266,12 @@ async def call_claude_text(
     tenant_id: str | None = None,
     db=None,
     model_tier: str | None = None,
+    web_search: bool = False,
 ) -> str | None:
     """
     AI → 텍스트 반환. 자동 전환 (API 키 → 배정 CLI → 시스템 CLI).
+
+    web_search=True 시 CLI WebSearch/WebFetch 허용 (실시간 사실 검증).
     """
     model = get_model_for_context(context, model_tier)
     tier_label = model_tier or get_tier_for_context(context)
@@ -302,12 +315,18 @@ async def call_claude_text(
         import os
         env = {**os.environ, "CLAUDE_CONFIG_DIR": config_dir}
 
+    extra_args = []
+    if web_search:
+        extra_args = ["--permission-mode", "default", "--allowedTools", "WebSearch,WebFetch"]
+    else:
+        extra_args = ["--permission-mode", "plan"]
+
     for attempt in range(2):
         try:
             proc = await asyncio.create_subprocess_exec(
                 claude_path, "-p", prompt,
                 "--model", model,
-                "--permission-mode", "plan",
+                *extra_args,
                 "--no-session-persistence",
                 "--system-prompt", CLI_SYSTEM_PROMPT,
                 stdout=asyncio.subprocess.PIPE,
@@ -320,7 +339,7 @@ async def call_claude_text(
                 result = stdout.decode("utf-8").strip()
                 if len(result) > 50:
                     src = "assigned_cli" if config_dir else "system_cli"
-                    logger.info("claude_text_ok", context=context, model=model, tier=tier_label, source=src, length=len(result))
+                    logger.info("claude_text_ok", context=context, model=model, tier=tier_label, source=src, length=len(result), web_search=web_search)
                     return result
 
             stderr_text = stderr.decode("utf-8", errors="ignore") if stderr else ""

@@ -195,22 +195,41 @@ async def _get_ai_response(
     2순위: 배정된 Claude CLI 계정 (CLAUDE_CONFIG_DIR)
     3순위: 시스템 기본 CLI
     실패 시: 데이터 기반 자동 응답 (항상 동작)
+
+    P6-03: 최신성/사실검증 질문 감지 시 WebSearch 자동 활성화 + 자기 검증 단계 추가.
     """
     from app.services.ai_service import call_claude_text
+    from app.services.realtime_search import needs_realtime
 
-    # System prompt + context + question 하나로 합침
-    full_prompt = f"{SYSTEM_PROMPT}\n\n[수집된 선거 데이터]\n{context}\n\n[질문]\n{question}"
+    # 웹서치 트리거: "오늘/최근/속보" 등 최신성 키워드가 있거나 "사실/확인/정말" 같은 검증 요구
+    verification_keywords = ["사실", "정확", "확인", "정말", "팩트", "진실", "검증"]
+    needs_web = needs_realtime(question) or any(k in question for k in verification_keywords)
+
+    # 자기 검증 프롬프트
+    verification_prompt = ""
+    if needs_web:
+        verification_prompt = (
+            "\n\n[사실 검증 단계 필수]\n"
+            "답변 전 다음을 수행하세요:\n"
+            "1. 제공된 데이터에 없는 사실은 WebSearch로 검증한다.\n"
+            "2. 검증된 사실만 답변에 포함한다.\n"
+            "3. 데이터에 없고 웹검색으로도 확인 못 하면 '확인되지 않은 정보'라고 명시한다.\n"
+            "4. 출처에 웹 검색 결과는 [web] 태그로 URL과 함께 표기.\n"
+        )
+
+    full_prompt = f"{SYSTEM_PROMPT}{verification_prompt}\n\n[수집된 선거 데이터]\n{context}\n\n[질문]\n{question}"
 
     chat_context_name = f"chat_{model_tier}" if model_tier else "chat"
 
     try:
         result = await call_claude_text(
             full_prompt,
-            timeout=180,
+            timeout=300 if needs_web else 180,  # 웹서치는 더 오래 걸림
             context=chat_context_name,
             tenant_id=tenant_id,
             db=db,
             model_tier=model_tier,
+            web_search=needs_web,
         )
         if result and len(result) > 30:
             return result
