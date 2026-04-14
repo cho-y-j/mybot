@@ -188,55 +188,53 @@ async def _get_ai_response(
     model_tier: str | None = None,
 ) -> str:
     """
-    AI 응답 생성 — ai_service.call_claude_text 단일 진입점 사용.
+    AI 응답 생성 — ai_service.call_claude_text 단일 진입점.
 
-    ai_service가 내부적으로 자동 전환:
-    1순위: 고객 Anthropic API 키 (tenants.anthropic_api_key)
-    2순위: 배정된 Claude CLI 계정 (CLAUDE_CONFIG_DIR)
-    3순위: 시스템 기본 CLI
-    실패 시: 데이터 기반 자동 응답 (항상 동작)
-
-    P6-03: 최신성/사실검증 질문 감지 시 WebSearch 자동 활성화 + 자기 검증 단계 추가.
+    핵심 원칙 (P6-03):
+    - 내부 DB 데이터가 우선
+    - 내부에 없거나 부족한 정보 → WebSearch로 사실 확인 후 답변
+    - 항상 WebSearch 허용 (AI가 판단해서 필요시 호출)
     """
     from app.services.ai_service import call_claude_text
-    from app.services.realtime_search import needs_realtime
 
-    # 웹서치 트리거: "오늘/최근/속보" 등 최신성 키워드가 있거나 "사실/확인/정말" 같은 검증 요구
-    verification_keywords = ["사실", "정확", "확인", "정말", "팩트", "진실", "검증"]
-    needs_web = needs_realtime(question) or any(k in question for k in verification_keywords)
+    # 데이터 충분성 휴리스틱 (RAG/뉴스/보고서 블록이 얼마나 있나)
+    data_blocks = context.count("===")
+    data_chars = len(context)
 
-    # 자기 검증 프롬프트
-    verification_prompt = ""
-    if needs_web:
-        verification_prompt = (
-            "\n\n[사실 검증 단계 필수]\n"
-            "답변 전 다음을 수행하세요:\n"
-            "1. 제공된 데이터에 없는 사실은 WebSearch로 검증한다.\n"
-            "2. 검증된 사실만 답변에 포함한다.\n"
-            "3. 데이터에 없고 웹검색으로도 확인 못 하면 '확인되지 않은 정보'라고 명시한다.\n"
-            "4. 출처에 웹 검색 결과는 [web] 태그로 URL과 함께 표기.\n"
-        )
+    verification_prompt = (
+        "\n\n[사실 기반 답변 원칙 — 반드시 준수]\n"
+        "1. 위 '수집된 선거 데이터'에 있는 정보가 우선이다. 있으면 그것으로 답한다.\n"
+        "2. 데이터에 없거나 부족한 질문이면 WebSearch로 검색하여 사실을 확인한 뒤 답한다.\n"
+        "3. 추측/상상 절대 금지. 검증된 사실만 답변에 포함한다.\n"
+        "4. 웹검색으로도 확인 못 하면 '확인되지 않은 정보'라고 명시한다.\n"
+        "5. 답변에 출처 표기:\n"
+        "   - 내부 데이터 인용 시: [ref-xxx] (위 컨텍스트에 이미 ID 있음)\n"
+        "   - 웹 검색 결과 인용 시: [web](URL) 형식으로 실제 URL 포함\n"
+        "6. 수치나 인물 정보는 반드시 출처와 함께 제시한다.\n"
+    )
 
     full_prompt = f"{SYSTEM_PROMPT}{verification_prompt}\n\n[수집된 선거 데이터]\n{context}\n\n[질문]\n{question}"
 
     chat_context_name = f"chat_{model_tier}" if model_tier else "chat"
 
     try:
+        # 항상 WebSearch 허용 — AI가 데이터 부족 판단 시 직접 검색
         result = await call_claude_text(
             full_prompt,
-            timeout=300 if needs_web else 180,  # 웹서치는 더 오래 걸림
+            timeout=300,
             context=chat_context_name,
             tenant_id=tenant_id,
             db=db,
             model_tier=model_tier,
-            web_search=needs_web,
+            web_search=True,
         )
         if result and len(result) > 30:
+            logger.info("chat_ai_done", data_blocks=data_blocks, data_chars=data_chars)
             return result
     except Exception as e:
         logger.warning("chat_ai_failed", error=str(e)[:200])
 
-    # 최종 폴백: 데이터 기반 자동 응답
+    # 폴백: 데이터 기반 자동 응답
     return _generate_data_response(question, context)
 
 
