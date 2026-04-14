@@ -121,7 +121,7 @@ async def chat_send(
 
     # 캠프 메모리 (이전 보고서/콘텐츠 참조)
     from app.services.camp_context import build_camp_memory
-    camp_memory = await build_camp_memory(db, tid, election_id, max_reports=2, max_content=3)
+    camp_memory = await build_camp_memory(db, tid, election_id, max_reports=5, max_briefings=6, max_content=3)
 
     # 이전 대화 이력 + 캠프 메모리를 컨텍스트에 추가
     if chat_history:

@@ -158,7 +158,7 @@ async def generate_ai_report(
     # 2.5. 캠프 메모리 (이전 생성 콘텐츠 참조)
     try:
         from app.services.camp_context import build_camp_memory
-        camp_mem = await build_camp_memory(db, tenant_id, election_id, max_reports=0, max_content=3)
+        camp_mem = await build_camp_memory(db, tenant_id, election_id, max_reports=3, max_briefings=4, max_content=3)
         if camp_mem:
             factsheet += f"\n{camp_mem}"
     except Exception:

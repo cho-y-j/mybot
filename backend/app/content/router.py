@@ -451,7 +451,7 @@ async def generate_content(
 
     # 캠프 메모리 (이전 보고서/콘텐츠 참조)
     from app.services.camp_context import build_camp_memory
-    camp_memory = await build_camp_memory(db, user["tenant_id"], str(election_id), max_reports=2, max_content=3)
+    camp_memory = await build_camp_memory(db, user["tenant_id"], str(election_id), max_reports=3, max_briefings=4, max_content=3)
     if camp_memory:
         prompt += f"\n{camp_memory}"
 
