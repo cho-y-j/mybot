@@ -334,26 +334,39 @@ async def get_media_overview(
     if cached:
         return cached
 
-    all_tids = await get_election_tenant_ids(db, election_id)
     our_cand_id = await get_our_candidate_id(db, tenant_id, election_id)
     since = date.today() - timedelta(days=days)
     yesterday = date.today() - timedelta(days=1)
 
+    # 현재 캠프 관점의 후보만 (우리 후보 + 내가 입력한 경쟁 후보)
     candidates_q = (await db.execute(
         select(Candidate).where(
-            Candidate.election_id == election_id, Candidate.tenant_id.in_(all_tids), Candidate.enabled == True
+            Candidate.election_id == election_id,
+            Candidate.tenant_id == tenant_id,
+            Candidate.enabled == True
         ).order_by(Candidate.priority)
     )).scalars().all()
 
+    # 같은 선거에서 name이 같은 모든 candidate.id (election-shared 매칭용)
+    name_to_cids_q = (await db.execute(
+        select(Candidate.name, Candidate.id).where(Candidate.election_id == election_id)
+    )).all()
+    name_to_cids: dict[str, list] = {}
+    for name, cid in name_to_cids_q:
+        name_to_cids.setdefault(name, []).append(cid)
+
     result = []
     for c in sorted(candidates_q, key=lambda x: (0 if x.is_our_candidate else 1, x.priority)):
+        # 같은 name의 모든 candidate_id
+        cids = name_to_cids.get(c.name, [c.id])
+
         # 뉴스
         news_row = (await db.execute(
             select(func.count(NewsArticle.id),
                    func.sum(func.cast(NewsArticle.sentiment == "positive", Integer)),
                    func.sum(func.cast(NewsArticle.sentiment == "negative", Integer)),
                    ).where(
-                NewsArticle.candidate_id == c.id,
+                NewsArticle.candidate_id.in_(cids),
                 func.date(NewsArticle.collected_at) >= since,
                 NewsArticle.is_relevant == True,
             )
@@ -364,7 +377,7 @@ async def get_media_overview(
 
         news_yesterday = (await db.execute(
             select(func.count(NewsArticle.id)).where(
-                NewsArticle.candidate_id == c.id,
+                NewsArticle.candidate_id.in_(cids),
                 func.date(NewsArticle.collected_at) == yesterday,
                 NewsArticle.is_relevant == True,
             )
@@ -377,7 +390,7 @@ async def get_media_overview(
                    func.sum(YouTubeVideo.likes),
                    func.sum(YouTubeVideo.comments_count),
                    ).where(
-                YouTubeVideo.candidate_id == c.id,
+                YouTubeVideo.candidate_id.in_(cids),
                 func.date(YouTubeVideo.collected_at) >= since,
                 YouTubeVideo.is_relevant == True,
             )
@@ -393,7 +406,7 @@ async def get_media_overview(
                    func.sum(func.cast(CommunityPost.sentiment == "positive", Integer)),
                    func.sum(func.cast(CommunityPost.sentiment == "negative", Integer)),
                    ).where(
-                CommunityPost.candidate_id == c.id,
+                CommunityPost.candidate_id.in_(cids),
                 func.date(CommunityPost.collected_at) >= since,
                 CommunityPost.is_relevant == True,
             )
