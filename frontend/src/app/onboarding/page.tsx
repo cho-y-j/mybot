@@ -59,14 +59,16 @@ export default function OnboardingPage() {
   const selectedRegion = regions.find(r => r.sido === form.sido);
   const districts = selectedRegion?.districts || [];
 
-  // 선거명 자동 생성
+  // 선거명 자동 생성 — 기초단체장은 시군구 포함
   useEffect(() => {
     if (form.sido && form.election_type) {
       const short = regions.find(r => r.sido === form.sido)?.short || '';
       const typeLabel = electionTypes.find(t => t.value === form.election_type)?.label || '';
-      setForm(f => ({ ...f, election_name: `2026 ${short} ${typeLabel} 선거` }));
+      const sidoLevel = ['superintendent', 'governor'].includes(form.election_type);
+      const district = !sidoLevel && form.sigungu ? ` ${form.sigungu}` : '';
+      setForm(f => ({ ...f, election_name: `2026 ${short}${district} ${typeLabel} 선거` }));
     }
-  }, [form.sido, form.election_type]);
+  }, [form.sido, form.sigungu, form.election_type]);
 
   const handlePreview = async () => {
     setError('');
