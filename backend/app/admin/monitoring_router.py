@@ -1,7 +1,7 @@
 """Admin — 시스템 헬스 + 데이터 통계 + 스케줄 제어."""
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -248,4 +248,145 @@ async def schedule_control_all(
     return {
         "message": f"전체 스케줄 {'재개' if enabled else '정지'}",
         "affected": result.rowcount,
+    }
+
+
+# ──── 접속 통계 ────
+
+@router.get("/access-stats")
+async def access_stats(user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    """최근 14일 일별 로그인 횟수."""
+    require_superadmin(user)
+    rows = (await db.execute(text("""
+        SELECT DATE(created_at) AS date, COUNT(*) AS logins
+        FROM audit_logs
+        WHERE action = 'login'
+          AND created_at >= NOW() - INTERVAL '14 days'
+        GROUP BY DATE(created_at)
+        ORDER BY date DESC
+    """))).fetchall()
+    return {
+        "daily": [{"date": r.date.isoformat(), "logins": r.logins} for r in rows],
+    }
+
+
+# ──── AI / 스케줄 실행 통계 ────
+
+@router.get("/ai-usage")
+async def ai_usage(user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    """최근 7일 테넌트별 스케줄 실행 통계."""
+    require_superadmin(user)
+    rows = (await db.execute(text("""
+        SELECT t.name AS tenant_name,
+               COUNT(*) AS runs,
+               COUNT(*) FILTER (WHERE sr.status = 'success') AS success,
+               COUNT(*) FILTER (WHERE sr.status IN ('failed', 'error')) AS failed
+        FROM schedule_runs sr
+        JOIN tenants t ON t.id = sr.tenant_id
+        WHERE sr.started_at >= NOW() - INTERVAL '7 days'
+        GROUP BY t.name
+        ORDER BY runs DESC
+    """))).fetchall()
+
+    total = sum(r.runs for r in rows)
+    return {
+        "by_tenant": [
+            {"tenant_name": r.tenant_name, "runs": r.runs, "success": r.success, "failed": r.failed}
+            for r in rows
+        ],
+        "total_runs_7d": total,
+    }
+
+
+# ──── 에러 로그 ────
+
+@router.get("/error-logs")
+async def error_logs(
+    user: CurrentUser, db: AsyncSession = Depends(get_db),
+    limit: int = 20,
+):
+    """최근 실패/에러 스케줄 실행 목록."""
+    require_superadmin(user)
+    rows = (await db.execute(
+        text("""
+            SELECT t.name AS tenant_name,
+                   sc.schedule_type AS task_type,
+                   sr.error_message AS error,
+                   sr.started_at AS created_at
+            FROM schedule_runs sr
+            JOIN tenants t ON t.id = sr.tenant_id
+            LEFT JOIN schedule_configs sc ON sc.id = sr.schedule_id
+            WHERE sr.status IN ('failed', 'error')
+            ORDER BY sr.started_at DESC
+            LIMIT :lim
+        """),
+        {"lim": limit},
+    )).fetchall()
+    return [
+        {
+            "tenant_name": r.tenant_name,
+            "task_type": r.task_type,
+            "error": r.error,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
+
+
+# ──── 선거 이름 수정 ────
+
+@router.put("/elections/{election_id}")
+async def update_election(
+    election_id: UUID,
+    body: dict,
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """선거 이름 수정 (관리자)."""
+    require_superadmin(user)
+
+    new_name = body.get("name")
+    if not new_name or not new_name.strip():
+        raise HTTPException(status_code=400, detail="name은 필수입니다")
+
+    result = await db.execute(
+        text("UPDATE elections SET name = :name WHERE id = :eid"),
+        {"name": new_name.strip(), "eid": str(election_id)},
+    )
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="선거를 찾을 수 없습니다")
+
+    await db.commit()
+    return {"message": "선거 이름 수정 완료", "election_id": str(election_id), "name": new_name.strip()}
+
+
+# ──── 수동 수집 트리거 ────
+
+@router.post("/trigger-collection/{tenant_id}")
+async def trigger_collection(
+    tenant_id: UUID, user: CurrentUser, db: AsyncSession = Depends(get_db),
+):
+    """테넌트 수동 수집 트리거."""
+    require_superadmin(user)
+
+    schedule = (await db.execute(
+        select(ScheduleConfig).where(
+            ScheduleConfig.tenant_id == tenant_id,
+            ScheduleConfig.enabled == True,
+        ).limit(1)
+    )).scalar_one_or_none()
+
+    if not schedule:
+        raise HTTPException(status_code=404, detail="활성화된 스케줄이 없습니다")
+
+    election_id = str(schedule.election_id)
+
+    from app.collectors.tasks import full_collection_with_briefing
+    task = full_collection_with_briefing.delay(str(tenant_id), election_id)
+
+    return {
+        "message": "수집 트리거 완료",
+        "task_id": task.id,
+        "tenant_id": str(tenant_id),
+        "election_id": election_id,
     }
