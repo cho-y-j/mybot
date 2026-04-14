@@ -32,6 +32,7 @@ INTENT_KEYWORDS = {
     "report": ["보고서", "리포트", "브리핑", "지난", "어제", "이전", "저번"],
     "history": ["과거", "역대", "지난 선거", "2022", "2018", "2014", "당선", "투표율", "역사"],
     "law": ["선거법", "공직선거법", "법", "위반", "규정", "합법", "불법", "위법", "선관위", "벌금", "처벌", "허용", "금지", "기부행위", "비방"],
+    "profile": ["학력", "경력", "재산", "병역", "전과", "납세", "세금", "재력", "나이", "생년월일", "출신", "주소", "자녀", "배우자", "가족", "이력", "프로필"],
 }
 
 
@@ -153,6 +154,12 @@ async def build_chat_context(
     if "law" in intents:
         from app.content.compliance import ComplianceChecker
         sections.append(f"=== 공직선거법 주요 조항 ===\n{ComplianceChecker.get_law_text()}")
+
+    # 후보자 공식 프로필 (학력/경력/재산/병역/전과) — 선관위 info.nec.go.kr 기반
+    if "profile" in intents or "candidate" in intents:
+        profile_section = await _build_profile_context(db, election, candidates, question)
+        if profile_section:
+            sections.append(profile_section)
 
     # 과거 선거 (역대 데이터) — 전략/경쟁자 질문에도 자동 포함
     if "history" in intents or "strategy" in intents or "competitor" in intents or "candidate" in intents or not intents:
@@ -798,6 +805,63 @@ async def _build_report_history_context(db, tenant_id, election_id) -> str:
         lines.append(f"  {summary}")
 
     lines.append("\n위 보고서의 이전 전략 추천이 현재 데이터에 어떤 영향을 미쳤는지 참고하세요.")
+
+    return "\n".join(lines)
+
+
+async def _build_profile_context(db, election, candidates, question: str) -> str:
+    """후보자 공식 프로필 — DB에 저장된 info.nec.go.kr 정보.
+
+    질문에 언급된 후보 위주로 프로필을 제공.
+    DB에 없으면 AI가 WebSearch로 info.nec.go.kr 검색하도록 지시.
+    """
+    if not candidates:
+        return ""
+
+    from app.elections.models import CandidateProfile
+    from sqlalchemy import select
+
+    # 질문에 후보 이름이 있으면 해당 후보 우선, 없으면 전체
+    mentioned = [c for c in candidates if c.name in question]
+    targets = mentioned if mentioned else candidates[:5]
+
+    lines = ["=== 후보자 공식 프로필 (중앙선관위 info.nec.go.kr 기준) ==="]
+
+    for c in targets:
+        profile = (await db.execute(
+            select(CandidateProfile).where(CandidateProfile.candidate_id == c.id)
+        )).scalar_one_or_none()
+
+        lines.append(f"\n▶ {c.name} ({c.party or '무소속'})")
+
+        if profile:
+            if profile.birthdate:
+                lines.append(f"  생년월일: {profile.birthdate.strftime('%Y-%m-%d')}")
+            if profile.gender:
+                lines.append(f"  성별: {profile.gender}")
+            if profile.education:
+                lines.append(f"  학력: {profile.education}")
+            if profile.career:
+                lines.append(f"  경력: {profile.career[:500]}")
+            if profile.assets:
+                lines.append(f"  재산신고: {profile.assets}")
+            if profile.military:
+                lines.append(f"  병역: {profile.military}")
+            if profile.crimes:
+                lines.append(f"  전과: {profile.crimes}")
+            if profile.taxes:
+                lines.append(f"  납세: {profile.taxes}")
+            if profile.pledges_nec:
+                pl = profile.pledges_nec if isinstance(profile.pledges_nec, list) else []
+                if pl:
+                    lines.append(f"  공약 (선관위 등록): {', '.join(str(x)[:80] for x in pl[:5])}")
+            if profile.source_url:
+                lines.append(f"  출처: {profile.source_url}")
+        else:
+            # DB에 없으면 AI에게 WebSearch 지시
+            sgg = f" {election.region_sigungu}" if election and election.region_sigungu else ""
+            lines.append(f"  ※ DB 미저장. WebSearch 키워드 권장: \"{c.name} {election.region_sido or ''}{sgg} {election.election_type or ''} 후보\" 또는")
+            lines.append(f"     'info.nec.go.kr/main/showDocument.xhtml' 사이트에서 {c.name} 후보 학력/경력/재산/병역/전과 확인 필요")
 
     return "\n".join(lines)
 

@@ -104,6 +104,31 @@ class Candidate(Base):
     )
 
 
+class CandidateProfile(Base):
+    """후보자 공식 프로필 — 선관위 info.nec.go.kr 공개 정보."""
+    __tablename__ = "candidate_profiles"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    candidate_id = Column(UUID(as_uuid=True), ForeignKey("candidates.id", ondelete="CASCADE"), nullable=False, unique=True)
+
+    education = Column(Text, nullable=True, comment="학력")
+    career = Column(Text, nullable=True, comment="주요 경력")
+    assets = Column(JSONB, nullable=True, comment="재산 신고 {본인/배우자/부모/자녀}")
+    military = Column(Text, nullable=True, comment="병역 (면제/복무/미필)")
+    taxes = Column(JSONB, nullable=True, comment="최근 5년 납세 내역")
+    crimes = Column(Text, nullable=True, comment="전과 기록")
+    pledges_nec = Column(JSONB, nullable=True, comment="선관위 등록 공약")
+    address = Column(Text, nullable=True)
+    birthdate = Column(DateTime(timezone=True), nullable=True)
+    gender = Column(String(10), nullable=True)
+
+    source = Column(String(100), default="info.nec.go.kr")
+    source_url = Column(Text, nullable=True)
+    last_fetched_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class Keyword(Base):
     """모니터링 키워드."""
     __tablename__ = "keywords"
