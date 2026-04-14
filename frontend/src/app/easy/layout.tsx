@@ -103,6 +103,17 @@ export default function EasyLayout({ children }: { children: React.ReactNode }) 
 
       {/* 메인 콘텐츠 */}
       <main className="flex-1 overflow-auto">
+        {/* 상단 모드 토글 헤더 */}
+        <div className="h-12 border-b border-[var(--card-border)] bg-[var(--card-bg)] flex items-center justify-between px-6 sticky top-0 z-10">
+          <div className="text-sm font-semibold text-blue-500 flex items-center gap-2">
+            <span>😊 쉬운 모드</span>
+            <span className="text-[10px] text-[var(--muted)]">비전문가용 간편 화면</span>
+          </div>
+          <button onClick={switchToExpert}
+            className="text-xs px-3 py-1.5 bg-gray-700/30 hover:bg-gray-700/50 text-[var(--foreground)] rounded-lg transition font-medium">
+            🔬 전문가 모드로 전환
+          </button>
+        </div>
         <div className="max-w-5xl mx-auto p-6">
           {children}
         </div>
