@@ -194,14 +194,74 @@
 
 ---
 
-# Phase 5 — 다음 할 일 (미착수)
+# Phase 5 — AI 고도화 + 데이터 공유 구조 (2026-04-14 진행)
 
-- [ ] 이메일 알림 (SMTP 키 발급 필요 — 브리핑/보고서/위기 알림을 이메일로 발송)
+## P5-01. 캠프 학습 데이터 강화 — 완료 (2026-04-14)
+- [x] 이전: 보고서 2개 × 500자(1,000자) 참조 → 이후: 보고서 5 + 브리핑 6개 전문 (~30,000자)
+- [x] camp_context.py 리팩터 (REPORT_TYPES / BRIEFING_TYPES / CONTENT_TYPES 분리)
+- [x] 챗/콘텐츠/토론/보고서 모두 적용
+
+## P5-02. 선거법 검증 AI 기반 전환 — 완료 (2026-04-14)
+- [x] 이전: 키워드 패턴 매칭 (거짓말→비방, 경품→기부행위)
+- [x] 이후: 공직선거법 10개 주요 조항 전문을 AI에 전달 → 맥락 기반 법적 판단
+- [x] 챗에 "law" 의도 추가 → 선거법 질문 시 조항 자동 포함
+- [x] 포함 조항: 제82조의8 (AI/딥페이크), 제250조 (허위사실), 제110조 (비방),
+      제112조 (기부행위), 제93조 (문서배부), 제82조의7 (인터넷), 제108조 (여론조사),
+      제59조 (운동기간), 제86조 (홍보물), 제82조의5 (문자)
+
+## P5-03. RAG 벡터 검색 구현 — 완료 (2026-04-14)
+- [x] Ollama bge-m3 임베딩 모델 설치 (1024차원, 한국어 지원)
+- [x] pgvector 확장 설치 (postgres:16 → pgvector/pgvector:pg16)
+- [x] embeddings 테이블 (tenant_id × source_type × source_id)
+- [x] embedding_service.py: 임베딩 생성/저장/검색/배치 모듈
+- [x] 기존 795건 일괄 임베딩 완료 (김진균 395 + 윤건영 227 + 서승우 164 + 김성근 9)
+- [x] 자동 임베딩 훅: 수집 파이프라인 + 보고서 생성 직후
+- [x] context_builder.py: RAG 검색 최우선 + 의도별 보충 (하이브리드)
+- [x] 토큰 ~33,000 → ~3,000 (90% 절약)
+- [x] 검색 정확도 검증: 급식→0.747, 공약→0.689 의미 기반 검색 성공
+
+## P5-04. Election 단위 데이터 공유 구조 (정공법 리팩터) — 완료 (2026-04-14)
+- [x] 기존 구조 문제: news_articles에 tenant_id NOT NULL → 같은 선거 데이터를 캠프마다 복제
+- [x] 신규 구조:
+  - 원본 데이터 (news/community/youtube): election_id 기반 공유, tenant_id nullable
+  - 관점 분석 (4사분면, action_type): 신규 테이블 `*_strategic_views` (tenant × source)
+- [x] DB 마이그레이션 (2026_04_14_election_shared_data.sql)
+- [x] 23개 파일 리팩터링:
+  - ORM: NewsArticle/CommunityPost/YouTubeVideo + NewsStrategicView/CommunityStrategicView/YouTubeStrategicView
+  - 수집: election 단위 upsert (pg_insert().on_conflict_do_update)
+  - 분석: 공유 필드는 raw, 관점 필드는 strategic_views
+  - 조회: election_id 기반, 관점 필요 시 LEFT JOIN COALESCE(sv.x, raw.x)
+  - 신규 헬퍼: analysis/strategic_views.py (upsert 헬퍼)
+- [x] 검증:
+  - 김성근 캠프 415건 공유 뉴스 조회 (이전 0건)
+  - 김진균/김성근 같은 election_id 415건 동일 공유
+  - 전략 관점은 캠프별 분리 유지
+
+## P5-05. AI 자동 동명이인 감지 + 학습 — 완료 (2026-04-14)
+- [x] 이전: 가입자가 homonym_filters 수동 입력 (불가능)
+- [x] 이후: AI가 문맥으로 자동 감지 → candidate.homonym_filters에 자동 누적
+- [x] 프롬프트 강화:
+  - ai_screening.py + media_analyzer.py
+  - "힌트에 없어도 문맥상 다른 직업/지역/선거면 동명이인 자동 판정"
+  - homonym_detected 필드 추가 (예: "야구감독", "국회의원 서천")
+- [x] 자동 학습 로직: is_relevant=false + homonym_detected → homonym_filters jsonb 배열 누적 (최대 20개)
+- [x] 캠프별 격리 (tenant_id × name)
+
+## P5-06. 온보딩 안정화 — 완료 (2026-04-14)
+- [x] apply_setup 완료 검증 추가
+  - 우리 후보 1명 이상, tenant_elections 연결 필수
+  - 실패 시 rollback + 500 에러 (재시도 유도)
+- [x] 기존 부분 완료 캠프 복구:
+  - 신용한: tenant_elections 연결 추가
+  - 김성근/윤건영: 후보 5명 등록 + homonym_filters 복사
+
+## P5-99. 다음 할 일 (미착수)
+- [ ] 이메일 알림 (SMTP 키 발급 필요)
 - [ ] 랜딩 페이지 (ai.on1.kr 접속 시 소개 페이지)
 - [ ] 결제/요금제 연동 (Toss)
 - [ ] 주간 보고서 실제 생성 테스트
 - [ ] AI CLI 계정 풀 관리 (관리자 UI)
-- [ ] 캠프별 RAG (현재는 DB 키워드 검색 — 벡터 임베딩 기반 의미 검색으로 전환 필요)
+- [ ] 모바일 반응형 전체 페이지 점검 (보고서는 완료)
 
 ---
 

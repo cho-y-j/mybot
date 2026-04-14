@@ -122,11 +122,38 @@ session.add(YouTubeVideo(..., published_at=pub_at))  # None이면 NULL 저장
 - **경쟁 후보 성과·발표** → `threat`
 - **제3자/일반** → `neutral`
 
-### 1.10. 멀티테넌트 공용 데이터 공유 원칙
+### 1.10. 멀티테넌트 공용 데이터 공유 원칙 (2026-04-14 정공법 구현 완료)
 - **공용 (tenant_id 없음)**: `election_law_sections`, `PastElection`, 공공 `Survey`, `NEC` 데이터
-- **race-shared (election_id 기반, tenant_id 없음)**: 같은 선거의 뉴스/미디어는 race 단위로 한 번만 수집하는 것이 목표 (Phase 2)
-- **camp-private (tenant_id)**: 캠프 내부 메모, 커스텀 키워드, 사설 여론조사, 4사분면 관점 분석
-- **같은 선거 중복 수집 방지**: 같은 election_id에서 60분 이내 다른 캠프가 수집했으면 스킵, 캠프별 AI 관점 분석만 실행
+- **election-shared (election_id 기반, tenant_id nullable)**: 같은 선거의 원본 수집 데이터 (news_articles / community_posts / youtube_videos)
+  - `UNIQUE (election_id, url)` — 같은 URL 중복 저장 금지, 모든 캠프 공유
+  - 공유 필드: title, content_snippet, sentiment, ai_summary, ai_reason, is_relevant, published_at 등
+- **camp-private**: 캠프별 4사분면/action 관점 분석은 신규 테이블 `*_strategic_views`에 저장
+  - `news_strategic_views`, `community_strategic_views`, `youtube_strategic_views`
+  - `UNIQUE (source_id, tenant_id)` — 같은 데이터에 대한 캠프별 관점 분석
+  - 필드: strategic_quadrant, action_type, action_priority, action_summary, is_about_our_candidate
+- **수집/조회 룰**:
+  - 수집: `pg_insert().on_conflict_do_update(constraint="uq_*_per_election")` 사용
+  - 조회: raw 데이터는 `WHERE election_id = X`만, 관점 필요 시 LEFT JOIN + `COALESCE(sv.x, raw.x)`
+  - 같은 election 60분 내 다른 캠프가 수집했으면 스킵 (race-shared), 관점 분석은 캠프별 생성
+
+### 1.14. RAG 벡터 검색 (2026-04-14 구축)
+- **임베딩 모델**: Ollama `bge-m3` (1024차원, 한국어 지원, 로컬, 무료)
+- **벡터 저장**: PostgreSQL `pgvector` 확장 (`pgvector/pgvector:pg16` 이미지)
+- **embeddings 테이블**: tenant_id × source_type × source_id
+- **자동 임베딩 훅**:
+  - 수집 파이프라인 완료 후 (`_run_full_ai_pipeline`)
+  - 보고서 생성 직후 (`reports/router.py`)
+- **챗 컨텍스트**: RAG 검색 최우선 (질문 관련 상위 10건) + 의도별 보충 (감성/트렌드/여론조사/법조문)
+- **토큰 절약**: 기존 ~33,000 → RAG ~3,000 (90% 절감)
+- **단일 진입점**: `app.services.embedding_service` (create_embedding, store_embedding, search_similar, embed_existing_data)
+
+### 1.15. AI 자동 동명이인 감지 + 학습 (2026-04-14)
+- 가입자는 homonym_filters 입력 불필요 — AI가 문맥으로 자동 감지
+- AI 스크리닝/분석 프롬프트에 `homonym_detected` 필드 요청
+  - 예: "야구감독", "국회의원 서천", "대학교수"
+- 감지 시 `candidates.homonym_filters` jsonb 배열에 자동 누적 (최대 20개)
+- 다음 분석부터 프롬프트에 포함되어 정확도 향상 (누적 학습)
+- 캠프별 격리 (tenant_id × name 기준 업데이트)
 
 ### 1.13. 온보딩 시 선거 중복 생성 금지 (2026-04-13)
 가입 시 동일한 선거가 이미 존재하면 **새로 만들지 않고 기존 election을 재사용**한다.
@@ -251,15 +278,22 @@ session.add(YouTubeVideo(..., published_at=pub_at))  # None이면 NULL 저장
 ### 2.3. 모델 Tier 매핑 (`ai_service.py` `DEFAULT_TIER`)
 변경 금지. 추가는 가능.
 
-### 2.4. 데이터 저장 필드 (수집물 공통)
-- `tenant_id`, `election_id`, `candidate_id`, `url`, `title`, `platform`
+### 2.4. 데이터 저장 필드 (수집물 공통) — 2026-04-14 구조 변경
+**원본 테이블** (news_articles / community_posts / youtube_videos — **election-shared**):
+- `election_id`, `candidate_id`, `url`, `title`, `platform`
+- `tenant_id` (nullable, 첫 수집 캠프 기록용 legacy)
 - `published_at` (필수, NULL 금지), `collected_at`
-- `is_relevant` (BOOLEAN, default true — AI 판별: 동명이인 등 false)
-- **AI 필드** (모두 수집 시점에 채워져야 함):
+- `is_relevant` (BOOLEAN — AI 판별: 동명이인 등 false, 공유 필드)
+- **공유 AI 필드**:
   - `ai_summary`, `ai_reason`, `ai_topics`, `ai_threat_level`
   - `sentiment`, `sentiment_score`, `sentiment_verified`
-  - `strategic_value` (strength/weakness/opportunity/threat/neutral)
-  - `action_type` (promote/defend/attack/monitor/ignore)
+- UNIQUE 제약: `(election_id, url)` — 같은 선거의 같은 URL은 1건만 저장
+
+**관점 테이블** (news_strategic_views / community_strategic_views / youtube_strategic_views — **camp-private**):
+- `news_id` (또는 post_id, video_id) → 원본 FK
+- `tenant_id`, `election_id`, `candidate_id`
+- `strategic_quadrant` (strength/weakness/opportunity/threat/neutral)
+- `strategic_value`, `action_type` (promote/defend/attack/monitor/ignore)
   - `action_priority` (high/medium/low)
   - `action_summary`
   - `is_about_our_candidate`
@@ -335,23 +369,29 @@ session.add(YouTubeVideo(..., published_at=pub_at))  # None이면 NULL 저장
 ## 5. 참고 — 주요 파일 위치
 
 ### Backend 핵심
-- `backend/app/services/ai_service.py` — 모든 AI 호출의 단일 진입점
-- `backend/app/collectors/tasks.py` — Celery 스케줄 수집 태스크 (1700+줄, 분리 예정)
+- `backend/app/services/ai_service.py` — 모든 AI 호출의 단일 진입점 (`--system-prompt` 사용)
+- `backend/app/services/embedding_service.py` — RAG 벡터 임베딩 (Ollama bge-m3) + 검색 (2026-04-14 신규)
+- `backend/app/services/camp_context.py` — 캠프 학습 데이터 (보고서/브리핑 전문)
+- `backend/app/collectors/tasks.py` — Celery 스케줄 수집 태스크 (election-shared upsert)
 - `backend/app/collectors/instant.py` — 사용자 트리거 즉시 수집 (AI 스크리닝 포함)
-- `backend/app/collectors/ai_screening.py` — 수집 단계 AI 스크리닝 (2026-04-13 신규)
+- `backend/app/collectors/ai_screening.py` — 수집 단계 AI 스크리닝 + **동명이인 자동 학습**
 - `backend/app/collectors/naver.py` — 네이버 뉴스/블로그/카페
 - `backend/app/collectors/youtube.py` — YouTube Data API
 - `backend/app/analysis/sentiment.py` — 감성 분석 (SentimentAnalyzer)
-- `backend/app/analysis/media_analyzer.py` — 4사분면 배치 분석 (3매체 병렬, homonym_hints 전달)
+- `backend/app/analysis/media_analyzer.py` — 4사분면 배치 분석 (3매체 병렬, 동명이인 학습)
+- `backend/app/analysis/strategic_views.py` — 캠프별 관점 분석 upsert 헬퍼 (2026-04-14 신규)
 - `backend/app/chat/router.py` — AI 챗 (대화 이력 저장)
-- `backend/app/chat/models.py` — ChatMessage 모델 (2026-04-13 신규)
-- `backend/app/elections/onboarding.py` — 캠프 가입 자동화
-- `backend/app/elections/bootstrap.py` — 초기 분석 파이프라인
-- `backend/app/elections/models.py` — ORM 모델 (is_relevant 필드 포함)
+- `backend/app/chat/context_builder.py` — 챗 컨텍스트 빌더 (RAG 검색 + 의도별 보충)
+- `backend/app/chat/models.py` — ChatMessage 모델
+- `backend/app/elections/onboarding.py` — 캠프 가입 자동화 (완료 검증 포함)
+- `backend/app/elections/models.py` — ORM 모델 (NewsArticle + NewsStrategicView 등)
+- `backend/app/content/compliance.py` — 선거법 검증 (AI 기반, 10개 조항 전문 포함)
+- `backend/migrations/2026_04_14_election_shared_data.sql` — election-shared 구조 전환
 
 ### Frontend
 - `frontend/src/app/dashboard/` — 주요 대시보드 페이지
-- `frontend/src/app/admin/setup/` — 가입 온보딩 UI
+- `frontend/src/app/admin/` — 관리자 패널 (7개 페이지 + layout + 사이드바)
+- `frontend/src/app/onboarding/page.tsx` — 가입 온보딩 UI (선거명 자동 생성 — 기초단체장은 시군구 포함)
 
 ---
 
