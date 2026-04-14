@@ -123,10 +123,19 @@ function ReportsInner() {
                     </div>
                   </div>
                 </div>
-                <div className="prose prose-sm dark:prose-invert max-w-none max-h-[500px] overflow-y-auto">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {selected.content || selected.content_text || '(내용 없음)'}
-                  </ReactMarkdown>
+                <div className="max-h-[500px] overflow-y-auto">
+                  {/\n[=#]/.test((selected.content || selected.content_text || '')) ? (
+                    // 일반 텍스트/레거시 형식: 줄바꿈 보존
+                    <pre className="text-sm whitespace-pre-wrap font-sans leading-relaxed bg-[var(--muted-bg)] p-4 rounded">
+                      {selected.content || selected.content_text || '(내용 없음)'}
+                    </pre>
+                  ) : (
+                    <div className="prose prose-sm dark:prose-invert max-w-none">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {selected.content || selected.content_text || '(내용 없음)'}
+                      </ReactMarkdown>
+                    </div>
+                  )}
                 </div>
 
                 {/* 다음 액션 */}

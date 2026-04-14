@@ -13,14 +13,15 @@ const MENU_BASIC = [
 ];
 
 const MENU_ADVANCED = [
-  { href: '/dashboard/news', label: '📰 뉴스' },
-  { href: '/dashboard/analysis', label: '📈 감성 분석' },
-  { href: '/dashboard/candidates', label: '👥 후보자' },
-  { href: '/dashboard/surveys', label: '📋 여론조사' },
-  { href: '/dashboard/trends', label: '🔍 트렌드' },
-  { href: '/dashboard/debate', label: '🎤 토론 대본' },
-  { href: '/dashboard/schedules', label: '⏰ 스케줄' },
-  { href: '/dashboard/settings', label: '⚙️ 설정' },
+  { href: '/easy/news', label: '📰 뉴스' },
+  { href: '/easy/analysis', label: '📈 감성 분석' },
+  { href: '/easy/candidates', label: '👥 후보자' },
+  { href: '/easy/surveys', label: '📋 여론조사' },
+  { href: '/easy/trends', label: '🔍 트렌드' },
+  { href: '/easy/youtube', label: '📺 유튜브' },
+  { href: '/easy/debate', label: '🎤 토론 대본' },
+  { href: '/easy/schedules', label: '⏰ 스케줄' },
+  { href: '/easy/settings', label: '⚙️ 설정' },
 ];
 
 export default function EasyLayout({ children }: { children: React.ReactNode }) {
