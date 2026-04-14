@@ -356,6 +356,22 @@ export default function ContentToolsPage() {
                 </button>
               </div>
 
+              {/* 출처 각주 */}
+              {genResult.citations && genResult.citations.length > 0 && (
+                <div className="mt-4 p-3 rounded-xl border border-[var(--card-border)] bg-[var(--muted-bg)]">
+                  <p className="text-xs text-[var(--muted)] mb-2 font-semibold">📎 참고 자료 ({genResult.citations.length})</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {genResult.citations.map((c: any, i: number) => (
+                      <a key={c.id} href={c.url || '#'} target={c.url ? '_blank' : undefined}
+                        className="text-[10px] px-2 py-0.5 rounded border bg-[var(--card-bg)] hover:border-blue-400 transition"
+                        title={c.title}>
+                        {c.type === 'nec' ? '🏛️' : c.type === 'news' ? '📰' : c.type === 'community' ? '💬' : c.type === 'youtube' ? '📺' : '📋'} {i + 1}. {(c.title || '').slice(0, 30)}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* 선거법 체크 결과 */}
               {genResult.compliance && (
                 <div className={`mt-4 p-3 rounded-xl border ${

@@ -459,13 +459,20 @@ async def generate_content(
         f"한국어로 작성해주세요. 콘텐츠 본문만 출력하세요."
     )
 
-    # 캠프 메모리 (이전 보고서/콘텐츠 참조)
-    from app.services.camp_context import build_camp_memory
-    camp_memory = await build_camp_memory(db, user["tenant_id"], str(election_id), max_reports=3, max_briefings=4, max_content=3)
-    if camp_memory:
-        prompt += f"\n{camp_memory}"
+    # 풍부한 컨텍스트 (RAG + NEC + 프로필 + 보고서 + 선거법) + 출처 각주
+    from app.services.rich_context import build_rich_context, LEGAL_SAFETY_PROMPT
+    rich_ctx, citations = await build_rich_context(
+        db, user["tenant_id"], str(election_id),
+        topic=f"{topic} {content_type}",
+        max_rag=10, max_reports=2, max_briefings=3,
+    )
+    prompt += f"\n\n{rich_ctx}\n{LEGAL_SAFETY_PROMPT}"
 
-    generated = await call_claude_text(prompt, timeout=300, context="content_generation", tenant_id=user["tenant_id"], db=db)
+    # WebSearch 허용 — 내부 데이터 부족 시 실시간 검증
+    generated = await call_claude_text(
+        prompt, timeout=300, context="content_generation",
+        tenant_id=user["tenant_id"], db=db, web_search=True,
+    )
 
     if not generated:
         return {"error": "AI 생성 실패", "content": None, "ai_generated": False}
@@ -506,6 +513,7 @@ async def generate_content(
         "purpose": purpose,
         "target": target,
         "compliance": compliance,
+        "citations": citations,
         "ai_generated": True,
         "saved_id": saved_id,
     }

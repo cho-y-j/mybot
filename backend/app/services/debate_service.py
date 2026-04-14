@@ -214,13 +214,20 @@ async def generate_debate_script(
         f"- 수집된 뉴스/커뮤니티 반응을 인용하여 구체적 근거 제시"
     )
 
-    # 캠프 메모리 (이전 보고서/콘텐츠 참조)
-    from app.services.camp_context import build_camp_memory
-    camp_memory = await build_camp_memory(db, tenant_id, str(election_id), max_reports=3, max_briefings=4, max_content=3)
-    if camp_memory:
-        prompt += f"\n{camp_memory}"
+    # 풍부한 컨텍스트 (RAG + NEC + 프로필 + 보고서/브리핑 + 선거법) + 출처 각주
+    from app.services.rich_context import build_rich_context, LEGAL_SAFETY_PROMPT
+    rich_ctx, citations = await build_rich_context(
+        db, tenant_id, str(election_id),
+        topic=f"{opponent.name} 토론 공격 포인트 " + " ".join(topics),
+        max_rag=15, max_reports=3, max_briefings=4,
+    )
+    prompt += f"\n\n{rich_ctx}\n{LEGAL_SAFETY_PROMPT}"
 
-    result = await call_claude(prompt, timeout=600, context="debate_script", tenant_id=tenant_id, db=db)
+    # WebSearch 허용 — 데이터 부족 시 AI가 info.nec.go.kr 등 실시간 검색
+    result = await call_claude(
+        prompt, timeout=600, context="debate_script",
+        tenant_id=tenant_id, db=db, web_search=True,
+    )
 
     if result:
         # 선거법 검증
@@ -235,6 +242,7 @@ async def generate_debate_script(
             "rebuttals": result.get("rebuttals", [])[:3],
             "closing": result.get("closing", ""),
             "compliance": compliance,
+            "citations": citations,
             "our_candidate": our.name,
             "opponent": opponent.name,
             "topics": topics,
