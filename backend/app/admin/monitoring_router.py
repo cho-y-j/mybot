@@ -179,6 +179,40 @@ async def schedule_status(user: CurrentUser, db: AsyncSession = Depends(get_db))
     }
 
 
+# ──── 감사 로그 ────
+
+@router.get("/audit-logs")
+async def list_audit_logs(
+    user: CurrentUser, db: AsyncSession = Depends(get_db),
+    limit: int = 20,
+):
+    """최근 감사 로그 조회."""
+    require_superadmin(user)
+    rows = (await db.execute(
+        text("""
+            SELECT a.action, a.resource_type, a.details, a.ip_address, a.created_at,
+                   u.email as user_email, u.name as user_name
+            FROM audit_logs a
+            LEFT JOIN users u ON u.id = a.user_id
+            ORDER BY a.created_at DESC
+            LIMIT :lim
+        """),
+        {"lim": limit},
+    )).fetchall()
+    return [
+        {
+            "action": r.action,
+            "resource_type": r.resource_type,
+            "details": r.details,
+            "ip_address": r.ip_address,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "user_email": r.user_email,
+            "user_name": r.user_name,
+        }
+        for r in rows
+    ]
+
+
 @router.post("/schedule-control/{tenant_id}")
 async def schedule_control(
     tenant_id: UUID, user: CurrentUser, db: AsyncSession = Depends(get_db),
