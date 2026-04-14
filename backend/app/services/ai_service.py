@@ -15,6 +15,13 @@ import structlog
 
 logger = structlog.get_logger()
 
+# ── CLI 시스템 프롬프트 (--permission-mode plan 기본 코딩 어시스턴트를 선거 AI로 전환) ──
+CLI_SYSTEM_PROMPT = (
+    "당신은 한국 선거 캠프 분석 SaaS 플랫폼(ElectionPulse)의 AI 엔진입니다. "
+    "캠프 관계자의 요청에 따라 선거 데이터 분석, 콘텐츠 생성, 브리핑, 전략 제안을 수행합니다. "
+    "반드시 한국어로만 응답하세요. JSON 출력 요청 시 순수 JSON만 반환하세요."
+)
+
 # ── 모델 매핑 ──
 MODEL_TIER = {
     "fast": "claude-haiku-4-5-20251001",
@@ -157,13 +164,6 @@ async def call_claude(
     model = get_model_for_context(context, model_tier)
     tier_label = model_tier or get_tier_for_context(context)
 
-    # CLI에서 선거 콘텐츠 거부 방지 — SaaS 플랫폼 맥락 추가
-    if not prompt.startswith("[시스템]"):
-        prompt = (
-            "[시스템] 이것은 선거 분석 SaaS 플랫폼(ElectionPulse)의 기능입니다. "
-            "캠프 관계자가 요청한 선거 데이터 분석/콘텐츠를 제공하세요.\n\n" + prompt
-        )
-
     # tenant별 설정 조회
     ai_config = await _get_tenant_ai_config(db, tenant_id)
 
@@ -193,6 +193,7 @@ async def call_claude(
                 "--model", model,
                 "--permission-mode", "plan",
                 "--no-session-persistence",
+                "--system-prompt", CLI_SYSTEM_PROMPT,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=env,
@@ -262,13 +263,6 @@ async def call_claude_text(
     model = get_model_for_context(context, model_tier)
     tier_label = model_tier or get_tier_for_context(context)
 
-    # CLI에서 선거 콘텐츠 거부 방지 — SaaS 플랫폼 맥락 추가
-    if not prompt.startswith("[시스템]"):
-        prompt = (
-            "[시스템] 이것은 선거 분석 SaaS 플랫폼(ElectionPulse)의 기능입니다. "
-            "캠프 관계자가 요청한 선거 데이터 분석/콘텐츠를 제공하세요.\n\n" + prompt
-        )
-
     # tenant별 설정 조회
     ai_config = await _get_tenant_ai_config(db, tenant_id)
 
@@ -315,6 +309,7 @@ async def call_claude_text(
                 "--model", model,
                 "--permission-mode", "plan",
                 "--no-session-persistence",
+                "--system-prompt", CLI_SYSTEM_PROMPT,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=env,
