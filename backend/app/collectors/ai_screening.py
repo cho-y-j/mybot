@@ -80,21 +80,30 @@ async def _screen_batch(
 
 ★ 우리 후보: {our_candidate_name} ({region_clause}{election_type} 후보)
 ★ 경쟁 후보: {rivals_str}
-★ 동명이인 주의: {homonym_str} — 이들은 우리 후보가 아닙니다!
+★ 알려진 동명이인: {homonym_str}
 
 아래 {len(items)}개 수집된 콘텐츠를 각각 스크리닝하세요.
 
-★★★ 제1원칙: 동명이인/무관 콘텐츠 차단 ★★★
-- 같은 이름이지만 다른 사람(야구감독, 야구선수, 국회의원, 배우, 교수 등)의 글 → is_relevant: false
-- {election_type} 선거와 전혀 관련 없는 글 → is_relevant: false
-- 후보 이름이 제목/내용에 언급되지 않은 글 → is_relevant: false
+★★★ 제1원칙: 동명이인/무관 콘텐츠 자동 감지 및 차단 ★★★
+
+**당신이 문맥으로 직접 판단하세요. 위 힌트에 없어도 아래를 적용:**
+
+다음 경우는 is_relevant: false + homonym_detected에 정체 기록:
+- 같은 이름이지만 직업/배경이 다른 사람 (예: 야구감독, 가수, 배우, 교수, 국회의원, 기업인, 군인, 의사, 운동선수 등)
+- 다른 지역/다른 선거 출마자 (우리는 {region_clause}{election_type}, 다른 지역/유형이면 false)
+- 과거 인물 / 역사 속 인물 / 드라마·영화 속 인물
+- 후보 이름이 제목/내용에 전혀 언급되지 않은 글
+
+동명이인 감지 시 `homonym_detected` 필드에 **간결한 키워드**로 정체를 기록:
+- "야구감독", "프로야구 한화", "국회의원 서천", "대학교수", "배우" 같은 2~4 단어
 
 ★★ 판단 기준 ★★
-1. is_relevant: 이 글이 {region_clause}{election_type} 선거와 관련된 글인가?
-2. sentiment: positive(긍정) / negative(부정) / neutral(중립)
-3. strategic_value: strength(우리 강점) / weakness(우리 약점) / opportunity(기회) / threat(위협) / neutral
-4. summary: 핵심 1문장 요약
-5. threat_level: none / low / medium / high
+1. is_relevant: 이 글이 {region_clause}{election_type} 선거의 우리 후보/경쟁후보와 관련된 글인가?
+2. homonym_detected: 같은 이름의 다른 사람이면 정체 (없으면 null)
+3. sentiment: positive / negative / neutral
+4. strategic_value: strength / weakness / opportunity / threat / neutral
+5. summary: 핵심 1문장 요약
+6. threat_level: none / low / medium / high
 
 콘텐츠:
 {items_block}
@@ -104,6 +113,7 @@ async def _screen_batch(
   {{
     "id": "...",
     "is_relevant": true,
+    "homonym_detected": null,
     "sentiment": "positive",
     "sentiment_score": 0.7,
     "strategic_value": "strength",
@@ -169,6 +179,7 @@ JSON array만 출력하세요."""
 
         result_map[rid] = {
             "is_relevant": is_rel,
+            "homonym_detected": r.get("homonym_detected") or None,
             "sentiment": sentiment,
             "sentiment_score": float(r.get("sentiment_score", 0.0)),
             "strategic_value": sval,
@@ -183,6 +194,42 @@ JSON array만 출력하세요."""
             "is_about_our_candidate": r.get("is_about_our_candidate", False),
             "ai_screened": True,
         }
+
+    # 동명이인 자동 학습 — 감지된 homonym을 candidate 테이블에 누적
+    if db and tenant_id:
+        try:
+            homonyms_by_candidate = {}
+            for r in results:
+                hd = r.get("homonym_detected")
+                if hd and str(hd).strip() and str(hd).lower() != "null":
+                    # 해당 id의 item에서 candidate_name 조회
+                    rid = str(r.get("id", ""))
+                    for it in items:
+                        if str(it["id"]) == rid and it.get("candidate_name"):
+                            cname = it["candidate_name"]
+                            homonyms_by_candidate.setdefault(cname, set()).add(str(hd).strip()[:40])
+                            break
+
+            for cname, detected in homonyms_by_candidate.items():
+                from sqlalchemy import text as sql_text
+                # 기존 homonym_filters 가져와서 병합
+                row = (await db.execute(sql_text(
+                    "SELECT id, COALESCE(homonym_filters, '[]'::jsonb) as hf "
+                    "FROM candidates WHERE tenant_id = :tid AND name = :cn LIMIT 1"
+                ), {"tid": tenant_id, "cn": cname})).fetchone()
+                if row:
+                    existing = set(row.hf) if row.hf else set()
+                    merged = list(existing | detected)[:20]  # 최대 20개
+                    if len(merged) > len(existing):
+                        import json as _json
+                        await db.execute(sql_text(
+                            "UPDATE candidates SET homonym_filters = :hf::jsonb WHERE id = :cid"
+                        ), {"hf": _json.dumps(merged, ensure_ascii=False), "cid": str(row.id)})
+                        await db.commit()
+                        logger.info("homonym_auto_learned", candidate=cname,
+                                    added=list(detected - existing))
+        except Exception as e:
+            logger.warning("homonym_learn_error", error=str(e)[:200])
 
     # 결과 병합
     for it in items:

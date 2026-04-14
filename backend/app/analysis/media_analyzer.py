@@ -49,7 +49,10 @@ async def analyze_batch_strategic(
 
 ★ 우리 후보: {our_candidate_name} ({region_clause}{election_type} 후보)
 ★ 경쟁 후보: {rivals_str}
-★ 동명이인 주의: {homonym_str} — 이 키워드가 포함된 글은 우리 후보와 무관할 가능성 높음!
+★ 알려진 동명이인: {homonym_str}
+
+※ 힌트에 없어도 문맥상 다른 직업/다른 지역/다른 선거 출마자면 동명이인으로 자동 판정하세요.
+※ 동명이인 감지 시 homonym_detected 필드에 정체 기록 (예: "야구감독", "국회의원 서천").
 
 아래 {len(items)}개 콘텐츠를 각각 분석하여 4사분면 전략 분류하세요.
 
@@ -115,6 +118,7 @@ sentiment는 기사의 객관적 톤이다. neutral 남발 금지! 대부분의 
   {{
     "id": "...",
     "is_relevant": true,
+    "homonym_detected": null,
     "is_about_our_candidate": true,
     "sentiment": "positive",
     "strategic_value": "strength",
@@ -152,6 +156,9 @@ JSON array만 출력하세요. 다른 텍스트 절대 금지."""
         for r in results:
             r["is_relevant"] = bool(r.get("is_relevant", True))
             r["is_about_our_candidate"] = bool(r.get("is_about_our_candidate", False))
+            # 동명이인 자동 감지
+            hd = r.get("homonym_detected")
+            r["homonym_detected"] = hd if (hd and str(hd).strip() and str(hd).lower() != "null") else None
             r["sentiment"] = r.get("sentiment", "neutral").lower()
             if r["sentiment"] not in ("positive", "negative", "neutral"):
                 r["sentiment"] = "neutral"
@@ -435,6 +442,9 @@ async def _analyze_table_strategic(
         # id로 매핑
         result_by_id = {r.get("id"): r for r in results if r.get("id")}
 
+        # 동명이인 자동 학습 — batch 단위로 모아서 일괄 업데이트
+        homonyms_by_candidate = {}
+
         for item in batch:
             r = result_by_id.get(item["id"])
             if not r:
@@ -444,6 +454,10 @@ async def _analyze_table_strategic(
             if not is_rel:
                 ai_summary = f"[동명이인/무관] {ai_summary}"
                 irrelevant += 1
+                # AI가 감지한 동명이인을 후보별로 누적
+                hd = r.get("homonym_detected")
+                if hd and item.get("candidate_name"):
+                    homonyms_by_candidate.setdefault(item["candidate_name"], set()).add(str(hd)[:40])
             by_quadrant[r["strategic_value"]] = by_quadrant.get(r["strategic_value"], 0) + 1
 
             # 공유 필드: 원본 테이블에 기록
@@ -520,6 +534,26 @@ async def _analyze_table_strategic(
             )
 
             analyzed += 1
+
+        # 동명이인 자동 학습 — batch 종료 후 후보 테이블에 누적
+        for cname, detected in homonyms_by_candidate.items():
+            try:
+                row = (await db_session.execute(sql_text(
+                    "SELECT id, COALESCE(homonym_filters, '[]'::jsonb) as hf "
+                    "FROM candidates WHERE tenant_id = :tid AND name = :cn LIMIT 1"
+                ), {"tid": tenant_id, "cn": cname})).fetchone()
+                if row:
+                    existing = set(row.hf) if row.hf else set()
+                    new_items = detected - existing
+                    if new_items:
+                        merged = list(existing | detected)[:20]
+                        import json as _json
+                        await db_session.execute(sql_text(
+                            "UPDATE candidates SET homonym_filters = :hf::jsonb WHERE id = :cid"
+                        ), {"hf": _json.dumps(merged, ensure_ascii=False), "cid": str(row.id)})
+                        logger.info("homonym_auto_learned", candidate=cname, added=list(new_items))
+            except Exception as e:
+                logger.warning("homonym_learn_error", error=str(e)[:200])
 
     await db_session.commit()
 
