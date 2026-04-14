@@ -38,7 +38,7 @@ async def get_keyword_volumes(
 
     # 후보 + 선거 정보
     candidates_q = (await db.execute(
-        select(Candidate).where(Candidate.election_id == election_id, Candidate.tenant_id == tid, Candidate.enabled == True)
+        select(Candidate).where(Candidate.election_id == election_id, Candidate.enabled == True)
     )).scalars().all()
     election = (await db.execute(select(Election).where(Election.id == election_id))).scalar_one_or_none()
 
@@ -257,7 +257,6 @@ async def collect_now(
                             cands = (await bg_db.execute(
                                 select(Candidate).where(
                                     Candidate.election_id == election_id,
-                                    Candidate.tenant_id == tid,
                                     Candidate.enabled == True,
                                 )
                             )).scalars().all()
@@ -287,7 +286,6 @@ async def collect_now(
                         cands = (await bg_db.execute(
                             select(Candidate).where(
                                 Candidate.election_id == election_id,
-                                Candidate.tenant_id == tid,
                                 Candidate.enabled == True,
                             )
                         )).scalars().all()
@@ -330,7 +328,6 @@ async def collect_now(
             candidates_q = (await db.execute(
                 select(Candidate).where(
                     Candidate.election_id == election_id,
-                    Candidate.tenant_id == tid,
                     Candidate.enabled == True,
                 )
             )).scalars().all()
@@ -378,7 +375,6 @@ async def collect_now(
             candidates_q = (await db.execute(
                 select(Candidate).where(
                     Candidate.election_id == election_id,
-                    Candidate.tenant_id == tid,
                     Candidate.enabled == True,
                 )
             )).scalars().all()
@@ -430,10 +426,12 @@ async def get_collection_status(
     db: AsyncSession = Depends(get_db),
 ):
     """수집 현황: 후보별 수집 데이터 수."""
+    from app.common.election_access import get_our_candidate_id
     tid = user["tenant_id"]
+    _our_cand_id = await get_our_candidate_id(db, tid, election_id)
 
     candidates = (await db.execute(
-        select(Candidate).where(Candidate.election_id == election_id, Candidate.tenant_id == tid)
+        select(Candidate).where(Candidate.election_id == election_id)
     )).scalars().all()
 
     status = []
@@ -451,7 +449,7 @@ async def get_collection_status(
         status.append({
             "candidate": c.name,
             "candidate_id": str(c.id),
-            "is_our_candidate": c.is_our_candidate,
+            "is_our_candidate": bool(_our_cand_id and str(c.id) == _our_cand_id),
             "news": news_count,
             "youtube": yt_count,
             "community": community_count,
@@ -489,7 +487,7 @@ async def get_keyword_trends(
 
     # 후보 이름 + 선거 정보
     candidates_q = (await db.execute(
-        select(Candidate).where(Candidate.election_id == election_id, Candidate.tenant_id == tid, Candidate.enabled == True)
+        select(Candidate).where(Candidate.election_id == election_id, Candidate.enabled == True)
     )).scalars().all()
 
     election = (await db.execute(
@@ -555,7 +553,7 @@ async def collect_trends_now(
 
     tid = user["tenant_id"]
     candidates_q = (await db.execute(
-        select(Candidate).where(Candidate.election_id == election_id, Candidate.tenant_id == tid, Candidate.enabled == True)
+        select(Candidate).where(Candidate.election_id == election_id, Candidate.enabled == True)
     )).scalars().all()
 
     election = (await db.execute(select(Election).where(Election.id == election_id))).scalar_one_or_none()

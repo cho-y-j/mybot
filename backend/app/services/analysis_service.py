@@ -15,7 +15,9 @@ from app.elections.models import (
     Election, Candidate, NewsArticle, CommunityPost,
     YouTubeVideo, SearchTrend, Survey,
 )
-from app.common.election_access import get_election_tenant_ids, get_our_candidate_id
+from app.common.election_access import (
+    get_election_tenant_ids, get_our_candidate_id, list_election_candidates,
+)
 from app.services.briefing_service import generate_rule_briefing
 
 logger = structlog.get_logger()
@@ -44,26 +46,10 @@ async def get_analysis_overview(
     since_7d = today - timedelta(days=7)
 
     all_tids = await get_election_tenant_ids(db, election_id)
-    our_cand_id = await get_our_candidate_id(db, tenant_id, election_id)
 
-    # Q1: 선거 + 후보
+    # Q1: 선거 + 후보 (election-shared)
     election = (await db.execute(select(Election).where(Election.id == election_id))).scalar_one_or_none()
-    all_candidates = (await db.execute(
-        select(Candidate).where(Candidate.election_id == election_id, Candidate.tenant_id.in_(all_tids), Candidate.enabled == True)
-        .order_by(Candidate.priority)
-    )).scalars().all()
-
-    # 중복 제거 + 우리 후보 동적 설정
-    seen_names = set()
-    candidates = []
-    for c in all_candidates:
-        if c.name not in seen_names:
-            seen_names.add(c.name)
-            if our_cand_id:
-                c.is_our_candidate = (str(c.id) == our_cand_id)
-            candidates.append(c)
-
-    candidates = sorted(candidates, key=lambda c: (0 if c.is_our_candidate else 1, c.priority or 99))
+    candidates = await list_election_candidates(db, election_id, tenant_id=tenant_id)
     our = next((c for c in candidates if c.is_our_candidate), None)
     d_day = (election.election_date - today).days if election else 0
     cand_ids = [c.id for c in candidates]
@@ -334,31 +320,15 @@ async def get_media_overview(
     if cached:
         return cached
 
-    our_cand_id = await get_our_candidate_id(db, tenant_id, election_id)
     since = date.today() - timedelta(days=days)
     yesterday = date.today() - timedelta(days=1)
 
-    # 현재 캠프 관점의 후보만 (우리 후보 + 내가 입력한 경쟁 후보)
-    candidates_q = (await db.execute(
-        select(Candidate).where(
-            Candidate.election_id == election_id,
-            Candidate.tenant_id == tenant_id,
-            Candidate.enabled == True
-        ).order_by(Candidate.priority)
-    )).scalars().all()
-
-    # 같은 선거에서 name이 같은 모든 candidate.id (election-shared 매칭용)
-    name_to_cids_q = (await db.execute(
-        select(Candidate.name, Candidate.id).where(Candidate.election_id == election_id)
-    )).all()
-    name_to_cids: dict[str, list] = {}
-    for name, cid in name_to_cids_q:
-        name_to_cids.setdefault(name, []).append(cid)
+    # election-shared: election_id 기준 후보, tenant_elections로 "우리 후보" 결정
+    candidates_q = await list_election_candidates(db, election_id, tenant_id=tenant_id)
 
     result = []
-    for c in sorted(candidates_q, key=lambda x: (0 if x.is_our_candidate else 1, x.priority)):
-        # 같은 name의 모든 candidate_id
-        cids = name_to_cids.get(c.name, [c.id])
+    for c in candidates_q:
+        # election-shared 이후 candidate_id는 canonical 하나 — IN 리스트 불필요
 
         # 뉴스
         news_row = (await db.execute(
@@ -366,7 +336,7 @@ async def get_media_overview(
                    func.sum(func.cast(NewsArticle.sentiment == "positive", Integer)),
                    func.sum(func.cast(NewsArticle.sentiment == "negative", Integer)),
                    ).where(
-                NewsArticle.candidate_id.in_(cids),
+                NewsArticle.candidate_id == c.id,
                 func.date(NewsArticle.collected_at) >= since,
                 NewsArticle.is_relevant == True,
             )
@@ -377,7 +347,7 @@ async def get_media_overview(
 
         news_yesterday = (await db.execute(
             select(func.count(NewsArticle.id)).where(
-                NewsArticle.candidate_id.in_(cids),
+                NewsArticle.candidate_id == c.id,
                 func.date(NewsArticle.collected_at) == yesterday,
                 NewsArticle.is_relevant == True,
             )
@@ -390,7 +360,7 @@ async def get_media_overview(
                    func.sum(YouTubeVideo.likes),
                    func.sum(YouTubeVideo.comments_count),
                    ).where(
-                YouTubeVideo.candidate_id.in_(cids),
+                YouTubeVideo.candidate_id == c.id,
                 func.date(YouTubeVideo.collected_at) >= since,
                 YouTubeVideo.is_relevant == True,
             )
@@ -406,7 +376,7 @@ async def get_media_overview(
                    func.sum(func.cast(CommunityPost.sentiment == "positive", Integer)),
                    func.sum(func.cast(CommunityPost.sentiment == "negative", Integer)),
                    ).where(
-                CommunityPost.candidate_id.in_(cids),
+                CommunityPost.candidate_id == c.id,
                 func.date(CommunityPost.collected_at) >= since,
                 CommunityPost.is_relevant == True,
             )
@@ -465,20 +435,15 @@ async def get_community_data(
     cached = await get_cache(db, tenant_id, str(election_id), cache_key, max_age_hours=1)
     if cached:
         return cached
-    all_tids = await get_election_tenant_ids(db, election_id)
     since = date.today() - timedelta(days=days)
 
-    candidates_q = (await db.execute(
-        select(Candidate).where(
-            Candidate.election_id == election_id, Candidate.tenant_id.in_(all_tids), Candidate.enabled == True
-        ).order_by(Candidate.priority)
-    )).scalars().all()
+    candidates_q = await list_election_candidates(db, election_id, tenant_id=tenant_id)
 
     result = []
     all_issues: Counter = Counter()
     platform_totals: Counter = Counter()
 
-    for c in sorted(candidates_q, key=lambda x: (0 if x.is_our_candidate else 1, x.priority)):
+    for c in candidates_q:
         posts = (await db.execute(
             select(CommunityPost).where(
                 CommunityPost.candidate_id == c.id,
@@ -571,10 +536,7 @@ async def get_youtube_data(
     all_tids = await get_election_tenant_ids(db, election_id)
     since = date.today() - timedelta(days=days)
 
-    candidates = (await db.execute(
-        select(Candidate).where(Candidate.election_id == election_id, Candidate.tenant_id.in_(all_tids), Candidate.enabled == True)
-        .order_by(Candidate.priority)
-    )).scalars().all()
+    candidates = await list_election_candidates(db, election_id, tenant_id=tenant_id)
 
     from app.elections.history_models import YouTubeComment
 
@@ -582,7 +544,7 @@ async def get_youtube_data(
     all_channels: dict[str, Counter] = {}
     danger_videos = []
 
-    for c in sorted(candidates, key=lambda x: (0 if x.is_our_candidate else 1, x.priority)):
+    for c in candidates:
         videos = (await db.execute(
             select(YouTubeVideo).where(
                 YouTubeVideo.candidate_id == c.id,

@@ -145,30 +145,10 @@ async def list_candidates(
     user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
-    """후보자 목록 조회 (공유 선거 포함, 우리 후보 tenant별 동적 설정)."""
-    from app.common.election_access import get_election_tenant_ids, get_our_candidate_id
+    """후보자 목록 조회 (election-shared, 우리 후보는 tenant_elections 기준)."""
+    from app.common.election_access import list_election_candidates
     tid = user["tenant_id"]
-    all_tids = await get_election_tenant_ids(db, election_id)
-    our_cand_id = await get_our_candidate_id(db, tid, election_id)
-
-    result = await db.execute(
-        select(Candidate).where(
-            Candidate.election_id == election_id,
-            Candidate.tenant_id.in_(all_tids),
-        ).order_by(Candidate.priority, Candidate.name)
-    )
-    # 중복 후보 제거 + 우리 후보 동적 설정
-    seen = set()
-    candidates = []
-    for c in result.scalars().all():
-        if c.name not in seen:
-            seen.add(c.name)
-            # tenant별 "우리 후보" 동적 설정
-            if our_cand_id:
-                c.is_our_candidate = (str(c.id) == our_cand_id)
-            candidates.append(c)
-    # 우리 후보 먼저 정렬
-    candidates.sort(key=lambda x: (0 if x.is_our_candidate else 1, x.priority or 99))
+    candidates = await list_election_candidates(db, election_id, tenant_id=tid, enabled_only=False)
     return [
         CandidateResponse(
             id=str(c.id),
@@ -195,21 +175,23 @@ async def add_candidate(
     user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
-    """후보자 추가 — 고객이 직접 경쟁자를 추가할 수 있음."""
-    # 선거 소유권 확인
-    election = await db.execute(
-        select(Election).where(
-            Election.id == election_id,
-            Election.tenant_id == user["tenant_id"],
-        )
-    )
-    election = election.scalar_one_or_none()
+    """후보자 추가 — election-shared: (election_id, name) upsert.
+
+    동일 name 이 이미 있으면 새로 만들지 않고 tenant_elections 매핑만 갱신.
+    """
+    # 선거 접근 권한 (election-shared: tenant_elections 기반)
+    from app.common.election_access import can_access_election, get_or_create_candidate
+    tid = user["tenant_id"]
+    election = (await db.execute(select(Election).where(Election.id == election_id))).scalar_one_or_none()
     if not election:
         raise HTTPException(status_code=404, detail="선거를 찾을 수 없습니다")
+    if not await can_access_election(db, tid, election_id):
+        raise HTTPException(status_code=403, detail="선거 접근 권한이 없습니다")
 
     # 후보자 수 제한 확인
     from app.auth.models import Tenant
-    tenant = await db.execute(select(Tenant).where(Tenant.id == user["tenant_id"]))
+    from sqlalchemy import text as sql_text
+    tenant = await db.execute(select(Tenant).where(Tenant.id == tid))
     tenant = tenant.scalar_one()
     count = await db.execute(
         select(func.count()).where(Candidate.election_id == election_id)
@@ -220,15 +202,13 @@ async def add_candidate(
             detail=f"요금제 한도 초과: 최대 {tenant.max_candidates}명 후보자",
         )
 
-    # 기본 검색 키워드 자동 생성
     keywords = req.search_keywords or [req.name]
     if req.name not in keywords:
         keywords.insert(0, req.name)
 
-    candidate = Candidate(
-        election_id=election_id,
-        tenant_id=user["tenant_id"],
-        name=req.name,
+    candidate, created = await get_or_create_candidate(
+        db, election_id, req.name,
+        tenant_id=tid,
         party=req.party,
         party_alignment=req.party_alignment,
         role=req.role,
@@ -238,12 +218,14 @@ async def add_candidate(
         sns_links=req.sns_links,
         career_summary=req.career_summary,
     )
-    db.add(candidate)
-    await db.flush()
 
-    # 우리 후보로 설정
+    # "우리 후보"는 tenant_elections에 기록 (election-shared)
     if req.is_our_candidate:
-        election.our_candidate_id = candidate.id
+        await db.execute(sql_text(
+            "INSERT INTO tenant_elections (tenant_id, election_id, our_candidate_id) "
+            "VALUES (:tid, :eid, :cid) "
+            "ON CONFLICT (tenant_id, election_id) DO UPDATE SET our_candidate_id = EXCLUDED.our_candidate_id"
+        ), {"tid": str(tid), "eid": str(election_id), "cid": str(candidate.id)})
 
     return CandidateResponse(
         id=str(candidate.id),
@@ -269,12 +251,16 @@ async def update_candidate(
     user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
-    """후보자 수정 — 고객이 직접 경쟁자 정보 수정 가능."""
+    """후보자 수정 — election-shared: 같은 선거의 다른 캠프와 공유됨에 주의."""
+    from app.common.election_access import can_access_election
+    tid = user["tenant_id"]
+    if not await can_access_election(db, tid, election_id):
+        raise HTTPException(status_code=403, detail="선거 접근 권한이 없습니다")
+
     result = await db.execute(
         select(Candidate).where(
             Candidate.id == candidate_id,
             Candidate.election_id == election_id,
-            Candidate.tenant_id == user["tenant_id"],
         )
     )
     candidate = result.scalar_one_or_none()
@@ -310,18 +296,24 @@ async def delete_candidate(
     user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
-    """후보자 삭제."""
+    """후보자 삭제 — election-shared이므로 다른 캠프도 영향받음. 내 우리 후보는 삭제 불가."""
+    from app.common.election_access import can_access_election, get_our_candidate_id
+    tid = user["tenant_id"]
+    if not await can_access_election(db, tid, election_id):
+        raise HTTPException(status_code=403, detail="선거 접근 권한이 없습니다")
+
     result = await db.execute(
         select(Candidate).where(
             Candidate.id == candidate_id,
             Candidate.election_id == election_id,
-            Candidate.tenant_id == user["tenant_id"],
         )
     )
     candidate = result.scalar_one_or_none()
     if not candidate:
         raise HTTPException(status_code=404, detail="후보자를 찾을 수 없습니다")
-    if candidate.is_our_candidate:
+
+    my_cand_id = await get_our_candidate_id(db, tid, election_id)
+    if my_cand_id and str(candidate.id) == my_cand_id:
         raise HTTPException(status_code=400, detail="우리 후보는 삭제할 수 없습니다")
 
     await db.delete(candidate)

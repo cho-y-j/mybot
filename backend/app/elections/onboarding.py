@@ -201,47 +201,52 @@ async def apply_setup(
     else:
         election = existing
 
-    # 2. 우리 후보
-    our = Candidate(
-        election_id=election.id,
+    # 2. 우리 후보 — election-shared: (election_id, name) upsert
+    from app.common.election_access import get_or_create_candidate
+
+    our, our_created = await get_or_create_candidate(
+        db, election.id, req.our_name,
         tenant_id=tid,
-        name=req.our_name,
         party=req.our_party,
-        is_our_candidate=True,
+        is_our_candidate=True,  # legacy column, 참고용
         priority=1,
         search_keywords=setup["candidate_keywords"].get(req.our_name, [req.our_name]),
     )
-    db.add(our)
-    await db.flush()
 
-    # tenant_elections 연결 (같은 선거에 이 캠프를 참여시킴)
+    # tenant_elections 연결 — 이 tenant의 "우리 후보"는 여기서만 기록
     te_exists = (await db.execute(
-        text("SELECT 1 FROM tenant_elections WHERE tenant_id = :tid AND election_id = :eid"),
+        text("SELECT our_candidate_id FROM tenant_elections WHERE tenant_id = :tid AND election_id = :eid"),
         {"tid": str(tid), "eid": str(election.id)},
     )).scalar_one_or_none()
-    if not te_exists:
+    if te_exists is None:
         await db.execute(
             text("INSERT INTO tenant_elections (tenant_id, election_id, our_candidate_id) VALUES (:tid, :eid, :cid)"),
             {"tid": str(tid), "eid": str(election.id), "cid": str(our.id)},
         )
+    else:
+        # 기존 row가 있는데 our_candidate_id가 비어있으면 채워줌
+        await db.execute(
+            text("UPDATE tenant_elections SET our_candidate_id = :cid "
+                 "WHERE tenant_id = :tid AND election_id = :eid AND our_candidate_id IS NULL"),
+            {"tid": str(tid), "eid": str(election.id), "cid": str(our.id)},
+        )
 
+    # legacy elections.our_candidate_id: 신규 선거일 때만 기록 (기존 선거에 덮어쓰기 금지)
     if is_new_election:
         election.our_candidate_id = our.id
 
-    # 3. 경쟁 후보
+    # 3. 경쟁 후보 — election-shared: 이미 있으면 재사용
     comp_count = 0
     for i, c in enumerate(req.competitors):
-        cand = Candidate(
-            election_id=election.id,
+        await get_or_create_candidate(
+            db, election.id, c["name"],
             tenant_id=tid,
-            name=c["name"],
             party=c.get("party"),
             is_our_candidate=False,
             priority=i + 2,
             search_keywords=setup["candidate_keywords"].get(c["name"], [c["name"]]),
             homonym_filters=c.get("homonym_filters", []),
         )
-        db.add(cand)
         comp_count += 1
 
     # 4. 모니터링 키워드
@@ -365,11 +370,11 @@ async def apply_setup(
         import structlog
         structlog.get_logger().warning("onboarding_history_failed", error=str(e))
 
-    # 온보딩 완료 검증 — 후보 + tenant_elections 반드시 생성되어야 함
+    # 온보딩 완료 검증 — election-shared 모델: candidates는 election_id 기준, 우리 후보는 tenant_elections
     verify = (await db.execute(text(
         "SELECT "
-        "(SELECT COUNT(*) FROM candidates WHERE tenant_id = :tid AND election_id = :eid AND enabled = true) as cand_count, "
-        "(SELECT COUNT(*) FROM candidates WHERE tenant_id = :tid AND election_id = :eid AND is_our_candidate = true) as our_count, "
+        "(SELECT COUNT(*) FROM candidates WHERE election_id = :eid AND enabled = true) as cand_count, "
+        "(SELECT COUNT(*) FROM tenant_elections WHERE tenant_id = :tid AND election_id = :eid AND our_candidate_id IS NOT NULL) as our_count, "
         "(SELECT COUNT(*) FROM tenant_elections WHERE tenant_id = :tid AND election_id = :eid) as te_count"
     ), {"tid": str(tid), "eid": str(election.id)})).fetchone()
 
