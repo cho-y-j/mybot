@@ -14,14 +14,12 @@ const MENU_BASIC = [
 
 const MENU_ADVANCED = [
   { href: '/easy/news', label: '📰 뉴스' },
-  { href: '/easy/analysis', label: '📈 감성 분석' },
   { href: '/easy/candidates', label: '👥 후보자' },
   { href: '/easy/surveys', label: '📋 여론조사' },
   { href: '/easy/trends', label: '🔍 트렌드' },
   { href: '/easy/youtube', label: '📺 유튜브' },
   { href: '/easy/debate', label: '🎤 토론 대본' },
   { href: '/easy/schedules', label: '⏰ 스케줄' },
-  { href: '/easy/settings', label: '⚙️ 설정' },
 ];
 
 export default function EasyLayout({ children }: { children: React.ReactNode }) {
