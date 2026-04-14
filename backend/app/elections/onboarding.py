@@ -365,6 +365,23 @@ async def apply_setup(
         import structlog
         structlog.get_logger().warning("onboarding_history_failed", error=str(e))
 
+    # 온보딩 완료 검증 — 후보 + tenant_elections 반드시 생성되어야 함
+    verify = (await db.execute(text(
+        "SELECT "
+        "(SELECT COUNT(*) FROM candidates WHERE tenant_id = :tid AND election_id = :eid AND enabled = true) as cand_count, "
+        "(SELECT COUNT(*) FROM candidates WHERE tenant_id = :tid AND election_id = :eid AND is_our_candidate = true) as our_count, "
+        "(SELECT COUNT(*) FROM tenant_elections WHERE tenant_id = :tid AND election_id = :eid) as te_count"
+    ), {"tid": str(tid), "eid": str(election.id)})).fetchone()
+
+    if verify.cand_count < 1 or verify.our_count < 1 or verify.te_count < 1:
+        await db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"온보딩 저장 실패 — 후보 {verify.cand_count}명, 우리후보 {verify.our_count}개, 선거연결 {verify.te_count}개. 재시도하세요."
+        )
+
+    await db.commit()
+
     return {
         "message": "설정이 완료되었습니다! 분석을 시작할 수 있습니다.",
         "election_id": str(election.id),
