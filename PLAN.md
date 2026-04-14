@@ -82,7 +82,19 @@
 - [x] 기존 5개 테넌트 DB 스케줄 업데이트 + onboarding 템플릿 반영
 - [x] PDF D-day 누락 수정 (router.py 3곳 — election_date에서 직접 계산)
 - [x] PDF 차트+비교표 누락 수정 (router.py 3곳 — _collect_pdf_candidates 추가)
-- [ ] **내일 확인**: 07:00~07:20 오전 스케줄 5개 캠프 정상 동작
+- [x] 07:00 스케줄 실패 원인 분석 (2026-04-14) — 3가지 원인 발견 및 수정
+
+## P3-09. 인프라 안정화 — 진행 중 (2026-04-14)
+- [x] **보안**: PostgreSQL/Redis 포트 localhost 바인딩 (외부 브루트포스 차단)
+  - 원인: `0.0.0.0:5440` 노출 → admin 브루트포스 29회 → DB 인증 간헐 실패 → 500 에러
+  - 수정: `127.0.0.1:5440`, `127.0.0.1:6380`으로 변경
+- [x] **보안**: `.claude` 마운트 `:ro` → `:rw` (토큰 갱신 허용)
+  - 원인: read-only 마운트 → 컨테이너 CLI가 만료 토큰 갱신 불가 → AI 전체 실패
+- [x] **안정성**: Claude CLI 토큰 keep-alive (4시간 주기 Celery beat)
+- [x] **안정성**: Claude CLI 실패 시 stderr 로깅 + 1회 재시도
+- [x] **버그**: SQLAlchemy 세션 상태 에러 수정 (rollback 실패 방어)
+- [ ] **배포**: docker-compose 변경사항 서버 반영 (컨테이너 재시작 필요)
+- [ ] **배포 후 확인**: DB 비밀번호 강화 + 13시 스케줄 정상 작동 확인
 
 ## P3-08. 온보딩 선거 중복 생성 방지 — 완료 (2026-04-13)
 - [x] apply_setup에서 election_type + region + date로 기존 선거 검색

@@ -154,7 +154,10 @@ async def _run_full_ai_pipeline(tenant_id: str, election_id: str, limit_per_type
             )
             await adb.commit()
         except Exception as e:
-            await adb.rollback()
+            try:
+                await adb.rollback()
+            except Exception:
+                pass  # 연결 실패 시 rollback도 실패할 수 있음
             logger.error("ai_pipeline_failed", error=str(e)[:300],
                          tenant=tenant_id, election=election_id)
             return {"error": str(e)[:300]}
@@ -2157,7 +2160,44 @@ celery_app.conf.beat_schedule = {
         "task": "collect.alert_check_all",
         "schedule": 1800.0,  # 30 minutes
     },
+    "claude-token-keepalive": {
+        "task": "system.claude_token_keepalive",
+        "schedule": 14400.0,  # 4시간 (토큰 TTL 8시간의 절반)
+    },
 }
+
+
+@celery_app.task(name="system.claude_token_keepalive")
+def claude_token_keepalive():
+    """Claude CLI OAuth 토큰 갱신 — 4시간마다 실행.
+
+    CLI subprocess는 상주 프로세스가 아니므로 토큰이 만료되면 자동 갱신이 안 됨.
+    간단한 호출을 보내서 토큰을 미리 갱신하고, 실패 시 로그에 경고.
+    """
+    import shutil
+    import subprocess
+
+    claude_path = shutil.which("claude")
+    if not claude_path:
+        return {"status": "skip", "reason": "claude not found"}
+
+    try:
+        result = subprocess.run(
+            [claude_path, "-p", "ping", "--model", "claude-haiku-4-5-20251001",
+             "--permission-mode", "plan", "--no-session-persistence",
+             "--max-turns", "1"],
+            capture_output=True, timeout=30,
+        )
+        if result.returncode == 0:
+            logger.info("claude_token_refreshed")
+            return {"status": "ok"}
+        else:
+            stderr = result.stderr.decode("utf-8", errors="ignore")[:300]
+            logger.error("claude_token_refresh_failed", returncode=result.returncode, stderr=stderr)
+            return {"status": "error", "stderr": stderr}
+    except Exception as e:
+        logger.error("claude_token_refresh_error", error=str(e)[:200])
+        return {"status": "error", "error": str(e)[:200]}
 
 
 @celery_app.task(name="collect.alert_check_all")

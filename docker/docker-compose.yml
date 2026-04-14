@@ -8,7 +8,7 @@ services:
       POSTGRES_USER: electionpulse
       POSTGRES_PASSWORD: ep_dev_password_2026
     ports:
-      - "5440:5432"
+      - "127.0.0.1:5440:5432"
     volumes:
       - ep_postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -25,7 +25,7 @@ services:
     image: redis:7-alpine
     container_name: ep_redis
     ports:
-      - "6380:6379"
+      - "127.0.0.1:6380:6379"
     volumes:
       - ep_redis_data:/data
     healthcheck:
@@ -51,7 +51,7 @@ services:
       - REDIS_URL=redis://redis:6379
       - CELERY_BROKER_URL=redis://redis:6379/0
     volumes:
-      - /home/cho/.claude:/home/appuser/.claude:ro
+      - /home/cho/.claude:/home/appuser/.claude
       - ep_reports_data:/app/data/reports
     ports:
       - "8000:8000"
@@ -75,7 +75,7 @@ services:
       - REDIS_URL=redis://redis:6379
       - CELERY_BROKER_URL=redis://redis:6379/0
     volumes:
-      - /home/cho/.claude:/home/appuser/.claude:ro
+      - /home/cho/.claude:/home/appuser/.claude
     command: celery -A app.collectors.tasks:celery_app worker --loglevel=info --concurrency=4
     depends_on:
       postgres:
@@ -97,7 +97,7 @@ services:
       - REDIS_URL=redis://redis:6379
       - CELERY_BROKER_URL=redis://redis:6379/0
     volumes:
-      - /home/cho/.claude:/home/appuser/.claude:ro
+      - /home/cho/.claude:/home/appuser/.claude
     command: celery -A app.collectors.tasks:celery_app beat --loglevel=info
     depends_on:
       postgres:

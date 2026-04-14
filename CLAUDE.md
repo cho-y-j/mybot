@@ -155,12 +155,14 @@ session.add(YouTubeVideo(..., published_at=pub_at))  # None이면 NULL 저장
 - **Backend**: FastAPI (async) + Celery (beat + workers) + PostgreSQL + Redis
 - **Frontend**: Next.js, **포트 3100** (3000/3001 금지)
 - **AI**: Claude CLI subprocess (기본) + Anthropic API (고객 키 사용 시)
-- **DB 포트**: 5440 (localhost)
-- **Redis 포트**: 6380 (localhost)
+- **DB 포트**: 5440 (**127.0.0.1 only** — 외부 노출 금지)
+- **Redis 포트**: 6380 (**127.0.0.1 only** — 외부 노출 금지)
 - **Docker 배포**: GitHub Actions → GHCR → Watchtower 자동 배포 (2026-04-12 구축)
   - Dockerfile.api에 Node.js + Claude CLI 포함
-  - 호스트 `~/.claude` → 컨테이너 마운트 (system_cli 인증)
+  - 호스트 `~/.claude` → 컨테이너 마운트 (**:rw** — 토큰 갱신 필요)
   - Nginx Proxy Manager: `ai.on1.kr` → `ep_frontend:3000`
+  - **포트 바인딩 룰**: `ports: "127.0.0.1:PORT:PORT"` 형식 필수 (2026-04-14 보안 사고)
+  - Claude CLI 토큰 keep-alive: Celery beat 4시간 주기 (`system.claude_token_keepalive`)
 
 ### 2.2. 수집 → AI 스크리닝 → 분석 파이프라인 (2026-04-13 개정)
 ```
