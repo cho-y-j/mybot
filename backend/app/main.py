@@ -21,6 +21,7 @@ from app.billing.router import router as billing_router
 from app.elections.onboarding import router as onboarding_router
 from app.chat.router import router as chat_router
 from app.content.router import router as content_router
+from app.services.easy_router import router as easy_router
 from app.elections.history_router import router as history_router
 from app.elections.events_router import router as events_router
 from app.elections.survey_router import router as survey_router
@@ -91,6 +92,7 @@ app.include_router(billing_router, prefix="/api/billing", tags=["Billing"])
 app.include_router(onboarding_router, prefix="/api/onboarding", tags=["Smart Onboarding"])
 app.include_router(chat_router, prefix="/api/chat", tags=["AI Chat"])
 app.include_router(content_router, prefix="/api/content", tags=["Content Tools"])
+app.include_router(easy_router, prefix="/api/easy", tags=["Easy Mode"])
 app.include_router(history_router, prefix="/api/history", tags=["Election History"])
 app.include_router(events_router, prefix="/api/events", tags=["Events & Recommendations"])
 app.include_router(survey_router, prefix="/api/surveys", tags=["Surveys"])

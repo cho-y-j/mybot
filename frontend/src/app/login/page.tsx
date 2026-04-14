@@ -24,7 +24,13 @@ export default function LoginPage() {
       if (data?.user?.is_superadmin) {
         router.push('/admin');
       } else {
-        router.push('/');
+        const mode = localStorage.getItem('preferred_mode');
+        if (mode === 'expert') {
+          router.push('/dashboard');
+        } else {
+          // 기본: 쉬운 모드 (신규 사용자)
+          router.push('/easy');
+        }
       }
     } catch (err: any) {
       const msg = err.message || '';

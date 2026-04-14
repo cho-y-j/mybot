@@ -24,7 +24,11 @@ export default function Header({ onMenuClick }: { onMenuClick?: () => void } = {
         </svg>
       </button>
       <div className="flex-1" />
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
+        <button onClick={() => { localStorage.setItem('preferred_mode', 'easy'); router.push('/easy'); }}
+          className="text-xs px-3 py-1.5 bg-blue-500/10 text-blue-500 rounded-lg hover:bg-blue-500/20 transition-colors font-medium">
+          😊 쉬운 모드
+        </button>
         {user && (
           <span className="text-sm text-[var(--muted)] hidden sm:inline">
             {user.name} <span className="text-xs opacity-60">({user.role})</span>

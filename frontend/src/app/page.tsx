@@ -29,7 +29,8 @@ export default function Home() {
         }
         const elections = await api.getElections();
         if (elections.length > 0) {
-          router.replace('/dashboard');
+          const mode = localStorage.getItem('preferred_mode');
+          router.replace(mode === 'expert' ? '/dashboard' : '/easy');
         } else {
           router.replace('/onboarding');
         }

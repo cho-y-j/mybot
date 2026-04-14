@@ -55,13 +55,14 @@ async def build_rich_context(
     competitors = [c for c in candidates if not c.is_our_candidate]
     d_day = (election.election_date - date.today()).days if election.election_date else 0
 
+    comp_strs = [f"{c.name}({c.party or '무소속'})" for c in competitors]
     info = [
         "=== 선거 기본 정보 ===",
         f"선거: {election.name} (D-{d_day})",
         f"지역: {election.region_sido or ''} {election.region_sigungu or ''}",
         f"유형: {election.election_type}",
         f"우리 후보: {our.name if our else '-'} ({our.party if our and our.party else '무소속'})",
-        f"경쟁 후보: {', '.join(f'{c.name}({c.party or \"무소속\"})' for c in competitors)}",
+        f"경쟁 후보: {', '.join(comp_strs)}",
     ]
     sections.append("\n".join(info))
 
