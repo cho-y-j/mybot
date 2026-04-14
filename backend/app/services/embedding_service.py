@@ -52,12 +52,13 @@ async def store_embedding(
     preview = (content or "")[:300]
 
     try:
-        # upsert: source_type + source_id 기준
+        # 기존 삭제 후 insert (심플하고 안전)
+        await db.execute(text("""
+            DELETE FROM embeddings WHERE source_type = :stype AND source_id = :sid AND tenant_id = :tid
+        """), {"stype": source_type, "sid": source_id, "tid": tenant_id})
         await db.execute(text("""
             INSERT INTO embeddings (tenant_id, election_id, source_type, source_id, title, content_preview, embedding)
             VALUES (:tid, :eid, :stype, :sid, :title, :preview, :emb::vector)
-            ON CONFLICT (source_type, source_id) WHERE source_type IS NOT NULL AND source_id IS NOT NULL
-            DO UPDATE SET title = :title, content_preview = :preview, embedding = :emb::vector, updated_at = NOW()
         """), {
             "tid": tenant_id, "eid": election_id,
             "stype": source_type, "sid": source_id,
@@ -65,23 +66,12 @@ async def store_embedding(
         })
         return True
     except Exception as e:
-        # unique constraint 없으면 그냥 insert
+        logger.error("embedding_store_error", error=str(e)[:200])
         try:
-            await db.execute(text("""
-                DELETE FROM embeddings WHERE source_type = :stype AND source_id = :sid AND tenant_id = :tid
-            """), {"stype": source_type, "sid": source_id, "tid": tenant_id})
-            await db.execute(text("""
-                INSERT INTO embeddings (tenant_id, election_id, source_type, source_id, title, content_preview, embedding)
-                VALUES (:tid, :eid, :stype, :sid, :title, :preview, :emb::vector)
-            """), {
-                "tid": tenant_id, "eid": election_id,
-                "stype": source_type, "sid": source_id,
-                "title": title, "preview": preview, "emb": vec_str,
-            })
-            return True
-        except Exception as e2:
-            logger.error("embedding_store_error", error=str(e2)[:200])
-            return False
+            await db.rollback()
+        except Exception:
+            pass
+        return False
 
 
 async def search_similar(
@@ -150,6 +140,10 @@ async def embed_batch_items(
         )
         if ok:
             stored += 1
+            try:
+                await db.commit()
+            except Exception:
+                pass
     return stored
 
 
@@ -170,6 +164,10 @@ async def embed_existing_data(db: AsyncSession, tenant_id: str, election_id: str
         ok = await store_embedding(db, tenant_id, election_id, stype, str(r.id), r.title or r.report_type, r.content_text)
         if ok:
             count += 1
+            try:
+                await db.commit()
+            except Exception:
+                pass
     result["reports"] = count
 
     # 뉴스
@@ -185,6 +183,10 @@ async def embed_existing_data(db: AsyncSession, tenant_id: str, election_id: str
         ok = await store_embedding(db, tenant_id, election_id, "news", str(n.id), n.title, content)
         if ok:
             count += 1
+            try:
+                await db.commit()
+            except Exception:
+                pass
     result["news"] = count
 
     # 커뮤니티
@@ -199,6 +201,10 @@ async def embed_existing_data(db: AsyncSession, tenant_id: str, election_id: str
         ok = await store_embedding(db, tenant_id, election_id, "community", str(c.id), c.title, c.ai_summary or "")
         if ok:
             count += 1
+            try:
+                await db.commit()
+            except Exception:
+                pass
     result["community"] = count
 
     # 유튜브
@@ -213,8 +219,10 @@ async def embed_existing_data(db: AsyncSession, tenant_id: str, election_id: str
         ok = await store_embedding(db, tenant_id, election_id, "youtube", str(y.id), y.title, y.ai_summary or "")
         if ok:
             count += 1
+            try:
+                await db.commit()
+            except Exception:
+                pass
     result["youtube"] = count
-
-    await db.commit()
     logger.info("embed_existing_done", tenant=tenant_id, result=result)
     return result
