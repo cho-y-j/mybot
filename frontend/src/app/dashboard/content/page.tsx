@@ -356,6 +356,19 @@ export default function ContentToolsPage() {
                 </button>
               </div>
 
+              {/* AI 생성물 + 선거법 안내 */}
+              <div className="mt-4 p-3 rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-sm">
+                <div className="font-semibold text-amber-800 dark:text-amber-300 mb-1">[AI 활용] 참고자료 안내</div>
+                <ul className="text-amber-700 dark:text-amber-400 space-y-1 text-xs">
+                  <li>- 본 콘텐츠는 AI가 수집 데이터를 기반으로 생성한 <strong>참고자료</strong>입니다.</li>
+                  <li>- 게시 전 사실 관계를 반드시 확인하세요.</li>
+                  <li>- <strong>공직선거법 제82조의8</strong>에 따라 AI 생성 콘텐츠는 <strong>"[AI 활용]" 표기 필수</strong> (위반 시 과태료 300만원 이하).</li>
+                  <li>- 제250조 <strong>허위사실 공표</strong>, 제110조 <strong>후보자 비방</strong>, 제112조 <strong>기부행위</strong> 금지.</li>
+                  <li>- 선거일 전 <strong>90일부터 AI 딥페이크 영상/이미지 금지</strong> (제82조의8 제2항, 최대 7년 이하 징역).</li>
+                  <li>- <strong>글(블로그/SNS/카드뉴스)은 표기만 하면 상시 사용 가능</strong>하나, 동영상 합성은 금지.</li>
+                </ul>
+              </div>
+
               {/* 출처 각주 */}
               {genResult.citations && genResult.citations.length > 0 && (
                 <div className="mt-4 p-3 rounded-xl border border-[var(--card-border)] bg-[var(--muted-bg)]">
