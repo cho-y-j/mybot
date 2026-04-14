@@ -46,10 +46,10 @@ services:
     restart: always
     env_file: .env.server
     environment:
-      - DATABASE_URL=postgresql+asyncpg://electionpulse:ep_dev_password_2026@postgres:5432/electionpulse
-      - SYNC_DATABASE_URL=postgresql://electionpulse:ep_dev_password_2026@postgres:5432/electionpulse
-      - REDIS_URL=redis://redis:6379
-      - CELERY_BROKER_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql+asyncpg://electionpulse:ep_dev_password_2026@ep_postgres:5432/electionpulse
+      - SYNC_DATABASE_URL=postgresql://electionpulse:ep_dev_password_2026@ep_postgres:5432/electionpulse
+      - REDIS_URL=redis://ep_redis:6379
+      - CELERY_BROKER_URL=redis://ep_redis:6379/0
     volumes:
       - /home/cho/.claude:/home/appuser/.claude
       - ep_reports_data:/app/data/reports
@@ -70,10 +70,10 @@ services:
     restart: always
     env_file: .env.server
     environment:
-      - DATABASE_URL=postgresql+asyncpg://electionpulse:ep_dev_password_2026@postgres:5432/electionpulse
-      - SYNC_DATABASE_URL=postgresql://electionpulse:ep_dev_password_2026@postgres:5432/electionpulse
-      - REDIS_URL=redis://redis:6379
-      - CELERY_BROKER_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql+asyncpg://electionpulse:ep_dev_password_2026@ep_postgres:5432/electionpulse
+      - SYNC_DATABASE_URL=postgresql://electionpulse:ep_dev_password_2026@ep_postgres:5432/electionpulse
+      - REDIS_URL=redis://ep_redis:6379
+      - CELERY_BROKER_URL=redis://ep_redis:6379/0
     volumes:
       - /home/cho/.claude:/home/appuser/.claude
     command: celery -A app.collectors.tasks:celery_app worker --loglevel=info --concurrency=4
@@ -92,10 +92,10 @@ services:
     restart: always
     env_file: .env.server
     environment:
-      - DATABASE_URL=postgresql+asyncpg://electionpulse:ep_dev_password_2026@postgres:5432/electionpulse
-      - SYNC_DATABASE_URL=postgresql://electionpulse:ep_dev_password_2026@postgres:5432/electionpulse
-      - REDIS_URL=redis://redis:6379
-      - CELERY_BROKER_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql+asyncpg://electionpulse:ep_dev_password_2026@ep_postgres:5432/electionpulse
+      - SYNC_DATABASE_URL=postgresql://electionpulse:ep_dev_password_2026@ep_postgres:5432/electionpulse
+      - REDIS_URL=redis://ep_redis:6379
+      - CELERY_BROKER_URL=redis://ep_redis:6379/0
     volumes:
       - /home/cho/.claude:/home/appuser/.claude
     command: celery -A app.collectors.tasks:celery_app beat --loglevel=info
