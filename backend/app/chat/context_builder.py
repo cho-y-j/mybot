@@ -31,6 +31,7 @@ INTENT_KEYWORDS = {
     "content": ["콘텐츠", "블로그", "해시태그", "키워드", "SEO", "포스팅"],
     "report": ["보고서", "리포트", "브리핑", "지난", "어제", "이전", "저번"],
     "history": ["과거", "역대", "지난 선거", "2022", "2018", "2014", "당선", "투표율", "역사"],
+    "law": ["선거법", "공직선거법", "법", "위반", "규정", "합법", "불법", "위법", "선관위", "벌금", "처벌", "허용", "금지", "기부행위", "비방"],
 }
 
 
@@ -120,6 +121,11 @@ async def build_chat_context(
     # 보고서 히스토리 (이전 보고서 참고)
     if "report" in intents or "strategy" in intents or not intents:
         sections.append(await _build_report_history_context(db, tenant_id, election_id))
+
+    # 선거법 질문 — 실제 법 조항 포함
+    if "law" in intents:
+        from app.content.compliance import ComplianceChecker
+        sections.append(f"=== 공직선거법 주요 조항 ===\n{ComplianceChecker.get_law_text()}")
 
     # 과거 선거 데이터
     if "history" in intents:

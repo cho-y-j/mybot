@@ -102,13 +102,15 @@ async def check_compliance(
     user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
-    """콘텐츠 선거법 사전 검증."""
+    """콘텐츠 선거법 사전 검증 — AI 기반 정밀 분석."""
     election, _, _ = await _load_election_data(db, user["tenant_id"], election_id)
 
-    result = compliance_checker.check_content(
+    result = await compliance_checker.check_with_ai(
         text=req.text,
         content_type=req.content_type,
-        election_date=election.election_date.isoformat(),
+        election_date=election.election_date.isoformat() if election.election_date else None,
+        tenant_id=user["tenant_id"],
+        db=db,
     )
 
     return result
