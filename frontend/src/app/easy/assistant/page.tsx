@@ -58,7 +58,7 @@ export default function AssistantPage() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-3rem)]">
+    <div className="flex flex-col h-[calc(100vh-9rem)]">
       <div className="mb-4">
         <h1 className="text-2xl font-bold">💬 AI 비서</h1>
         <p className="text-sm text-[var(--muted)] mt-1">선거 데이터 + 실시간 웹 검색 기반 답변</p>

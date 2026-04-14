@@ -10,6 +10,7 @@ export default function CandidateComparisonPage() {
   const [gaps, setGaps] = useState<any>(null);
   const [surveys, setSurveys] = useState<any[]>([]);
   const [mediaData, setMediaData] = useState<any>(null);
+  const [history, setHistory] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
 
@@ -21,14 +22,19 @@ export default function CandidateComparisonPage() {
     if (!election) return;
     setLoading(true);
     try {
-      const [gp, sv, md] = await Promise.all([
+      const token = localStorage.getItem('access_token');
+      const [gp, sv, md, hist] = await Promise.all([
         api.getCompetitorGaps(election.id).catch(() => null),
         api.getSurveys(election.id).catch(() => ({ surveys: [] })),
         api.getMediaOverview(election.id).catch(() => null),
+        fetch(`/api/history/election-history/by-region/${election.id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }).then(r => r.ok ? r.json() : null).catch(() => null),
       ]);
       setGaps(gp);
       setSurveys(sv.surveys || []);
       setMediaData(md);
+      setHistory(hist);
     } catch (e: any) {
       console.error('candidates load error:', e);
     } finally { setLoading(false); }
@@ -99,10 +105,25 @@ export default function CandidateComparisonPage() {
     }
   }
 
-  // Gap analysis items
-  const gapItems = gaps?.gaps || [];
-  const strengthItems = gaps?.strengths || [];
-  const parityItems = gaps?.parity || [];
+  // Gap analysis items — area 기준 dedup (같은 area가 여러 경쟁자에 대해 반복되는 중복 제거)
+  const dedupByArea = (items: any[]): any[] => {
+    const map = new Map<string, any>();
+    items.forEach(it => {
+      const key = it.area || '';
+      if (!map.has(key)) {
+        map.set(key, { ...it, details: [it.detail].filter(Boolean), recommendations: [it.recommendation].filter(Boolean) });
+      } else {
+        const existing = map.get(key);
+        if (it.detail && !existing.details.includes(it.detail)) existing.details.push(it.detail);
+        if (it.recommendation && !existing.recommendations.includes(it.recommendation)) existing.recommendations.push(it.recommendation);
+      }
+    });
+    return Array.from(map.values());
+  };
+
+  const gapItems = dedupByArea(gaps?.gaps || []);
+  const strengthItems = dedupByArea(gaps?.strengths || []);
+  const parityItems = dedupByArea(gaps?.parity || []);
 
   return (
     <div className="space-y-6">
@@ -227,9 +248,13 @@ export default function CandidateComparisonPage() {
                   {gapItems.map((g: any, i: number) => (
                     <div key={i} className="bg-red-50 rounded-lg p-3 text-sm">
                       <p className="font-medium text-red-800">{g.area}</p>
-                      {g.detail && <p className="text-red-600 text-xs mt-1">{g.detail}</p>}
-                      {g.recommendation && <p className="text-red-500 text-xs mt-1">{g.recommendation}</p>}
-                      {g.quality_warning && <p className="text-amber-600 text-[10px] mt-1">* 분석 품질 낮음 — 재분석 후 재확인 필요</p>}
+                      {(g.details || []).map((d: string, j: number) => (
+                        <p key={j} className="text-red-600 text-xs mt-1">• {d}</p>
+                      ))}
+                      {(g.recommendations || []).map((r: string, j: number) => (
+                        <p key={j} className="text-red-500 text-xs mt-1">→ {r}</p>
+                      ))}
+                      {g.quality_warning && <p className="text-amber-600 text-[10px] mt-1">* 분석 품질 낮음</p>}
                     </div>
                   ))}
                 </div>
@@ -242,8 +267,10 @@ export default function CandidateComparisonPage() {
                   {strengthItems.map((s: any, i: number) => (
                     <div key={i} className="bg-green-50 rounded-lg p-3 text-sm">
                       <p className="font-medium text-green-800">{s.area}</p>
-                      {s.detail && <p className="text-green-600 text-xs mt-1">{s.detail}</p>}
-                      {s.quality_warning && <p className="text-amber-600 text-[10px] mt-1">* 분석 품질 낮음 — 재분석 후 재확인 필요</p>}
+                      {(s.details || []).map((d: string, j: number) => (
+                        <p key={j} className="text-green-600 text-xs mt-1">• {d}</p>
+                      ))}
+                      {s.quality_warning && <p className="text-amber-600 text-[10px] mt-1">* 분석 품질 낮음</p>}
                     </div>
                   ))}
                 </div>
@@ -256,12 +283,91 @@ export default function CandidateComparisonPage() {
                   {parityItems.map((p: any, i: number) => (
                     <div key={i} className="bg-gray-50 rounded-lg p-3 text-sm">
                       <p className="font-medium text-gray-800">{p.area}</p>
-                      {p.detail && <p className="text-gray-500 text-xs mt-1">{p.detail}</p>}
+                      {(p.details || []).map((d: string, j: number) => (
+                        <p key={j} className="text-gray-500 text-xs mt-1">• {d}</p>
+                      ))}
                     </div>
                   ))}
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* 과거 선거 결과 (같은 지역·유형) */}
+      {history && (history.results?.length > 0 || history.turnouts?.length > 0) && (
+        <div className="card">
+          <h3 className="font-semibold mb-4">🏛️ 역대 선거 결과 (선관위) — {history.election?.region} {history.election?.type}</h3>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* 연도별 당선자 + 상위 득표자 */}
+            {history.results?.length > 0 && (
+              <div>
+                <h4 className="text-sm font-semibold mb-2">연도별 상위 후보</h4>
+                <div className="space-y-3">
+                  {history.results.map((yr: any, i: number) => (
+                    <div key={i} className="border-l-2 border-blue-400 pl-3">
+                      <p className="text-sm font-bold mb-1">{yr.year}년</p>
+                      <div className="space-y-0.5">
+                        {yr.candidates.map((c: any, j: number) => (
+                          <div key={j} className="flex items-center gap-2 text-xs">
+                            <span className={`w-1.5 h-1.5 rounded-full ${c.is_winner ? 'bg-yellow-500' : 'bg-gray-400'}`} />
+                            <span className={c.is_winner ? 'font-bold' : 'text-[var(--muted)]'}>
+                              {c.candidate} ({c.party})
+                            </span>
+                            <span className="ml-auto text-[var(--muted)]">{c.vote_rate ? `${c.vote_rate}%` : '-'}</span>
+                            {c.is_winner && <span className="text-yellow-500 text-[10px]">★ 당선</span>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-4">
+              {/* 투표율 추이 */}
+              {history.turnouts?.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-2">역대 투표율</h4>
+                  <div className="space-y-1">
+                    {history.turnouts.map((t: any, i: number) => (
+                      <div key={i} className="flex items-center gap-2 text-xs">
+                        <span className="w-12 text-[var(--muted)]">{t.year}년</span>
+                        <div className="flex-1 bg-gray-100 rounded-full h-2 overflow-hidden">
+                          <div className="bg-blue-500 h-full" style={{ width: `${Math.min(100, t.turnout_rate)}%` }} />
+                        </div>
+                        <span className="w-12 text-right font-semibold">{t.turnout_rate}%</span>
+                      </div>
+                    ))}
+                    {history.turnouts.length > 0 && (
+                      <p className="text-[10px] text-[var(--muted)] mt-2">
+                        평균: <strong>{(history.turnouts.reduce((a: number, t: any) => a + t.turnout_rate, 0) / history.turnouts.length).toFixed(1)}%</strong>
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* 정당 우세도 */}
+              {history.party_stats && Object.keys(history.party_stats).length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-2">정당별 당선 횟수</h4>
+                  <div className="space-y-1">
+                    {Object.entries(history.party_stats)
+                      .sort((a: any, b: any) => b[1] - a[1])
+                      .map(([party, count]: any, i: number) => (
+                        <div key={i} className="flex items-center gap-2 text-xs">
+                          <span className="flex-1">{party}</span>
+                          <span className="font-bold text-blue-500">{count}회</span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

@@ -12,6 +12,68 @@ from app.common.dependencies import CurrentUser
 router = APIRouter()
 
 
+@router.get("/election-history/by-region/{election_id}")
+async def history_by_region(
+    election_id: str,
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """현재 선거와 같은 지역·유형의 역대 선거 결과 (당선자 + 상위 득표자)."""
+    from app.elections.models import Election
+    from uuid import UUID as _UUID
+
+    election = (await db.execute(select(Election).where(Election.id == _UUID(election_id)))).scalar_one_or_none()
+    if not election:
+        return {"election": None, "results": [], "turnouts": [], "party_stats": {}}
+
+    # 역대 결과 (최근 4회, 지역+유형 일치)
+    results_rows = (await db.execute(text("""
+        SELECT election_year, election_number, candidate_name, party, vote_rate, is_winner
+        FROM election_results
+        WHERE region_sido = :sido AND election_type = :etype
+        ORDER BY election_year DESC, vote_rate DESC NULLS LAST
+    """), {"sido": election.region_sido, "etype": election.election_type})).fetchall()
+
+    # 연도별 그룹핑 (상위 5명씩)
+    by_year: dict = {}
+    for r in results_rows:
+        by_year.setdefault(r.election_year, []).append({
+            "candidate": r.candidate_name,
+            "party": r.party or "무소속",
+            "vote_rate": float(r.vote_rate) if r.vote_rate is not None else None,
+            "is_winner": bool(r.is_winner),
+        })
+    years = sorted(by_year.keys(), reverse=True)[:4]
+    grouped = [{"year": y, "candidates": by_year[y][:5]} for y in years]
+
+    # 투표율 (같은 지역·유형, total 카테고리, 최근 5회)
+    turnouts_rows = (await db.execute(text("""
+        SELECT election_year, turnout_rate
+        FROM voter_turnout
+        WHERE region_sido = :sido AND election_type = :etype AND category = 'total'
+        ORDER BY election_year DESC
+        LIMIT 5
+    """), {"sido": election.region_sido, "etype": election.election_type})).fetchall()
+    turnouts = [{"year": t.election_year, "turnout_rate": float(t.turnout_rate)} for t in turnouts_rows]
+
+    # 정당 우세도
+    party_stats = {}
+    for r in results_rows:
+        if r.is_winner and r.party:
+            party_stats[r.party] = party_stats.get(r.party, 0) + 1
+
+    return {
+        "election": {
+            "id": str(election.id), "name": election.name,
+            "region": f"{election.region_sido or ''} {election.region_sigungu or ''}".strip(),
+            "type": election.election_type,
+        },
+        "results": grouped,
+        "turnouts": turnouts,
+        "party_stats": party_stats,
+    }
+
+
 @router.get("/election-history")
 async def get_election_history(
     election_type: str = "local",
