@@ -162,6 +162,15 @@ async def _run_full_ai_pipeline(tenant_id: str, election_id: str, limit_per_type
                          tenant=tenant_id, election=election_id)
             return {"error": str(e)[:300]}
 
+        # ── RAG 벡터 임베딩 (분석 완료된 데이터) ──
+        try:
+            from app.services.embedding_service import embed_existing_data
+            emb_result = await embed_existing_data(adb, tenant_id, election_id)
+            result["embeddings"] = emb_result
+            logger.info("auto_embedding_done", tenant=tenant_id, result=emb_result)
+        except Exception as emb_err:
+            logger.warning("auto_embedding_error", error=str(emb_err)[:200])
+
         # ── 이벤트 기반 긴급 알림 ──
         try:
             alerts = await check_db_alerts(adb, tenant_id, election_id, since_minutes=30)

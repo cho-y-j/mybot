@@ -215,6 +215,15 @@ async def generate_report(
 
     await db.flush()
 
+    # RAG 임베딩 자동 생성
+    try:
+        from app.services.embedding_service import store_embedding
+        stype = "report" if briefing_type in ("daily", "weekly") else "briefing"
+        await store_embedding(db, user["tenant_id"], str(election_id), stype, str(report.id),
+                              report.title or briefing_type, report_text or "")
+    except Exception:
+        pass
+
     return {
         "message": f"보고서 생성 완료" + (f" (텔레그램 {sent}명 발송)" if sent else ""),
         "report_id": str(report.id),

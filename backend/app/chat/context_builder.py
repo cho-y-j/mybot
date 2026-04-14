@@ -69,69 +69,47 @@ async def build_chat_context(
     # ── 선거 기본 정보 (항상 포함) ──
     sections.append(_build_election_info(election, candidates, d_day))
 
-    # ── 의도별 데이터 로드 ──
+    # ── RAG 벡터 검색 (최우선 — 질문과 관련된 데이터만) ──
+    try:
+        from app.services.embedding_service import search_similar
+        rag_results = await search_similar(db, tenant_id, question, limit=10)
+        if rag_results:
+            lines = ["=== 질문 관련 데이터 (AI 벡터 검색) ==="]
+            for r in rag_results:
+                lines.append(f"[{r['source_type']}] {r['title'] or ''} (유사도 {r['similarity']})")
+                if r['content']:
+                    lines.append(f"  {r['content']}")
+            sections.append("\n".join(lines))
+            logger.info("rag_search_done", results=len(rag_results), tenant=tenant_id)
+    except Exception as e:
+        logger.warning("rag_search_failed", error=str(e)[:100])
+
+    # ── 의도별 보충 데이터 (RAG로 커버 안 되는 구조화 데이터) ──
     today = date.today()
-    week_ago = today - timedelta(days=7)
 
-    if "news" in intents or "sentiment" in intents or not intents:
-        sections.append(await _build_news_context(db, tenant_id, election_id, candidates, today))
-
+    # 감성 통계 (숫자 집계)
     if "sentiment" in intents or "candidate" in intents or not intents:
         sections.append(await _build_sentiment_context(db, tenant_id, election_id, candidates, today))
 
+    # 트렌드 (검색량 수치)
     if "trend" in intents:
         sections.append(await _build_trend_context(db, tenant_id, election_id, candidates))
 
-    if "youtube" in intents:
-        sections.append(await _build_youtube_context(db, tenant_id, election_id, candidates))
-
-    if "community" in intents:
-        sections.append(await _build_community_context(db, tenant_id, election_id, candidates))
-
+    # 여론조사 (수치 데이터)
     if "survey" in intents:
         sections.append(await _build_survey_context(db, tenant_id, election_id))
-
-    if "strategy" in intents or "risk" in intents or "candidate" in intents:
-        sections.append(await _build_strategy_context(db, tenant_id, election_id, candidates, our))
-
-    # B4 추가: 커뮤니티/카페 글 상세
-    if "community" in intents or not intents:
-        sections.append(await _build_community_detail_context(db, tenant_id, election_id, candidates))
-
-    # B4 추가: 유튜브 댓글 감성
-    if "youtube" in intents or "sentiment" in intents:
-        sections.append(await _build_youtube_comments_context(db, tenant_id, candidates))
-
-    # B4 추가: 뉴스 댓글 감성
-    if "sentiment" in intents or "news" in intents:
-        sections.append(await _build_news_comments_context(db, tenant_id))
-
-    # B4 추가: 경쟁자 갭 분석
-    if "competitor" in intents or "strategy" in intents or "candidate" in intents:
-        sections.append(await _build_competitor_gap_context(db, tenant_id, election_id))
-
-    # B4 추가: 여론조사 교차분석
-    if "survey" in intents:
         sections.append(await _build_survey_crosstab_context(db, tenant_id, election_id))
 
-    # B4 추가: 콘텐츠 전략 추천
-    if "content" in intents or "strategy" in intents:
-        sections.append(await _build_content_strategy_context(db, tenant_id, election_id))
-
-    # 보고서 히스토리 (이전 보고서 참고)
-    if "report" in intents or "strategy" in intents or not intents:
-        sections.append(await _build_report_history_context(db, tenant_id, election_id))
-
-    # 선거법 질문 — 실제 법 조항 포함
+    # 선거법 (법 조항 전문)
     if "law" in intents:
         from app.content.compliance import ComplianceChecker
         sections.append(f"=== 공직선거법 주요 조항 ===\n{ComplianceChecker.get_law_text()}")
 
-    # 과거 선거 데이터
+    # 과거 선거 (역대 데이터)
     if "history" in intents:
         sections.append(await _build_history_context(db, election_id, election))
 
-    # 특정 후보 이름이 언급되면 해당 후보 상세 정보 추가
+    # 특정 후보 상세
     for cand in candidates:
         if cand.name in question:
             sections.append(await _build_candidate_detail(db, tenant_id, cand, today))
