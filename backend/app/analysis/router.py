@@ -361,19 +361,8 @@ async def refresh_ai_briefing(
     our_cand_id = await get_our_candidate_id(db, tid, election_id)
 
     since = date.today() - timedelta(days=7)
-    candidates_q = (await db.execute(
-        select(Candidate).where(Candidate.election_id == election_id, Candidate.tenant_id.in_(all_tids), Candidate.enabled == True)
-    )).scalars().all()
-
-    seen = set()
-    candidates = []
-    for c in candidates_q:
-        if c.name not in seen:
-            seen.add(c.name)
-            if our_cand_id:
-                c.is_our_candidate = (str(c.id) == our_cand_id)
-            candidates.append(c)
-
+    from app.common.election_access import list_election_candidates
+    candidates = await list_election_candidates(db, election_id, tenant_id=tid)
     our = next((c for c in candidates if c.is_our_candidate), None)
 
     news_by_cand = []
@@ -670,9 +659,8 @@ async def sentiment_trend(
     tid = user["tenant_id"]
     since = date.today() - timedelta(days=days)
 
-    candidates = (await db.execute(
-        select(Candidate).where(Candidate.election_id == election_id, Candidate.tenant_id == tid, Candidate.enabled == True)
-    )).scalars().all()
+    from app.common.election_access import list_election_candidates
+    candidates = await list_election_candidates(db, election_id, tenant_id=tid)
 
     # 날짜별 후보별 감성 집계
     data = []
@@ -746,13 +734,8 @@ async def get_issue_candidate_matrix(
     if not election:
         raise HTTPException(404, "선거를 찾을 수 없습니다")
 
-    cands_q = (await db.execute(
-        select(Candidate).where(
-            Candidate.election_id == election_id,
-            Candidate.tenant_id.in_(all_tids),
-            Candidate.enabled == True,
-        )
-    )).scalars().all()
+    from app.common.election_access import list_election_candidates as _lec
+    cands_q = await _lec(db, election_id, tenant_id=user["tenant_id"])
     cand_names = [c.name for c in cands_q]
     our_name = next((c.name for c in cands_q if c.is_our_candidate), None)
 

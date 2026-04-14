@@ -52,18 +52,8 @@ async def generate_debate_script(
     if not election:
         return {"error": "선거 정보 없음"}
 
-    candidates = (await db.execute(
-        select(Candidate).where(
-            Candidate.election_id == election_id,
-            Candidate.tenant_id.in_(all_tids),
-            Candidate.enabled == True,
-        )
-    )).scalars().all()
-
-    # 멀티테넌트: 우리 후보 동적 설정
-    for c in candidates:
-        if our_cand_id:
-            c.is_our_candidate = (str(c.id) == our_cand_id)
+    from app.common.election_access import list_election_candidates
+    candidates = await list_election_candidates(db, election_id, tenant_id=tenant_id)
 
     our = next((c for c in candidates if c.is_our_candidate), None)
     if not our:

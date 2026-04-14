@@ -26,13 +26,8 @@ async def collect_news_now(db: AsyncSession, tenant_id: str, election_id: str) -
     from app.elections.models import Election
     from app.elections.korea_data import ELECTION_ISSUES, REGIONS
 
-    candidates = (await db.execute(
-        select(Candidate).where(
-            Candidate.election_id == election_id,
-            Candidate.tenant_id == tenant_id,
-            Candidate.enabled == True,
-        )
-    )).scalars().all()
+    from app.common.election_access import list_election_candidates as _lec_inst
+    candidates = await _lec_inst(db, election_id, tenant_id=tenant_id)
 
     election = (await db.execute(
         select(Election).where(Election.id == election_id)
@@ -260,13 +255,8 @@ async def collect_community_now(db: AsyncSession, tenant_id: str, election_id: s
     from app.elections.models import Election
     from app.elections.korea_data import ELECTION_ISSUES, REGIONS
 
-    candidates = (await db.execute(
-        select(Candidate).where(
-            Candidate.election_id == election_id,
-            Candidate.tenant_id == tenant_id,
-            Candidate.enabled == True,
-        )
-    )).scalars().all()
+    from app.common.election_access import list_election_candidates as _lec_inst
+    candidates = await _lec_inst(db, election_id, tenant_id=tenant_id)
 
     election = (await db.execute(
         select(Election).where(Election.id == election_id)
@@ -422,11 +412,8 @@ async def collect_youtube_now(db: AsyncSession, tenant_id: str, election_id: str
     from app.elections.models import Election
     from app.elections.korea_data import ELECTION_ISSUES, REGIONS
 
-    candidates = (await db.execute(
-        select(Candidate).where(
-            Candidate.election_id == election_id, Candidate.tenant_id == tenant_id, Candidate.enabled == True,
-        )
-    )).scalars().all()
+    from app.common.election_access import list_election_candidates as _lec_yt
+    candidates = await _lec_yt(db, election_id, tenant_id=tenant_id)
 
     # 선거 정보 (유형 + 지역)
     election = (await db.execute(

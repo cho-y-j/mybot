@@ -67,13 +67,8 @@ async def generate_briefing_text(
     if not election:
         return None
 
-    candidates = (await db.execute(
-        select(Candidate).where(
-            Candidate.election_id == election_id,
-            Candidate.tenant_id == tenant_id,
-            Candidate.enabled == True,
-        ).order_by(Candidate.priority)
-    )).scalars().all()
+    from app.common.election_access import list_election_candidates
+    candidates = await list_election_candidates(db, election_id, tenant_id=tenant_id)
 
     our = next((c for c in candidates if c.is_our_candidate), None)
     today = date.today()

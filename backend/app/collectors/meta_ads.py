@@ -44,7 +44,6 @@ async def collect_meta_ads(
     candidates = (await db.execute(
         select(Candidate).where(
             Candidate.election_id == election_id,
-            Candidate.tenant_id == tenant_id,
             Candidate.enabled == True,
         )
     )).scalars().all()

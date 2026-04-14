@@ -34,7 +34,6 @@ async def _collect_pdf_candidates(db: AsyncSession, tenant_id: str, election_id:
         candidates = (await db.execute(
             select(Candidate).where(
                 Candidate.election_id == election_id,
-                Candidate.tenant_id.in_(all_tids),
                 Candidate.enabled == True,
             ).order_by(Candidate.priority)
         )).scalars().all()

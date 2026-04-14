@@ -262,7 +262,6 @@ async def _build_report_data(
     all_candidates = (await db.execute(
         select(Candidate).where(
             Candidate.election_id == election_id,
-            Candidate.tenant_id.in_(all_tids),
             Candidate.enabled == True,
         ).order_by(Candidate.priority)
     )).scalars().all()

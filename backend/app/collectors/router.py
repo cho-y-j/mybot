@@ -483,12 +483,11 @@ async def get_keyword_trends(
     from app.collectors.keyword_tracker import KeywordTracker
     from app.elections.models import Election
 
+    from app.common.election_access import list_election_candidates
     tid = user["tenant_id"]
 
-    # 후보 이름 + 선거 정보
-    candidates_q = (await db.execute(
-        select(Candidate).where(Candidate.election_id == election_id, Candidate.enabled == True)
-    )).scalars().all()
+    # 후보 이름 + 선거 정보 (election-shared)
+    candidates_q = await list_election_candidates(db, election_id, tenant_id=tid)
 
     election = (await db.execute(
         select(Election).where(Election.id == election_id)
@@ -583,7 +582,11 @@ async def get_collected_news(
     기본 정렬: 발행일(published_at) 역순 — 모든 후보 섞여서 최신순.
     후보 필터는 candidate_id 파라미터로.
     """
-    query = select(NewsArticle, Candidate.name, Candidate.is_our_candidate).join(
+    from app.common.election_access import get_our_candidate_id
+    tid = user.get("tenant_id")
+    our_cand_id = await get_our_candidate_id(db, tid, election_id) if tid else None
+
+    query = select(NewsArticle, Candidate.name, Candidate.id).join(
         Candidate, NewsArticle.candidate_id == Candidate.id
     ).where(
         NewsArticle.election_id == election_id,
@@ -609,9 +612,9 @@ async def get_collected_news(
             "sentiment": n.sentiment,
             "sentiment_score": n.sentiment_score,
             "candidate": cand_name,
-            "is_our_candidate": is_ours,
+            "is_our_candidate": bool(our_cand_id and str(cand_id) == our_cand_id),
             "date": (n.published_at or n.collected_at).strftime("%Y-%m-%d") if (n.published_at or n.collected_at) else None,
             "collected_at": n.collected_at.isoformat() if n.collected_at else None,
         }
-        for n, cand_name, is_ours in rows
+        for n, cand_name, cand_id in rows
     ]

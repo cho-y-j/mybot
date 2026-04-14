@@ -53,13 +53,13 @@ async def generate_multi_tone_content(
     if not election:
         return {"error": "선거 정보 없음", "results": []}
 
-    our = (await db.execute(
-        select(Candidate).where(
-            Candidate.election_id == election_id,
-            Candidate.tenant_id == tenant_id,
-            Candidate.is_our_candidate == True,
-        )
-    )).scalar_one_or_none()
+    from app.common.election_access import get_our_candidate_id
+    _my_id = await get_our_candidate_id(db, tenant_id, election_id)
+    our = None
+    if _my_id:
+        our = (await db.execute(
+            select(Candidate).where(Candidate.id == _my_id)
+        )).scalar_one_or_none()
 
     # 해시태그 생성
     from app.content.keyword_engine import generate_hashtags

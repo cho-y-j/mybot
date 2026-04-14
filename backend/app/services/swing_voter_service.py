@@ -44,19 +44,9 @@ async def detect_swing_indicators(
     if not election:
         return {"error": "선거 정보 없음"}
 
-    candidates = (await db.execute(
-        select(Candidate).where(
-            Candidate.election_id == election_id,
-            Candidate.tenant_id.in_(all_tids),
-            Candidate.enabled == True,
-        )
-    )).scalars().all()
-
-    our = None
-    for c in candidates:
-        if our_cand_id and str(c.id) == our_cand_id:
-            c.is_our_candidate = True
-            our = c
+    from app.common.election_access import list_election_candidates
+    candidates = await list_election_candidates(db, election_id, tenant_id=tenant_id)
+    our = next((c for c in candidates if c.is_our_candidate), None)
 
     since = date.today() - timedelta(days=days)
 

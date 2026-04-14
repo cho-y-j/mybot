@@ -53,13 +53,8 @@ async def build_chat_context(
         select(Election).where(Election.id == election_id)
     )).scalar_one_or_none()
 
-    candidates = (await db.execute(
-        select(Candidate).where(
-            Candidate.election_id == election_id,
-            Candidate.tenant_id == tenant_id,
-            Candidate.enabled == True,
-        ).order_by(Candidate.priority)
-    )).scalars().all()
+    from app.common.election_access import list_election_candidates
+    candidates = await list_election_candidates(db, election_id, tenant_id=tenant_id)
 
     our = next((c for c in candidates if c.is_our_candidate), None)
     d_day = (election.election_date - date.today()).days if election else 0
@@ -105,8 +100,8 @@ async def build_chat_context(
         from app.content.compliance import ComplianceChecker
         sections.append(f"=== 공직선거법 주요 조항 ===\n{ComplianceChecker.get_law_text()}")
 
-    # 과거 선거 (역대 데이터)
-    if "history" in intents:
+    # 과거 선거 (역대 데이터) — 전략/경쟁자 질문에도 자동 포함
+    if "history" in intents or "strategy" in intents or "competitor" in intents or "candidate" in intents or not intents:
         sections.append(await _build_history_context(db, election_id, election))
 
     # 특정 후보 상세
@@ -738,32 +733,58 @@ async def _build_report_history_context(db, tenant_id, election_id) -> str:
 
 
 async def _build_history_context(db, election_id, election) -> str:
-    """과거 선거 데이터 — 역대 결과, 투표율, 패턴."""
+    """과거 선거 데이터 — 역대 결과, 투표율, 정당 패턴 (중앙선관위 NEC API 기반)."""
     if not election:
         return ""
 
-    lines = ["=== 역대 선거 데이터 ==="]
+    lines = ["=== 역대 선거 데이터 (NEC 선관위 공식) ==="]
+    lines.append(f"지역: {election.region_sido} {election.region_sigungu or ''}")
+    lines.append(f"선거 유형: {election.election_type}")
 
     try:
         from app.elections.history_models import ElectionResult, VoterTurnout
 
+        # 같은 유형 최근 3차 선거 (당선자 + 상위 3명 득표율)
         results = (await db.execute(
             select(ElectionResult).where(
                 ElectionResult.region_sido == election.region_sido,
                 ElectionResult.election_type == election.election_type,
-                ElectionResult.is_winner == True,
-            ).order_by(ElectionResult.election_year.desc()).limit(6)
+            ).order_by(
+                ElectionResult.election_year.desc(),
+                ElectionResult.vote_rate.desc().nullslast(),
+            ).limit(30)
         )).scalars().all()
 
         if results:
-            lines.append("\n[역대 당선자]")
+            # 연도별 그룹핑
+            by_year = {}
             for r in results:
-                lines.append(f"  {r.election_year}년: {r.candidate_name} ({r.party or '무소속'}) {r.vote_rate}%")
+                by_year.setdefault(r.election_year, []).append(r)
 
+            lines.append("\n[역대 선거 결과 — 상위 득표자]")
+            for year in sorted(by_year.keys(), reverse=True)[:3]:
+                lines.append(f"\n  {year}년:")
+                for r in by_year[year][:5]:
+                    winner = " ★당선" if r.is_winner else ""
+                    party = r.party or "무소속"
+                    rate = f"{r.vote_rate}%" if r.vote_rate else "-"
+                    lines.append(f"    {r.candidate_name} ({party}) {rate}{winner}")
+
+        # 정당 우세 패턴
+        party_stats = {}
+        for r in results:
+            if r.is_winner and r.party:
+                party_stats[r.party] = party_stats.get(r.party, 0) + 1
+        if party_stats:
+            lines.append("\n[지역 정당 우세도]")
+            for party, cnt in sorted(party_stats.items(), key=lambda x: -x[1]):
+                lines.append(f"  {party}: {cnt}회 당선")
+
+        # 투표율 추이
         turnouts = (await db.execute(
             select(VoterTurnout).where(
                 VoterTurnout.election_type == election.election_type,
-                VoterTurnout.region == election.region_sido,
+                VoterTurnout.region_sido == election.region_sido,
                 VoterTurnout.category == "total",
             ).order_by(VoterTurnout.election_year.desc()).limit(5)
         )).scalars().all()
@@ -772,8 +793,30 @@ async def _build_history_context(db, election_id, election) -> str:
             lines.append("\n[역대 투표율]")
             for t in turnouts:
                 lines.append(f"  {t.election_year}년: {t.turnout_rate}%")
+            avg = sum(t.turnout_rate for t in turnouts if t.turnout_rate) / max(len(turnouts), 1)
+            lines.append(f"  평균: {avg:.1f}%")
+
+        # 과거 공약 (past_elections 테이블)
+        try:
+            from sqlalchemy import text as sql_text
+            pledges = (await db.execute(sql_text("""
+                SELECT election_year, candidate_name, pledges
+                FROM past_elections
+                WHERE region_sido = :sido AND election_type = :etype
+                  AND pledges IS NOT NULL AND pledges::text != '[]' AND pledges::text != 'null'
+                ORDER BY election_year DESC LIMIT 3
+            """), {"sido": election.region_sido, "etype": election.election_type})).fetchall()
+            if pledges:
+                lines.append("\n[역대 주요 공약 (참고)]")
+                for p in pledges:
+                    pl = p.pledges if isinstance(p.pledges, list) else []
+                    if pl:
+                        pledge_text = ", ".join(str(x)[:50] for x in pl[:3])
+                        lines.append(f"  {p.election_year} {p.candidate_name}: {pledge_text}")
+        except Exception:
+            pass
 
     except Exception as e:
         lines.append(f"  (데이터 조회 오류: {str(e)[:100]})")
 
-    return "\n".join(lines) if len(lines) > 1 else ""
+    return "\n".join(lines) if len(lines) > 2 else ""

@@ -231,10 +231,16 @@ def collect_news(self, tenant_id: str, election_id: str, schedule_id: str):
         candidates = session.execute(
             select(Candidate).where(
                 Candidate.election_id == election_id,
-                Candidate.tenant_id == tenant_id,
                 Candidate.enabled == True,
             )
         ).scalars().all()
+        # election-shared: is_our_candidate 을 tenant_elections 기준으로 덮어씀
+        _our_cand_id = session.execute(text(
+            "SELECT our_candidate_id FROM tenant_elections "
+            "WHERE tenant_id = :tid AND election_id = :eid AND our_candidate_id IS NOT NULL"
+        ), {"tid": str(tenant_id), "eid": str(election_id)}).scalar()
+        for _c in candidates:
+            _c.is_our_candidate = bool(_our_cand_id and str(_c.id) == str(_our_cand_id))
 
         collector = NaverCollector(settings.NAVER_CLIENT_ID, settings.NAVER_CLIENT_SECRET)
         cand_names = [c.name for c in candidates]
@@ -458,10 +464,16 @@ def collect_community(self, tenant_id: str, election_id: str, schedule_id: str):
         candidates = session.execute(
             select(Candidate).where(
                 Candidate.election_id == election_id,
-                Candidate.tenant_id == tenant_id,
                 Candidate.enabled == True,
             )
         ).scalars().all()
+        # election-shared: is_our_candidate 을 tenant_elections 기준으로 덮어씀
+        _our_cand_id = session.execute(text(
+            "SELECT our_candidate_id FROM tenant_elections "
+            "WHERE tenant_id = :tid AND election_id = :eid AND our_candidate_id IS NOT NULL"
+        ), {"tid": str(tenant_id), "eid": str(election_id)}).scalar()
+        for _c in candidates:
+            _c.is_our_candidate = bool(_our_cand_id and str(_c.id) == str(_our_cand_id))
 
         collector = NaverCollector(settings.NAVER_CLIENT_ID, settings.NAVER_CLIENT_SECRET)
         cand_names = [c.name for c in candidates]
@@ -661,10 +673,16 @@ def collect_youtube(self, tenant_id: str, election_id: str, schedule_id: str):
         candidates = session.execute(
             select(Candidate).where(
                 Candidate.election_id == election_id,
-                Candidate.tenant_id == tenant_id,
                 Candidate.enabled == True,
             )
         ).scalars().all()
+        # election-shared: is_our_candidate 을 tenant_elections 기준으로 덮어씀
+        _our_cand_id = session.execute(text(
+            "SELECT our_candidate_id FROM tenant_elections "
+            "WHERE tenant_id = :tid AND election_id = :eid AND our_candidate_id IS NOT NULL"
+        ), {"tid": str(tenant_id), "eid": str(election_id)}).scalar()
+        for _c in candidates:
+            _c.is_our_candidate = bool(_our_cand_id and str(_c.id) == str(_our_cand_id))
 
         collector = YouTubeCollector(settings.YOUTUBE_API_KEY or settings.GOOGLE_API_KEY)
         our_cand = next((c for c in candidates if c.is_our_candidate), None)
@@ -851,10 +869,16 @@ def collect_trends(self, tenant_id: str, election_id: str, schedule_id: str):
         candidates = session.execute(
             select(Candidate).where(
                 Candidate.election_id == election_id,
-                Candidate.tenant_id == tenant_id,
                 Candidate.enabled == True,
             )
         ).scalars().all()
+        # election-shared: is_our_candidate 을 tenant_elections 기준으로 덮어씀
+        _our_cand_id = session.execute(text(
+            "SELECT our_candidate_id FROM tenant_elections "
+            "WHERE tenant_id = :tid AND election_id = :eid AND our_candidate_id IS NOT NULL"
+        ), {"tid": str(tenant_id), "eid": str(election_id)}).scalar()
+        for _c in candidates:
+            _c.is_our_candidate = bool(_our_cand_id and str(_c.id) == str(_our_cand_id))
 
         collector = NaverTrendCollector(
             client_id=settings.NAVER_CLIENT_ID,
@@ -941,7 +965,7 @@ def collect_news_comments(self, tenant_id: str, election_id: str, schedule_id: s
             select(NewsArticle, Candidate.name)
             .join(Candidate, NewsArticle.candidate_id == Candidate.id)
             .where(
-                Candidate.tenant_id == tenant_id,
+                NewsArticle.election_id == election_id,
                 NewsArticle.collected_at >= cutoff,
             )
             .order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.collected_at.desc())
@@ -999,10 +1023,16 @@ def collect_community_enhanced(self, tenant_id: str, election_id: str, schedule_
         candidates = session.execute(
             select(Candidate).where(
                 Candidate.election_id == election_id,
-                Candidate.tenant_id == tenant_id,
                 Candidate.enabled == True,
             )
         ).scalars().all()
+        # election-shared: is_our_candidate 을 tenant_elections 기준으로 덮어씀
+        _our_cand_id = session.execute(text(
+            "SELECT our_candidate_id FROM tenant_elections "
+            "WHERE tenant_id = :tid AND election_id = :eid AND our_candidate_id IS NOT NULL"
+        ), {"tid": str(tenant_id), "eid": str(election_id)}).scalar()
+        for _c in candidates:
+            _c.is_our_candidate = bool(_our_cand_id and str(_c.id) == str(_our_cand_id))
 
         collector = CommunityCollector(settings.NAVER_CLIENT_ID, settings.NAVER_CLIENT_SECRET)
         cand_names = [c.name for c in candidates]
@@ -1112,10 +1142,16 @@ def collect_youtube_enhanced(self, tenant_id: str, election_id: str, schedule_id
         candidates = session.execute(
             select(Candidate).where(
                 Candidate.election_id == election_id,
-                Candidate.tenant_id == tenant_id,
                 Candidate.enabled == True,
             )
         ).scalars().all()
+        # election-shared: is_our_candidate 을 tenant_elections 기준으로 덮어씀
+        _our_cand_id = session.execute(text(
+            "SELECT our_candidate_id FROM tenant_elections "
+            "WHERE tenant_id = :tid AND election_id = :eid AND our_candidate_id IS NOT NULL"
+        ), {"tid": str(tenant_id), "eid": str(election_id)}).scalar()
+        for _c in candidates:
+            _c.is_our_candidate = bool(_our_cand_id and str(_c.id) == str(_our_cand_id))
 
         collector = YouTubeCollector(settings.YOUTUBE_API_KEY or settings.GOOGLE_API_KEY)
         total = 0
@@ -1336,10 +1372,16 @@ def alert_check(self, tenant_id: str, election_id: str):
         candidates = session.execute(
             select(Candidate).where(
                 Candidate.election_id == election_id,
-                Candidate.tenant_id == tenant_id,
                 Candidate.enabled == True,
             )
         ).scalars().all()
+        # election-shared: is_our_candidate 을 tenant_elections 기준으로 덮어씀
+        _our_cand_id = session.execute(text(
+            "SELECT our_candidate_id FROM tenant_elections "
+            "WHERE tenant_id = :tid AND election_id = :eid AND our_candidate_id IS NOT NULL"
+        ), {"tid": str(tenant_id), "eid": str(election_id)}).scalar()
+        for _c in candidates:
+            _c.is_our_candidate = bool(_our_cand_id and str(_c.id) == str(_our_cand_id))
 
         election = session.execute(
             select(Election).where(Election.id == election_id)
@@ -1796,6 +1838,7 @@ async def _opus_analyze_all(tenant_id: str, election_id: str) -> int:
     from app.elections.models import Candidate, NewsArticle, CommunityPost
 
     async with async_session_factory() as db:
+        from app.common.election_access import get_our_candidate_id
         all_tids = await get_election_tenant_ids(db, election_id)
         since = date.today() - timedelta(days=2)
 
@@ -1804,15 +1847,16 @@ async def _opus_analyze_all(tenant_id: str, election_id: str) -> int:
             select(Candidate).where(Candidate.election_id == election_id, Candidate.enabled == True)
         )).scalars().all()
         cand_map = {str(c.id): c for c in candidates}
+        _my_cand_id = await get_our_candidate_id(db, tenant_id, election_id)
 
         def _get_quadrant(candidate_id: str, sentiment: str) -> str | None:
-            """감성 + 후보 관계 → 4사분면 즉시 배정."""
+            """감성 + 후보 관계 → 4사분면 즉시 배정 (tenant_elections 관점)."""
             if sentiment == "neutral":
                 return None
             cand = cand_map.get(str(candidate_id))
             if not cand:
                 return None
-            is_ours = cand.is_our_candidate
+            is_ours = bool(_my_cand_id and str(cand.id) == _my_cand_id)
             if sentiment == "positive":
                 return "strength" if is_ours else "threat"
             elif sentiment == "negative":
@@ -1976,7 +2020,7 @@ async def _verify_sentiment_with_opus(tenant_id: str, election_id: str) -> int:
                 "text": f"{row.title or ''} {row.summary or row.content_snippet or ''}",
                 "current_sentiment": row.sentiment,
                 "candidate_name": cand.name if cand else "불명",
-                "is_our_candidate": cand.is_our_candidate if cand else False,
+                "is_our_candidate": bool(cand and _my_cand_id and str(cand.id) == _my_cand_id),
             })
 
         for row in unverified_community:
@@ -1987,7 +2031,7 @@ async def _verify_sentiment_with_opus(tenant_id: str, election_id: str) -> int:
                 "text": f"{row.title or ''} {row.content_snippet or ''}",
                 "current_sentiment": row.sentiment,
                 "candidate_name": cand.name if cand else "불명",
-                "is_our_candidate": cand.is_our_candidate if cand else False,
+                "is_our_candidate": bool(cand and _my_cand_id and str(cand.id) == _my_cand_id),
             })
 
         if not all_items:
@@ -2063,7 +2107,6 @@ async def _collect_candidates_data(tenant_id: str, election_id: str) -> list:
         candidates = (await db.execute(
             select(Candidate).where(
                 Candidate.election_id == election_id,
-                Candidate.tenant_id.in_(all_tids),
                 Candidate.enabled == True,
             ).order_by(Candidate.priority)
         )).scalars().all()

@@ -26,13 +26,8 @@ async def get_ad_analysis(
     all_tids = await get_election_tenant_ids(db, election_id)
 
     # 후보별 광고 집계
-    candidates = (await db.execute(
-        select(Candidate).where(
-            Candidate.election_id == election_id,
-            Candidate.tenant_id.in_(all_tids),
-            Candidate.enabled == True,
-        )
-    )).scalars().all()
+    from app.common.election_access import list_election_candidates
+    candidates = await list_election_candidates(db, election_id, tenant_id=tenant_id)
 
     result = []
     total_campaigns = 0

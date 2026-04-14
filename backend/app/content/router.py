@@ -259,14 +259,16 @@ async def get_content_situations(
 
     # 3. 경쟁자 대비 갭 (커뮤니티에서 경쟁자가 다루는 이슈)
     try:
-        candidates_q = (await db.execute(
+        from app.common.election_access import get_our_candidate_id as _goci
+        _our_id = await _goci(db, tid, election_id)
+        all_cands = (await db.execute(
             select(Candidate).where(
                 Candidate.election_id == election_id,
-                Candidate.tenant_id == tid,
                 Candidate.enabled == True,
-                Candidate.is_our_candidate == False,
             )
         )).scalars().all()
+        # election-shared: 우리 후보 제외 (tenant_elections 기준)
+        candidates_q = [c for c in all_cands if not (_our_id and str(c.id) == _our_id)]
 
         for comp in candidates_q[:2]:
             comp_issues = (await db.execute(
@@ -711,7 +713,7 @@ async def _load_election_data(db, tenant_id, election_id):
 
     all_candidates = (await db.execute(
         select(Candidate).where(
-            Candidate.election_id == election_id, Candidate.tenant_id.in_(all_tids), Candidate.enabled == True,
+            Candidate.election_id == election_id, Candidate.enabled == True,
         )
     )).scalars().all()
 
