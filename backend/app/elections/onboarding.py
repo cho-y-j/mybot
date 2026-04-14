@@ -479,25 +479,26 @@ async def get_bootstrap_status(
         except Exception:
             return 0
 
+    # election-shared: election_id만으로 충분
     news_total = await _count(sa_select(func.count(NewsArticle.id)).where(
-        NewsArticle.tenant_id == tid, NewsArticle.election_id == election_id,
+        NewsArticle.election_id == election_id,
     ))
     community_total = await _count(sa_select(func.count(CommunityPost.id)).where(
-        CommunityPost.tenant_id == tid, CommunityPost.election_id == election_id,
+        CommunityPost.election_id == election_id,
     ))
     youtube_total = await _count(sa_select(func.count(YouTubeVideo.id)).where(
-        YouTubeVideo.tenant_id == tid, YouTubeVideo.election_id == election_id,
+        YouTubeVideo.election_id == election_id,
     ))
     news_analyzed = await _count(sa_select(func.count(NewsArticle.id)).where(
-        NewsArticle.tenant_id == tid, NewsArticle.election_id == election_id,
+        NewsArticle.election_id == election_id,
         NewsArticle.ai_analyzed_at.isnot(None),
     ))
     community_analyzed = await _count(sa_select(func.count(CommunityPost.id)).where(
-        CommunityPost.tenant_id == tid, CommunityPost.election_id == election_id,
+        CommunityPost.election_id == election_id,
         CommunityPost.ai_analyzed_at.isnot(None),
     ))
     youtube_analyzed = await _count(sa_select(func.count(YouTubeVideo.id)).where(
-        YouTubeVideo.tenant_id == tid, YouTubeVideo.election_id == election_id,
+        YouTubeVideo.election_id == election_id,
         YouTubeVideo.ai_analyzed_at.isnot(None),
     ))
 

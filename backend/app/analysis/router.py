@@ -460,7 +460,7 @@ async def get_ai_threats(
                COALESCE(n.published_at, n.collected_at) as display_date, c.name as candidate
         FROM news_articles n
         JOIN candidates c ON n.candidate_id = c.id
-        WHERE n.tenant_id = ANY(:tids) AND n.election_id = :eid
+        WHERE n.election_id = :eid
           AND n.ai_threat_level IN ('medium', 'high')
           AND n.is_relevant = true
         ORDER BY
@@ -475,7 +475,7 @@ async def get_ai_threats(
                v.views, COALESCE(v.published_at, v.collected_at) as display_date, c.name as candidate
         FROM youtube_videos v
         JOIN candidates c ON v.candidate_id = c.id
-        WHERE v.tenant_id = ANY(:tids) AND v.election_id = :eid
+        WHERE v.election_id = :eid
           AND v.ai_threat_level IN ('medium', 'high')
           AND v.is_relevant = true
         ORDER BY
@@ -490,7 +490,7 @@ async def get_ai_threats(
                COALESCE(p.published_at, p.collected_at) as display_date, c.name as candidate
         FROM community_posts p
         JOIN candidates c ON p.candidate_id = c.id
-        WHERE p.tenant_id = ANY(:tids) AND p.election_id = :eid
+        WHERE p.election_id = :eid
           AND p.ai_threat_level IN ('medium', 'high')
           AND p.is_relevant = true
         ORDER BY
@@ -549,10 +549,10 @@ async def get_community_posts_list(
     all_tids = await get_election_tenant_ids(db, election_id)
     since = date.today() - timedelta(days=days)
 
+    # election-shared: election_id만으로 충분
     query = select(CommunityPost, Candidate.name).join(
         Candidate, CommunityPost.candidate_id == Candidate.id
     ).where(
-        CommunityPost.tenant_id.in_(all_tids),
         CommunityPost.election_id == election_id,
         CommunityPost.is_relevant == True,
         or_(
@@ -859,7 +859,7 @@ async def reclassify_community_issues(
 
     # 해당 tenant들의 모든 커뮤니티 게시글
     posts = (await db.execute(
-        select(CommunityPost).where(CommunityPost.tenant_id.in_(all_tids))
+        select(CommunityPost).where(CommunityPost.election_id == election_id)
     )).scalars().all()
 
     updated = 0
@@ -909,7 +909,9 @@ async def delete_news(item_id: UUID, user: CurrentUser, db: AsyncSession = Depen
     item = (await db.execute(select(NewsArticle).where(NewsArticle.id == item_id))).scalar_one_or_none()
     if not item:
         raise HTTPException(404, "항목을 찾을 수 없습니다")
-    if str(item.tenant_id) != user["tenant_id"]:
+    # election-shared: 같은 선거에 참여하는 캠프는 누구나 삭제 가능
+    from app.common.election_access import can_access_election
+    if not await can_access_election(db, user["tenant_id"], item.election_id):
         raise HTTPException(403, "권한 없음")
     title = item.title
     eid = str(item.election_id)
@@ -929,7 +931,9 @@ async def delete_community(item_id: UUID, user: CurrentUser, db: AsyncSession = 
     item = (await db.execute(select(CommunityPost).where(CommunityPost.id == item_id))).scalar_one_or_none()
     if not item:
         raise HTTPException(404, "항목을 찾을 수 없습니다")
-    if str(item.tenant_id) != user["tenant_id"]:
+    # election-shared: 같은 선거에 참여하는 캠프는 누구나 삭제 가능
+    from app.common.election_access import can_access_election
+    if not await can_access_election(db, user["tenant_id"], item.election_id):
         raise HTTPException(403, "권한 없음")
     title = item.title
     eid = str(item.election_id)
@@ -949,7 +953,9 @@ async def delete_youtube(item_id: UUID, user: CurrentUser, db: AsyncSession = De
     item = (await db.execute(select(YouTubeVideo).where(YouTubeVideo.id == item_id))).scalar_one_or_none()
     if not item:
         raise HTTPException(404, "항목을 찾을 수 없습니다")
-    if str(item.tenant_id) != user["tenant_id"]:
+    # election-shared: 같은 선거에 참여하는 캠프는 누구나 삭제 가능
+    from app.common.election_access import can_access_election
+    if not await can_access_election(db, user["tenant_id"], item.election_id):
         raise HTTPException(403, "권한 없음")
     title = item.title
     eid = str(item.election_id)

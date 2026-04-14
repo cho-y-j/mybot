@@ -85,9 +85,10 @@ async def collect_news_now(db: AsyncSession, tenant_id: str, election_id: str) -
                 if len(title) < 10 or any(x in title for x in ["접수해주세요", "이용약관", "고객센터"]):
                     continue
 
+                # election-shared: 같은 선거에서 같은 URL 이미 있으면 스킵
                 exists = (await db.execute(
                     select(NewsArticle).where(
-                        NewsArticle.tenant_id == tenant_id,
+                        NewsArticle.election_id == election_id,
                         NewsArticle.url == url,
                     )
                 )).scalar_one_or_none()
@@ -133,12 +134,14 @@ async def collect_news_now(db: AsyncSession, tenant_id: str, election_id: str) -
             logger.error("ai_screening_failed_fallback", error=str(e)[:200])
             screened = raw_items  # AI 실패 시 전부 통과
 
-        # 스크리닝 통과한 것만 DB에 저장
+        # 스크리닝 통과한 것만 DB에 저장 (election-shared upsert)
         from uuid import UUID as _UUID
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+        from app.analysis.strategic_views import upsert_strategic_view_async
         for item in screened:
             ai_screened = item.get("ai_screened", False)
-            db.add(NewsArticle(
-                tenant_id=tenant_id,
+            stmt = pg_insert(NewsArticle).values(
+                tenant_id=tenant_id,  # 첫 수집 캠프 기록용 (nullable)
                 election_id=election_id,
                 candidate_id=_UUID(item["candidate_id"]),
                 title=item["title"],
@@ -148,15 +151,36 @@ async def collect_news_now(db: AsyncSession, tenant_id: str, election_id: str) -
                 platform="naver",
                 published_at=item.get("published_at"),
                 is_relevant=True,
-                # AI 스크리닝 결과 바로 반영
                 sentiment=item.get("sentiment") if ai_screened else None,
                 sentiment_score=item.get("sentiment_score") if ai_screened else None,
-                strategic_quadrant=item.get("strategic_quadrant") if ai_screened else None,
                 ai_summary=item.get("ai_summary") if ai_screened else None,
                 ai_reason=item.get("ai_reason") if ai_screened else None,
                 ai_threat_level=item.get("threat_level") if ai_screened else None,
-            ))
+            ).on_conflict_do_update(
+                constraint="uq_news_url_per_election",
+                set_={
+                    "published_at": pg_insert(NewsArticle).excluded.published_at,
+                },
+            ).returning(NewsArticle.id)
+            res = await db.execute(stmt)
+            news_row_id = res.scalar()
             total += 1
+
+            # 캠프별 전략 관점 분석 기록
+            if ai_screened and news_row_id:
+                await upsert_strategic_view_async(
+                    db, "news",
+                    source_id=news_row_id,
+                    tenant_id=tenant_id,
+                    election_id=election_id,
+                    candidate_id=_UUID(item["candidate_id"]),
+                    strategic_quadrant=item.get("strategic_quadrant"),
+                    strategic_value=item.get("strategic_value") or item.get("strategic_quadrant"),
+                    action_type=item.get("action_type"),
+                    action_priority=item.get("action_priority"),
+                    action_summary=item.get("action_summary"),
+                    is_about_our_candidate=item.get("is_about_our_candidate"),
+                )
 
             collected_articles.append({
                 "url": item["url"],
@@ -296,7 +320,10 @@ async def collect_community_now(db: AsyncSession, tenant_id: str, election_id: s
                 continue
 
             exists = (await db.execute(
-                select(CommunityPost).where(CommunityPost.tenant_id == tenant_id, CommunityPost.url == post["url"])
+                select(CommunityPost).where(
+                    CommunityPost.election_id == election_id,
+                    CommunityPost.url == post["url"],
+                )
             )).scalar_one_or_none()
             if exists:
                 continue
@@ -342,9 +369,11 @@ async def collect_community_now(db: AsyncSession, tenant_id: str, election_id: s
             screened = raw_items
 
         from uuid import UUID as _UUID
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+        from app.analysis.strategic_views import upsert_strategic_view_async
         for item in screened:
             ai_screened = item.get("ai_screened", False)
-            db.add(CommunityPost(
+            stmt = pg_insert(CommunityPost).values(
                 tenant_id=tenant_id, election_id=election_id,
                 candidate_id=_UUID(item["candidate_id"]),
                 title=item["title"], url=item["url"],
@@ -358,12 +387,30 @@ async def collect_community_now(db: AsyncSession, tenant_id: str, election_id: s
                 is_relevant=True,
                 sentiment=item.get("sentiment") if ai_screened else None,
                 sentiment_score=item.get("sentiment_score") if ai_screened else None,
-                strategic_quadrant=item.get("strategic_quadrant") if ai_screened else None,
                 ai_summary=item.get("ai_summary") if ai_screened else None,
                 ai_reason=item.get("ai_reason") if ai_screened else None,
                 ai_threat_level=item.get("threat_level") if ai_screened else None,
-            ))
+            ).on_conflict_do_update(
+                constraint="uq_community_url_per_election",
+                set_={"published_at": pg_insert(CommunityPost).excluded.published_at},
+            ).returning(CommunityPost.id)
+            res = await db.execute(stmt)
+            post_row_id = res.scalar()
             total += 1
+
+            if ai_screened and post_row_id:
+                await upsert_strategic_view_async(
+                    db, "community",
+                    source_id=post_row_id,
+                    tenant_id=tenant_id,
+                    election_id=election_id,
+                    candidate_id=_UUID(item["candidate_id"]),
+                    strategic_quadrant=item.get("strategic_quadrant"),
+                    action_type=item.get("action_type"),
+                    action_priority=item.get("action_priority"),
+                    action_summary=item.get("action_summary"),
+                    is_about_our_candidate=item.get("is_about_our_candidate"),
+                )
 
     await db.flush()
     logger.info("instant_community_collected", tenant_id=tenant_id, total=total, filtered=filtered_out)
@@ -438,7 +485,10 @@ async def collect_youtube_now(db: AsyncSession, tenant_id: str, election_id: str
                     continue
 
                 exists = (await db.execute(
-                    select(YouTubeVideo).where(YouTubeVideo.tenant_id == tenant_id, YouTubeVideo.video_id == vid["video_id"])
+                    select(YouTubeVideo).where(
+                        YouTubeVideo.election_id == election_id,
+                        YouTubeVideo.video_id == vid["video_id"],
+                    )
                 )).scalar_one_or_none()
 
                 from app.collectors.filters import parse_published_at
@@ -492,9 +542,11 @@ async def collect_youtube_now(db: AsyncSession, tenant_id: str, election_id: str
             screened = raw_items
 
         from uuid import UUID as _UUID
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+        from app.analysis.strategic_views import upsert_strategic_view_async
         for item in screened:
             ai_screened = item.get("ai_screened", False)
-            db.add(YouTubeVideo(
+            stmt = pg_insert(YouTubeVideo).values(
                 tenant_id=tenant_id, election_id=election_id,
                 candidate_id=_UUID(item["candidate_id"]),
                 video_id=item["video_id"], title=item["title"],
@@ -507,12 +559,30 @@ async def collect_youtube_now(db: AsyncSession, tenant_id: str, election_id: str
                 is_relevant=True,
                 sentiment=item.get("sentiment") if ai_screened else None,
                 sentiment_score=item.get("sentiment_score") if ai_screened else None,
-                strategic_quadrant=item.get("strategic_quadrant") if ai_screened else None,
                 ai_summary=item.get("ai_summary") if ai_screened else None,
                 ai_reason=item.get("ai_reason") if ai_screened else None,
                 ai_threat_level=item.get("threat_level") if ai_screened else None,
-            ))
+            ).on_conflict_do_update(
+                constraint="uq_youtube_per_election",
+                set_={"published_at": pg_insert(YouTubeVideo).excluded.published_at},
+            ).returning(YouTubeVideo.id)
+            res = await db.execute(stmt)
+            yt_row_id = res.scalar()
             total += 1
+
+            if ai_screened and yt_row_id:
+                await upsert_strategic_view_async(
+                    db, "youtube",
+                    source_id=yt_row_id,
+                    tenant_id=tenant_id,
+                    election_id=election_id,
+                    candidate_id=_UUID(item["candidate_id"]),
+                    strategic_quadrant=item.get("strategic_quadrant"),
+                    action_type=item.get("action_type"),
+                    action_priority=item.get("action_priority"),
+                    action_summary=item.get("action_summary"),
+                    is_about_our_candidate=item.get("is_about_our_candidate"),
+                )
 
     # Collect comments for top videos per candidate
     comment_count = 0

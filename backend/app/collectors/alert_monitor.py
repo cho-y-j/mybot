@@ -315,17 +315,20 @@ async def check_db_alerts(
     # 우리 후보 공격 (weakness) + 고위협 (high threat_level) + 검증된 부정
     rows = (await db.execute(sql_text(f"""
         SELECT n.id, n.title, n.url, n.ai_summary, n.ai_reason,
-               n.sentiment, n.strategic_value, n.ai_threat_level,
+               n.sentiment,
+               COALESCE(sv.strategic_value, n.strategic_value) AS strategic_value,
+               n.ai_threat_level,
                c.name AS candidate, c.is_our_candidate
         FROM news_articles n
         LEFT JOIN candidates c ON n.candidate_id = c.id
-        WHERE n.tenant_id = :tid AND n.election_id = :eid
+        LEFT JOIN news_strategic_views sv ON sv.news_id = n.id AND sv.tenant_id = :tid
+        WHERE n.election_id = :eid
           AND n.ai_analyzed_at > NOW() - INTERVAL '{since_minutes} minutes'
           AND n.sentiment_verified = TRUE
-          AND n.is_about_our_candidate = TRUE
+          AND COALESCE(sv.is_about_our_candidate, n.is_about_our_candidate) = TRUE
           AND (n.is_relevant IS NULL OR n.is_relevant = TRUE)
           AND (
-            n.strategic_value = 'weakness'
+            COALESCE(sv.strategic_value, n.strategic_value) = 'weakness'
             OR n.ai_threat_level IN ('high', 'medium')
           )
         ORDER BY
@@ -362,10 +365,11 @@ async def check_db_alerts(
         SELECT n.id, n.title, n.url, n.ai_summary, c.name AS candidate
         FROM news_articles n
         LEFT JOIN candidates c ON n.candidate_id = c.id
-        WHERE n.tenant_id = :tid AND n.election_id = :eid
+        LEFT JOIN news_strategic_views sv ON sv.news_id = n.id AND sv.tenant_id = :tid
+        WHERE n.election_id = :eid
           AND n.ai_analyzed_at > NOW() - INTERVAL '{since_minutes} minutes'
           AND n.sentiment_verified = TRUE
-          AND n.strategic_value = 'opportunity'
+          AND COALESCE(sv.strategic_value, n.strategic_value) = 'opportunity'
           AND n.ai_threat_level IN ('high', 'medium')
           AND (n.is_relevant IS NULL OR n.is_relevant = TRUE)
         ORDER BY n.ai_analyzed_at DESC

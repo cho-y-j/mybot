@@ -238,7 +238,6 @@ async def get_content_situations(
     try:
         neg_news = (await db.execute(
             select(NewsArticle).where(
-                NewsArticle.tenant_id == tid,
                 NewsArticle.candidate_id == (our.id if our else None),
                 NewsArticle.sentiment == "negative",
                 NewsArticle.is_relevant == True,
@@ -355,15 +354,21 @@ async def generate_content(
 
     # 최근 AI 분석 뉴스 — 4사분면별 팩트
     from sqlalchemy import text as sql_text
+    # election-shared: 원본은 공유, strategic_view는 현재 캠프 관점으로 LEFT JOIN
     recent_news = (await db.execute(sql_text("""
-        SELECT n.title, n.strategic_quadrant, n.ai_summary, n.ai_reason,
-               n.action_summary, n.ai_threat_level, n.sentiment
+        SELECT n.title,
+               COALESCE(sv.strategic_quadrant, n.strategic_quadrant) AS strategic_quadrant,
+               n.ai_summary, n.ai_reason,
+               COALESCE(sv.action_summary, n.action_summary) AS action_summary,
+               n.ai_threat_level, n.sentiment
         FROM news_articles n
-        WHERE n.tenant_id = ANY(:tids) AND n.election_id = :eid
+        LEFT JOIN news_strategic_views sv
+          ON sv.news_id = n.id AND sv.tenant_id = :tid
+        WHERE n.election_id = :eid
           AND DATE(n.collected_at) >= :since
           AND n.ai_analyzed_at IS NOT NULL
         ORDER BY
-          CASE n.strategic_quadrant
+          CASE COALESCE(sv.strategic_quadrant, n.strategic_quadrant)
             WHEN 'weakness' THEN 1
             WHEN 'opportunity' THEN 2
             WHEN 'strength' THEN 3
@@ -373,7 +378,7 @@ async def generate_content(
           n.published_at DESC NULLS LAST
         LIMIT 15
     """), {
-        "tids": [str(t) for t in all_tids],
+        "tid": user["tenant_id"],
         "eid": str(election_id),
         "since": since,
     })).all()
@@ -390,7 +395,8 @@ async def generate_content(
     # 커뮤니티 이슈
     hot_issues = (await db.execute(
         select(CommunityPost.issue_category, sqlfunc.count())
-        .where(CommunityPost.tenant_id.in_(all_tids), CommunityPost.issue_category.isnot(None),
+        .where(CommunityPost.election_id == election_id,
+               CommunityPost.issue_category.isnot(None),
                sqlfunc.date(CommunityPost.collected_at) >= since)
         .group_by(CommunityPost.issue_category)
         .order_by(sqlfunc.count().desc()).limit(5)

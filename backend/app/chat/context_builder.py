@@ -415,15 +415,20 @@ async def _build_candidate_detail(db, tenant_id, cand, today) -> str:
     if cand.career_summary:
         lines.append(f"경력: {cand.career_summary}")
 
-    # 최근 뉴스 — AI 분석 포함
+    # 최근 뉴스 — 원본(공유) + 캠프별 전략 뷰 LEFT JOIN
     recent = (await db.execute(text("""
-        SELECT title, sentiment, strategic_quadrant, ai_summary, ai_threat_level,
-               action_summary, published_at
-        FROM news_articles
-        WHERE candidate_id = :cid
-        ORDER BY published_at DESC NULLS LAST, collected_at DESC
+        SELECT n.title, n.sentiment,
+               COALESCE(sv.strategic_quadrant, n.strategic_quadrant) AS strategic_quadrant,
+               n.ai_summary, n.ai_threat_level,
+               COALESCE(sv.action_summary, n.action_summary) AS action_summary,
+               n.published_at
+        FROM news_articles n
+        LEFT JOIN news_strategic_views sv
+          ON sv.news_id = n.id AND sv.tenant_id = :tid
+        WHERE n.candidate_id = :cid
+        ORDER BY n.published_at DESC NULLS LAST, n.collected_at DESC
         LIMIT 6
-    """), {"cid": str(cand.id)})).all()
+    """), {"cid": str(cand.id), "tid": str(tenant_id)})).all()
 
     for n in recent:
         sq = f" [{n.strategic_quadrant}]" if n.strategic_quadrant else ""

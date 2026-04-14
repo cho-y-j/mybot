@@ -389,12 +389,20 @@ async def _analyze_table_strategic(
     if not ctx["our_name"]:
         return {"analyzed": 0, "irrelevant": 0, "by_quadrant": {}, "error": "no_our_candidate"}
 
+    # election-shared: 아직 AI 분석 안 됐거나, 이 캠프의 strategic_view가 없는 것
+    sv_map = {
+        "news_articles": ("news_strategic_views", "news_id"),
+        "community_posts": ("community_strategic_views", "post_id"),
+        "youtube_videos": ("youtube_strategic_views", "video_id"),
+    }
+    sv_name, fk_col = sv_map[table]
     rows = (await db_session.execute(sql_text(f"""
         SELECT t.id, t.title, t.{content_col}, c.name
         FROM {table} t
         JOIN candidates c ON t.candidate_id = c.id
-        WHERE t.tenant_id = :tid AND t.election_id = :eid
-          AND t.ai_analyzed_at IS NULL
+        LEFT JOIN {sv_name} sv ON sv.{fk_col} = t.id AND sv.tenant_id = :tid
+        WHERE t.election_id = :eid
+          AND (t.ai_analyzed_at IS NULL OR sv.id IS NULL)
         ORDER BY t.collected_at DESC
         LIMIT :lim
     """), {"tid": tenant_id, "eid": election_id, "lim": limit})).all()
@@ -438,6 +446,7 @@ async def _analyze_table_strategic(
                 irrelevant += 1
             by_quadrant[r["strategic_value"]] = by_quadrant.get(r["strategic_value"], 0) + 1
 
+            # 공유 필드: 원본 테이블에 기록
             await db_session.execute(sql_text(f"""
                 UPDATE {table} SET
                     ai_summary = :summary,
@@ -446,15 +455,8 @@ async def _analyze_table_strategic(
                     ai_threat_level = :threat,
                     sentiment = :sentiment,
                     sentiment_score = :score,
-                    strategic_value = :sval,
-                    strategic_quadrant = :sval,
-                    action_type = :atype,
-                    action_priority = :apri,
-                    action_summary = :asum,
-                    is_about_our_candidate = :is_ours,
                     is_relevant = :is_rel,
-                    ai_analyzed_at = NOW(),
-                    candidate_id = CASE WHEN :is_rel THEN candidate_id ELSE NULL END
+                    ai_analyzed_at = NOW()
                 WHERE id = :id
             """), {
                 "id": item["id"],
@@ -464,13 +466,53 @@ async def _analyze_table_strategic(
                 "threat": r["threat_level"],
                 "sentiment": r["sentiment"],
                 "score": r["sentiment_score"],
-                "sval": r["strategic_value"],
-                "atype": r["action_type"],
-                "apri": r["action_priority"],
-                "asum": (r.get("action_summary") or "")[:300],
-                "is_ours": r["is_about_our_candidate"],
                 "is_rel": is_rel,
             })
+
+            # 전략(캠프별 관점) 필드: *_strategic_views 에 upsert
+            if is_rel:
+                sv_table = {
+                    "news_articles": ("news_strategic_views", "news_id"),
+                    "community_posts": ("community_strategic_views", "post_id"),
+                    "youtube_videos": ("youtube_strategic_views", "video_id"),
+                }[table]
+                sv_name, fk_col = sv_table
+                extra_col = ", strategic_value" if sv_name == "news_strategic_views" else ""
+                extra_val = ", :sval" if sv_name == "news_strategic_views" else ""
+                extra_set = ", strategic_value = EXCLUDED.strategic_value" if sv_name == "news_strategic_views" else ""
+                # candidate_id는 원본 테이블에서 가져옴
+                cid = (await db_session.execute(sql_text(f"""
+                    SELECT candidate_id FROM {table} WHERE id = :id
+                """), {"id": item["id"]})).scalar()
+                await db_session.execute(sql_text(f"""
+                    INSERT INTO {sv_name} (
+                        {fk_col}, tenant_id, election_id, candidate_id,
+                        strategic_quadrant{extra_col}, action_type, action_priority,
+                        action_summary, is_about_our_candidate
+                    ) VALUES (
+                        :id, :tid, :eid, :cid,
+                        :sval{extra_val}, :atype, :apri,
+                        :asum, :is_ours
+                    )
+                    ON CONFLICT ({fk_col}, tenant_id) DO UPDATE SET
+                        candidate_id = EXCLUDED.candidate_id,
+                        strategic_quadrant = EXCLUDED.strategic_quadrant{extra_set},
+                        action_type = EXCLUDED.action_type,
+                        action_priority = EXCLUDED.action_priority,
+                        action_summary = EXCLUDED.action_summary,
+                        is_about_our_candidate = EXCLUDED.is_about_our_candidate,
+                        updated_at = NOW()
+                """), {
+                    "id": item["id"],
+                    "tid": tenant_id,
+                    "eid": election_id,
+                    "cid": cid,
+                    "sval": r["strategic_value"],
+                    "atype": r["action_type"],
+                    "apri": r["action_priority"],
+                    "asum": (r.get("action_summary") or "")[:300],
+                    "is_ours": r["is_about_our_candidate"],
+                })
 
             # P2-01 race-shared 듀얼 라이트 — race_*_articles + race_*_camp_analysis
             await _apply_ai_to_race_shared(
@@ -509,12 +551,30 @@ async def _verify_with_opus(
     from sqlalchemy import text as sql_text
     from app.analysis.sentiment import SentimentAnalyzer
 
+    # election-shared: tenant 필터 불필요 (감성 verify는 공유 필드)
+    sv_table = {
+        "news_articles": ("news_strategic_views", "news_id"),
+        "community_posts": ("community_strategic_views", "post_id"),
+        "youtube_videos": ("youtube_strategic_views", "video_id"),
+    }.get(table)
+    is_about_our_join = ""
+    if sv_table:
+        sv_name, fk_col = sv_table
+        is_about_our_join = (
+            f" LEFT JOIN {sv_name} sv "
+            f"ON sv.{fk_col} = t.id AND sv.tenant_id = :tid"
+        )
+        is_about_col = "sv.is_about_our_candidate"
+    else:
+        is_about_col = "t.is_about_our_candidate"
+
     rows = (await db_session.execute(sql_text(f"""
         SELECT t.id, t.title, t.{content_col}, t.sentiment,
-               t.is_about_our_candidate, c.name
+               {is_about_col}, c.name
         FROM {table} t
         LEFT JOIN candidates c ON t.candidate_id = c.id
-        WHERE t.tenant_id = :tid AND t.election_id = :eid
+        {is_about_our_join}
+        WHERE t.election_id = :eid
           AND t.sentiment_verified = FALSE
           AND t.sentiment IN ('positive', 'negative')
           AND t.ai_analyzed_at IS NOT NULL
@@ -546,23 +606,24 @@ async def _verify_with_opus(
     info = _RACE_TABLES.get(table)  # race-shared 듀얼 라이트 대상
 
     for v in verified_results:
-        quadrant_clause = ""
-        params = {
-            "id": v["id"],
-            "s": v["sentiment"],
-            "score": v["score"],
-        }
-        if v.get("quadrant"):
-            quadrant_clause = ", strategic_value = :q, strategic_quadrant = :q"
-            params["q"] = v["quadrant"]
-
+        # 공유 필드(sentiment)만 원본 테이블에 UPDATE
         await db_session.execute(sql_text(f"""
             UPDATE {table} SET
                 sentiment = :s,
-                sentiment_score = :score{quadrant_clause},
+                sentiment_score = :score,
                 sentiment_verified = TRUE
             WHERE id = :id
-        """), params)
+        """), {"id": v["id"], "s": v["sentiment"], "score": v["score"]})
+        # quadrant 교정은 이 캠프의 strategic_view에 반영
+        if v.get("quadrant") and sv_table:
+            sv_name2, fk_col2 = sv_table
+            extra_sv = ", strategic_value = :q" if sv_name2 == "news_strategic_views" else ""
+            await db_session.execute(sql_text(f"""
+                UPDATE {sv_name2} SET
+                    strategic_quadrant = :q{extra_sv},
+                    updated_at = NOW()
+                WHERE {fk_col2} = :id AND tenant_id = :tid
+            """), {"id": v["id"], "q": v["quadrant"], "tid": tenant_id})
         verified_count += 1
         if v.get("changed"):
             changed_count += 1

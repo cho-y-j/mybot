@@ -286,9 +286,12 @@ def collect_news(self, tenant_id: str, election_id: str, schedule_id: str):
                         dropped_old += 1
                         continue
 
-                    # 중복 체크
+                    # 중복 체크 (election-shared)
                     exists = session.execute(
-                        select(NewsArticle).where(NewsArticle.tenant_id == tenant_id, NewsArticle.url == article["url"])
+                        select(NewsArticle).where(
+                            NewsArticle.election_id == election_id,
+                            NewsArticle.url == article["url"],
+                        )
                     ).scalar_one_or_none()
                     if exists:
                         continue
@@ -328,6 +331,7 @@ def collect_news(self, tenant_id: str, election_id: str, schedule_id: str):
                 screened = raw_items
 
             from sqlalchemy.dialects.postgresql import insert as pg_insert
+            from app.analysis.strategic_views import upsert_strategic_view_sync
             for item in screened:
                 ai_ok = item.get("ai_screened", False)
                 stmt = pg_insert(NewsArticle).values(
@@ -340,14 +344,36 @@ def collect_news(self, tenant_id: str, election_id: str, schedule_id: str):
                     is_relevant=True,
                     sentiment=item.get("sentiment") if ai_ok else None,
                     sentiment_score=item.get("sentiment_score") if ai_ok else None,
-                    strategic_quadrant=item.get("strategic_quadrant") if ai_ok else None,
                     ai_summary=item.get("ai_summary") if ai_ok else None,
                     ai_reason=item.get("ai_reason") if ai_ok else None,
                     ai_threat_level=item.get("threat_level") if ai_ok else None,
-                ).on_conflict_do_nothing(constraint="uq_news_url_per_tenant")
+                ).on_conflict_do_nothing(constraint="uq_news_url_per_election")
                 res = session.execute(stmt)
                 if res.rowcount:
                     total += 1
+
+                # 전략 뷰 (캠프별 관점) upsert — 수집한 캠프 한 명만
+                if ai_ok:
+                    row = session.execute(
+                        select(NewsArticle.id).where(
+                            NewsArticle.election_id == election_id,
+                            NewsArticle.url == item["url"],
+                        )
+                    ).scalar()
+                    if row:
+                        upsert_strategic_view_sync(
+                            session, "news",
+                            source_id=row,
+                            tenant_id=tenant_id,
+                            election_id=election_id,
+                            candidate_id=UUID(item["candidate_id"]),
+                            strategic_quadrant=item.get("strategic_quadrant"),
+                            strategic_value=item.get("strategic_value") or item.get("strategic_quadrant"),
+                            action_type=item.get("action_type"),
+                            action_priority=item.get("action_priority"),
+                            action_summary=item.get("action_summary"),
+                            is_about_our_candidate=item.get("is_about_our_candidate"),
+                        )
 
                 try:
                     from app.collectors.race_shared import upsert_race_news_sync
@@ -470,7 +496,10 @@ def collect_community(self, tenant_id: str, election_id: str, schedule_id: str):
                         continue
 
                     exists = session.execute(
-                        select(CommunityPost).where(CommunityPost.tenant_id == tenant_id, CommunityPost.url == post["url"])
+                        select(CommunityPost).where(
+                            CommunityPost.election_id == election_id,
+                            CommunityPost.url == post["url"],
+                        )
                     ).scalar_one_or_none()
                     if exists:
                         if exists.published_at is None and post_pub_at is not None:
@@ -513,6 +542,7 @@ def collect_community(self, tenant_id: str, election_id: str, schedule_id: str):
                 screened = raw_items
 
             from sqlalchemy.dialects.postgresql import insert as pg_insert
+            from app.analysis.strategic_views import upsert_strategic_view_sync
             for item in screened:
                 ai_ok = item.get("ai_screened", False)
                 stmt = pg_insert(CommunityPost).values(
@@ -527,14 +557,34 @@ def collect_community(self, tenant_id: str, election_id: str, schedule_id: str):
                     is_relevant=True,
                     sentiment=item.get("sentiment") if ai_ok else None,
                     sentiment_score=item.get("sentiment_score") if ai_ok else None,
-                    strategic_quadrant=item.get("strategic_quadrant") if ai_ok else None,
                     ai_summary=item.get("ai_summary") if ai_ok else None,
                     ai_reason=item.get("ai_reason") if ai_ok else None,
                     ai_threat_level=item.get("threat_level") if ai_ok else None,
-                ).on_conflict_do_nothing(constraint="uq_community_url_per_tenant")
+                ).on_conflict_do_nothing(constraint="uq_community_url_per_election")
                 res = session.execute(stmt)
                 if res.rowcount:
                     total += 1
+
+                if ai_ok:
+                    row = session.execute(
+                        select(CommunityPost.id).where(
+                            CommunityPost.election_id == election_id,
+                            CommunityPost.url == item["url"],
+                        )
+                    ).scalar()
+                    if row:
+                        upsert_strategic_view_sync(
+                            session, "community",
+                            source_id=row,
+                            tenant_id=tenant_id,
+                            election_id=election_id,
+                            candidate_id=UUID(item["candidate_id"]),
+                            strategic_quadrant=item.get("strategic_quadrant"),
+                            action_type=item.get("action_type"),
+                            action_priority=item.get("action_priority"),
+                            action_summary=item.get("action_summary"),
+                            is_about_our_candidate=item.get("is_about_our_candidate"),
+                        )
 
                 try:
                     from app.collectors.race_shared import upsert_race_community_sync
@@ -644,7 +694,7 @@ def collect_youtube(self, tenant_id: str, election_id: str, schedule_id: str):
                 for vid in videos:
                     exists = session.execute(
                         select(YouTubeVideo).where(
-                            YouTubeVideo.tenant_id == tenant_id,
+                            YouTubeVideo.election_id == election_id,
                             YouTubeVideo.video_id == vid["video_id"],
                         )
                     ).scalar_one_or_none()
@@ -697,9 +747,11 @@ def collect_youtube(self, tenant_id: str, election_id: str, schedule_id: str):
                 logger.error("youtube_ai_screening_failed", error=str(scr_err)[:200])
                 screened = raw_items
 
+            from sqlalchemy.dialects.postgresql import insert as pg_insert
+            from app.analysis.strategic_views import upsert_strategic_view_sync
             for item in screened:
                 ai_ok = item.get("ai_screened", False)
-                session.add(YouTubeVideo(
+                stmt = pg_insert(YouTubeVideo).values(
                     tenant_id=tenant_id, election_id=election_id,
                     candidate_id=UUID(item["candidate_id"]),
                     video_id=item["video_id"], title=item["title"],
@@ -712,12 +764,34 @@ def collect_youtube(self, tenant_id: str, election_id: str, schedule_id: str):
                     is_relevant=True,
                     sentiment=item.get("sentiment") if ai_ok else None,
                     sentiment_score=item.get("sentiment_score") if ai_ok else None,
-                    strategic_quadrant=item.get("strategic_quadrant") if ai_ok else None,
                     ai_summary=item.get("ai_summary") if ai_ok else None,
                     ai_reason=item.get("ai_reason") if ai_ok else None,
                     ai_threat_level=item.get("threat_level") if ai_ok else None,
-                ))
-                total += 1
+                ).on_conflict_do_nothing(constraint="uq_youtube_per_election")
+                res = session.execute(stmt)
+                if res.rowcount:
+                    total += 1
+
+                if ai_ok:
+                    row = session.execute(
+                        select(YouTubeVideo.id).where(
+                            YouTubeVideo.election_id == election_id,
+                            YouTubeVideo.video_id == item["video_id"],
+                        )
+                    ).scalar()
+                    if row:
+                        upsert_strategic_view_sync(
+                            session, "youtube",
+                            source_id=row,
+                            tenant_id=tenant_id,
+                            election_id=election_id,
+                            candidate_id=UUID(item["candidate_id"]),
+                            strategic_quadrant=item.get("strategic_quadrant"),
+                            action_type=item.get("action_type"),
+                            action_priority=item.get("action_priority"),
+                            action_summary=item.get("action_summary"),
+                            is_about_our_candidate=item.get("is_about_our_candidate"),
+                        )
 
                 try:
                     from app.collectors.race_shared import upsert_race_youtube_sync
@@ -862,11 +936,12 @@ def collect_news_comments(self, tenant_id: str, election_id: str, schedule_id: s
     try:
         cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
 
+        # election-shared: 같은 선거의 캠프들끼리 기사를 공유하므로 election_id로 필터
         articles = session.execute(
             select(NewsArticle, Candidate.name)
             .join(Candidate, NewsArticle.candidate_id == Candidate.id)
             .where(
-                NewsArticle.tenant_id == tenant_id,
+                Candidate.tenant_id == tenant_id,
                 NewsArticle.collected_at >= cutoff,
             )
             .order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.collected_at.desc())
@@ -959,7 +1034,7 @@ def collect_community_enhanced(self, tenant_id: str, election_id: str, schedule_
             for post in posts:
                 exists = session.execute(
                     select(CommunityPost).where(
-                        CommunityPost.tenant_id == tenant_id,
+                        CommunityPost.election_id == election_id,
                         CommunityPost.url == post["url"],
                     )
                 ).scalar_one_or_none()
@@ -973,7 +1048,8 @@ def collect_community_enhanced(self, tenant_id: str, election_id: str, schedule_
                     continue
                 # post_pub_at은 실제 날짜이거나 None
 
-                session.add(CommunityPost(
+                from sqlalchemy.dialects.postgresql import insert as pg_insert
+                stmt = pg_insert(CommunityPost).values(
                     tenant_id=tenant_id,
                     election_id=election_id,
                     candidate_id=cand.id,
@@ -986,8 +1062,10 @@ def collect_community_enhanced(self, tenant_id: str, election_id: str, schedule_
                     relevance_score=post.get("relevance_score", 0.0),
                     engagement=post.get("engagement", {}),
                     platform=post.get("platform", "naver_cafe"),
-                ))
-                total += 1
+                ).on_conflict_do_nothing(constraint="uq_community_url_per_election")
+                res = session.execute(stmt)
+                if res.rowcount:
+                    total += 1
 
         session.commit()
 
@@ -1059,7 +1137,7 @@ def collect_youtube_enhanced(self, tenant_id: str, election_id: str, schedule_id
                 for vid in videos + shorts:
                     exists = session.execute(
                         select(YouTubeVideo).where(
-                            YouTubeVideo.tenant_id == tenant_id,
+                            YouTubeVideo.election_id == election_id,
                             YouTubeVideo.video_id == vid["video_id"],
                         )
                     ).scalar_one_or_none()
@@ -1075,7 +1153,8 @@ def collect_youtube_enhanced(self, tenant_id: str, election_id: str, schedule_id
                         if exists.published_at is None and pub_at is not None:
                             exists.published_at = pub_at
                         continue
-                    session.add(YouTubeVideo(
+                    from sqlalchemy.dialects.postgresql import insert as pg_insert
+                    stmt = pg_insert(YouTubeVideo).values(
                         tenant_id=tenant_id,
                         election_id=election_id,
                         candidate_id=cand.id,
@@ -1088,8 +1167,10 @@ def collect_youtube_enhanced(self, tenant_id: str, election_id: str, schedule_id
                         views=vid.get("views", 0),
                         likes=vid.get("likes", 0),
                         comments_count=vid.get("comments_count", 0),
-                    ))
-                    total += 1
+                    ).on_conflict_do_nothing(constraint="uq_youtube_per_election")
+                    res = session.execute(stmt)
+                    if res.rowcount:
+                        total += 1
 
                     # P2-01 race-shared 듀얼 라이트
                     try:
@@ -1111,10 +1192,11 @@ def collect_youtube_enhanced(self, tenant_id: str, election_id: str, schedule_id
                         logger.warning("race_shared_youtube_enh_failed", error=str(rs_err)[:200])
 
             # Comments for top videos (sentiment NULL — 보조 데이터)
+            # election-shared: candidate_id 기반 (tenant filter 불필요)
             top_vids = session.execute(
                 select(YouTubeVideo).where(
                     YouTubeVideo.candidate_id == cand.id,
-                    YouTubeVideo.tenant_id == tenant_id,
+                    YouTubeVideo.election_id == election_id,
                 )
                 .order_by(YouTubeVideo.views.desc()).limit(3)
             ).scalars().all()
@@ -1738,9 +1820,9 @@ async def _opus_analyze_all(tenant_id: str, election_id: str) -> int:
             return None
 
         # ── 1단계: Sonnet 감성 분류 (neutral 전체) ──
+        # election-shared: tenant 필터 불필요
         neutral_news = (await db.execute(
             select(NewsArticle).where(
-                NewsArticle.tenant_id.in_(all_tids),
                 NewsArticle.election_id == election_id,
                 NewsArticle.sentiment == "neutral",
                 NewsArticle.sentiment_verified == False,
@@ -1750,7 +1832,6 @@ async def _opus_analyze_all(tenant_id: str, election_id: str) -> int:
 
         neutral_community = (await db.execute(
             select(CommunityPost).where(
-                CommunityPost.tenant_id.in_(all_tids),
                 CommunityPost.election_id == election_id,
                 CommunityPost.sentiment == "neutral",
                 CommunityPost.sentiment_verified == False,
@@ -1800,7 +1881,6 @@ async def _opus_analyze_all(tenant_id: str, election_id: str) -> int:
         # ── 2단계: 기존 positive/negative 중 4사분면 미배정 건도 즉시 배정 ──
         no_quad_news = (await db.execute(
             select(NewsArticle).where(
-                NewsArticle.tenant_id.in_(all_tids),
                 NewsArticle.election_id == election_id,
                 NewsArticle.sentiment.in_(["positive", "negative"]),
                 NewsArticle.strategic_quadrant.is_(None),
@@ -1818,7 +1898,6 @@ async def _opus_analyze_all(tenant_id: str, election_id: str) -> int:
 
         no_quad_comm = (await db.execute(
             select(CommunityPost).where(
-                CommunityPost.tenant_id.in_(all_tids),
                 CommunityPost.election_id == election_id,
                 CommunityPost.sentiment.in_(["positive", "negative"]),
                 CommunityPost.strategic_quadrant.is_(None),
@@ -1871,7 +1950,6 @@ async def _verify_sentiment_with_opus(tenant_id: str, election_id: str) -> int:
         # 미검증 + positive/negative인 뉴스 (최근 2일)
         unverified_news = (await db.execute(
             select(NewsArticle).where(
-                NewsArticle.tenant_id.in_(all_tids),
                 NewsArticle.election_id == election_id,
                 NewsArticle.sentiment.in_(["positive", "negative"]),
                 NewsArticle.sentiment_verified == False,
@@ -1882,7 +1960,6 @@ async def _verify_sentiment_with_opus(tenant_id: str, election_id: str) -> int:
         # 미검증 커뮤니티
         unverified_community = (await db.execute(
             select(CommunityPost).where(
-                CommunityPost.tenant_id.in_(all_tids),
                 CommunityPost.election_id == election_id,
                 CommunityPost.sentiment.in_(["positive", "negative"]),
                 CommunityPost.sentiment_verified == False,

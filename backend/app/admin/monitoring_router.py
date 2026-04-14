@@ -96,9 +96,17 @@ async def data_statistics(user: CurrentUser, db: AsyncSession = Depends(get_db))
     tenants = (await db.execute(select(Tenant).where(Tenant.is_active == True))).scalars().all()
     per_tenant = []
     for t in tenants:
-        t_news = (await db.execute(select(func.count()).where(NewsArticle.tenant_id == t.id))).scalar() or 0
-        t_community = (await db.execute(select(func.count()).where(CommunityPost.tenant_id == t.id))).scalar() or 0
-        t_youtube = (await db.execute(select(func.count()).where(YouTubeVideo.tenant_id == t.id))).scalar() or 0
+        # election-shared: 캠프가 참여하는 선거 기준
+        eids_sub = (await db.execute(text(
+            "SELECT id FROM elections WHERE tenant_id = :tid "
+            "UNION SELECT election_id FROM tenant_elections WHERE tenant_id = :tid"
+        ), {"tid": str(t.id)})).scalars().all()
+        if eids_sub:
+            t_news = (await db.execute(select(func.count()).where(NewsArticle.election_id.in_(eids_sub)))).scalar() or 0
+            t_community = (await db.execute(select(func.count()).where(CommunityPost.election_id.in_(eids_sub)))).scalar() or 0
+            t_youtube = (await db.execute(select(func.count()).where(YouTubeVideo.election_id.in_(eids_sub)))).scalar() or 0
+        else:
+            t_news = t_community = t_youtube = 0
         t_reports = (await db.execute(select(func.count()).where(Report.tenant_id == t.id))).scalar() or 0
         per_tenant.append({
             "tenant_id": str(t.id),
@@ -139,9 +147,15 @@ async def schedule_status(user: CurrentUser, db: AsyncSession = Depends(get_db))
             .order_by(ScheduleRun.started_at.desc()).limit(1)
         )).scalar_one_or_none()
 
-        last_news = (await db.execute(
-            select(func.max(NewsArticle.collected_at)).where(NewsArticle.tenant_id == t.id)
-        )).scalar()
+        eids_sub2 = (await db.execute(text(
+            "SELECT id FROM elections WHERE tenant_id = :tid "
+            "UNION SELECT election_id FROM tenant_elections WHERE tenant_id = :tid"
+        ), {"tid": str(t.id)})).scalars().all()
+        last_news = None
+        if eids_sub2:
+            last_news = (await db.execute(
+                select(func.max(NewsArticle.collected_at)).where(NewsArticle.election_id.in_(eids_sub2))
+            )).scalar()
 
         enabled_count = sum(1 for s in schedules if s.enabled)
         total_count = len(schedules)

@@ -171,19 +171,22 @@ async def list_tenants(user: CurrentUser, db: AsyncSession = Depends(get_db)):
         members = (await db.execute(select(func.count()).where(User.tenant_id == t.id))).scalar()
         elections = (await db.execute(select(func.count()).where(Election.tenant_id == t.id))).scalar()
 
-        news = (await db.execute(select(func.count()).where(NewsArticle.tenant_id == t.id))).scalar()
-        community = (await db.execute(select(func.count()).where(CommunityPost.tenant_id == t.id))).scalar()
-        youtube = (await db.execute(select(func.count()).where(YouTubeVideo.tenant_id == t.id))).scalar()
-
-        last_news_at = (await db.execute(
-            select(func.max(NewsArticle.collected_at)).where(NewsArticle.tenant_id == t.id)
-        )).scalar()
-        last_community_at = (await db.execute(
-            select(func.max(CommunityPost.collected_at)).where(CommunityPost.tenant_id == t.id)
-        )).scalar()
-        last_youtube_at = (await db.execute(
-            select(func.max(YouTubeVideo.collected_at)).where(YouTubeVideo.tenant_id == t.id)
-        )).scalar()
+        # election-shared: 캠프가 참여하는 선거의 데이터 카운트
+        from sqlalchemy import text as _sqltext
+        eids = (await db.execute(_sqltext(
+            "SELECT id FROM elections WHERE tenant_id = :tid "
+            "UNION SELECT election_id FROM tenant_elections WHERE tenant_id = :tid"
+        ), {"tid": str(t.id)})).scalars().all()
+        if eids:
+            news = (await db.execute(select(func.count()).where(NewsArticle.election_id.in_(eids)))).scalar()
+            community = (await db.execute(select(func.count()).where(CommunityPost.election_id.in_(eids)))).scalar()
+            youtube = (await db.execute(select(func.count()).where(YouTubeVideo.election_id.in_(eids)))).scalar()
+            last_news_at = (await db.execute(select(func.max(NewsArticle.collected_at)).where(NewsArticle.election_id.in_(eids)))).scalar()
+            last_community_at = (await db.execute(select(func.max(CommunityPost.collected_at)).where(CommunityPost.election_id.in_(eids)))).scalar()
+            last_youtube_at = (await db.execute(select(func.max(YouTubeVideo.collected_at)).where(YouTubeVideo.election_id.in_(eids)))).scalar()
+        else:
+            news = community = youtube = 0
+            last_news_at = last_community_at = last_youtube_at = None
 
         times = [x for x in [last_news_at, last_community_at, last_youtube_at] if x]
         last_collection = max(times).isoformat() if times else None
@@ -258,20 +261,23 @@ async def tenant_detail(tenant_id: UUID, user: CurrentUser, db: AsyncSession = D
         select(Election).where(Election.tenant_id == tenant_id)
     )).scalars().all()
 
-    news_cnt = (await db.execute(select(func.count()).where(NewsArticle.tenant_id == tenant_id))).scalar()
-    community_cnt = (await db.execute(select(func.count()).where(CommunityPost.tenant_id == tenant_id))).scalar()
-    yt_cnt = (await db.execute(select(func.count()).where(YouTubeVideo.tenant_id == tenant_id))).scalar()
+    # election-shared: 캠프가 참여하는 선거 기준 카운트
+    from sqlalchemy import text as _sqltext
+    eids = (await db.execute(_sqltext(
+        "SELECT id FROM elections WHERE tenant_id = :tid "
+        "UNION SELECT election_id FROM tenant_elections WHERE tenant_id = :tid"
+    ), {"tid": str(tenant_id)})).scalars().all()
+    if eids:
+        news_cnt = (await db.execute(select(func.count()).where(NewsArticle.election_id.in_(eids)))).scalar()
+        community_cnt = (await db.execute(select(func.count()).where(CommunityPost.election_id.in_(eids)))).scalar()
+        yt_cnt = (await db.execute(select(func.count()).where(YouTubeVideo.election_id.in_(eids)))).scalar()
+        last_news = (await db.execute(select(func.max(NewsArticle.collected_at)).where(NewsArticle.election_id.in_(eids)))).scalar()
+        last_community = (await db.execute(select(func.max(CommunityPost.collected_at)).where(CommunityPost.election_id.in_(eids)))).scalar()
+        last_youtube = (await db.execute(select(func.max(YouTubeVideo.collected_at)).where(YouTubeVideo.election_id.in_(eids)))).scalar()
+    else:
+        news_cnt = community_cnt = yt_cnt = 0
+        last_news = last_community = last_youtube = None
     trends_cnt = (await db.execute(select(func.count()).where(SearchTrend.tenant_id == tenant_id))).scalar()
-
-    last_news = (await db.execute(
-        select(func.max(NewsArticle.collected_at)).where(NewsArticle.tenant_id == tenant_id)
-    )).scalar()
-    last_community = (await db.execute(
-        select(func.max(CommunityPost.collected_at)).where(CommunityPost.tenant_id == tenant_id)
-    )).scalar()
-    last_youtube = (await db.execute(
-        select(func.max(YouTubeVideo.collected_at)).where(YouTubeVideo.tenant_id == tenant_id)
-    )).scalar()
 
     schedules = (await db.execute(
         select(ScheduleConfig).where(ScheduleConfig.tenant_id == tenant_id)

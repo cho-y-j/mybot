@@ -169,12 +169,12 @@ async def embed_existing_data(db: AsyncSession, tenant_id: str, election_id: str
                 pass
     result["reports"] = count
 
-    # 뉴스
+    # 뉴스 (election-shared)
     news = (await db.execute(text("""
         SELECT id, title, ai_summary, ai_reason FROM news_articles
-        WHERE tenant_id = :tid AND election_id = :eid AND is_relevant = true AND ai_summary IS NOT NULL
+        WHERE election_id = :eid AND is_relevant = true AND ai_summary IS NOT NULL
         ORDER BY collected_at DESC LIMIT 200
-    """), {"tid": tenant_id, "eid": election_id})).fetchall()
+    """), {"eid": election_id})).fetchall()
 
     count = 0
     for n in news:
@@ -188,12 +188,12 @@ async def embed_existing_data(db: AsyncSession, tenant_id: str, election_id: str
                 pass
     result["news"] = count
 
-    # 커뮤니티
+    # 커뮤니티 (election-shared)
     comm = (await db.execute(text("""
         SELECT id, title, ai_summary FROM community_posts
-        WHERE tenant_id = :tid AND election_id = :eid AND is_relevant = true AND ai_summary IS NOT NULL
+        WHERE election_id = :eid AND is_relevant = true AND ai_summary IS NOT NULL
         ORDER BY collected_at DESC LIMIT 200
-    """), {"tid": tenant_id, "eid": election_id})).fetchall()
+    """), {"eid": election_id})).fetchall()
 
     count = 0
     for c in comm:
@@ -206,12 +206,12 @@ async def embed_existing_data(db: AsyncSession, tenant_id: str, election_id: str
                 pass
     result["community"] = count
 
-    # 유튜브
+    # 유튜브 (election-shared)
     yt = (await db.execute(text("""
         SELECT id, title, ai_summary FROM youtube_videos
-        WHERE tenant_id = :tid AND election_id = :eid AND is_relevant = true AND ai_summary IS NOT NULL
+        WHERE election_id = :eid AND is_relevant = true AND ai_summary IS NOT NULL
         ORDER BY collected_at DESC LIMIT 100
-    """), {"tid": tenant_id, "eid": election_id})).fetchall()
+    """), {"eid": election_id})).fetchall()
 
     count = 0
     for y in yt:

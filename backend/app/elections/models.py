@@ -131,11 +131,12 @@ class Keyword(Base):
 # ──────────────── 수집 데이터 ──────────────────────────────────────────────
 
 class NewsArticle(Base):
-    """뉴스 기사."""
+    """뉴스 기사 (election-shared raw 데이터)."""
     __tablename__ = "news_articles"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id = Column(UUID(as_uuid=True), nullable=False)
+    # 2026-04-14 refactor: election-shared. tenant_id는 legacy(첫 수집 캠프 기록용) → nullable
+    tenant_id = Column(UUID(as_uuid=True), nullable=True)
     election_id = Column(UUID(as_uuid=True), ForeignKey("elections.id", ondelete="CASCADE"), nullable=False)
     candidate_id = Column(UUID(as_uuid=True), ForeignKey("candidates.id"), nullable=True)
 
@@ -171,21 +172,23 @@ class NewsArticle(Base):
     platform = Column(String(50), default="naver", comment="naver|daum|google")
 
     __table_args__ = (
-        UniqueConstraint("tenant_id", "url", name="uq_news_url_per_tenant"),
-        Index("ix_news_tenant_date", "tenant_id", "collected_at"),
+        UniqueConstraint("election_id", "url", name="uq_news_url_per_election"),
+        Index("ix_news_election_date", "election_id", "collected_at"),
         Index("ix_news_candidate", "candidate_id", "collected_at"),
-        Index("ix_news_sentiment", "tenant_id", "sentiment"),
+        Index("ix_news_election_sentiment", "election_id", "sentiment"),
+        Index("ix_news_election_relevant", "election_id", "is_relevant"),
     )
 
     candidate = relationship("Candidate", back_populates="news_articles")
 
 
 class CommunityPost(Base):
-    """커뮤니티/블로그 게시물."""
+    """커뮤니티/블로그 게시물 (election-shared raw 데이터)."""
     __tablename__ = "community_posts"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id = Column(UUID(as_uuid=True), nullable=False)
+    # 2026-04-14 refactor: election-shared. tenant_id는 legacy → nullable
+    tenant_id = Column(UUID(as_uuid=True), nullable=True)
     election_id = Column(UUID(as_uuid=True), ForeignKey("elections.id", ondelete="CASCADE"), nullable=False)
     candidate_id = Column(UUID(as_uuid=True), ForeignKey("candidates.id"), nullable=True)
 
@@ -224,8 +227,8 @@ class CommunityPost(Base):
     collected_at = Column(DateTime(timezone=True), default=utcnow)
 
     __table_args__ = (
-        UniqueConstraint("tenant_id", "url", name="uq_community_url_per_tenant"),
-        Index("ix_community_tenant_date", "tenant_id", "collected_at"),
+        UniqueConstraint("election_id", "url", name="uq_community_url_per_election"),
+        Index("ix_community_election_date", "election_id", "collected_at"),
         Index("ix_community_candidate", "candidate_id"),
     )
 
@@ -233,11 +236,12 @@ class CommunityPost(Base):
 
 
 class YouTubeVideo(Base):
-    """유튜브 영상."""
+    """유튜브 영상 (election-shared raw 데이터)."""
     __tablename__ = "youtube_videos"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id = Column(UUID(as_uuid=True), nullable=False)
+    # 2026-04-14 refactor: election-shared. tenant_id는 legacy → nullable
+    tenant_id = Column(UUID(as_uuid=True), nullable=True)
     election_id = Column(UUID(as_uuid=True), ForeignKey("elections.id", ondelete="CASCADE"), nullable=False)
     candidate_id = Column(UUID(as_uuid=True), ForeignKey("candidates.id"), nullable=True)
 
@@ -275,12 +279,96 @@ class YouTubeVideo(Base):
     collected_at = Column(DateTime(timezone=True), default=utcnow)
 
     __table_args__ = (
-        UniqueConstraint("tenant_id", "video_id", name="uq_youtube_per_tenant"),
-        Index("ix_youtube_tenant_date", "tenant_id", "collected_at"),
+        UniqueConstraint("election_id", "video_id", name="uq_youtube_per_election"),
+        Index("ix_youtube_election_date", "election_id", "collected_at"),
         Index("ix_youtube_candidate", "candidate_id"),
     )
 
     candidate = relationship("Candidate", back_populates="youtube_videos")
+
+
+# ──────────────── 전략 분석 뷰 (캠프별 관점) ────────────────────────────────
+# 2026-04-14: 수집된 원본은 election 단위 공유, 4사분면/액션 분석은 캠프별로 분리.
+
+
+class NewsStrategicView(Base):
+    """뉴스에 대한 캠프별 전략 관점 분석."""
+    __tablename__ = "news_strategic_views"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    news_id = Column(UUID(as_uuid=True), ForeignKey("news_articles.id", ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(UUID(as_uuid=True), nullable=False)
+    election_id = Column(UUID(as_uuid=True), ForeignKey("elections.id", ondelete="CASCADE"), nullable=False)
+    candidate_id = Column(UUID(as_uuid=True), ForeignKey("candidates.id"), nullable=True)
+
+    strategic_quadrant = Column(String(50), nullable=True, comment="strength|weakness|opportunity|threat|neutral")
+    strategic_value = Column(String(20), nullable=True)
+    action_type = Column(String(20), nullable=True, comment="promote|defend|attack|monitor|ignore")
+    action_priority = Column(String(10), nullable=True, comment="high|medium|low")
+    action_summary = Column(String(300), nullable=True)
+    is_about_our_candidate = Column(Boolean, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("news_id", "tenant_id", name="uq_news_sv_per_tenant"),
+        Index("idx_news_sv_tenant", "tenant_id"),
+        Index("idx_news_sv_election", "election_id"),
+    )
+
+
+class CommunityStrategicView(Base):
+    """커뮤니티 글에 대한 캠프별 전략 관점 분석."""
+    __tablename__ = "community_strategic_views"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    post_id = Column(UUID(as_uuid=True), ForeignKey("community_posts.id", ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(UUID(as_uuid=True), nullable=False)
+    election_id = Column(UUID(as_uuid=True), ForeignKey("elections.id", ondelete="CASCADE"), nullable=False)
+    candidate_id = Column(UUID(as_uuid=True), ForeignKey("candidates.id"), nullable=True)
+
+    strategic_quadrant = Column(String(50), nullable=True)
+    action_type = Column(String(20), nullable=True)
+    action_priority = Column(String(10), nullable=True)
+    action_summary = Column(String(300), nullable=True)
+    is_about_our_candidate = Column(Boolean, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("post_id", "tenant_id", name="uq_comm_sv_per_tenant"),
+        Index("idx_comm_sv_tenant", "tenant_id"),
+        Index("idx_comm_sv_election", "election_id"),
+    )
+
+
+class YouTubeStrategicView(Base):
+    """유튜브에 대한 캠프별 전략 관점 분석."""
+    __tablename__ = "youtube_strategic_views"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # 컬럼명은 DB 스키마(video_id)이지만 실제 FK 대상은 youtube_videos.id
+    video_id = Column(UUID(as_uuid=True), ForeignKey("youtube_videos.id", ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(UUID(as_uuid=True), nullable=False)
+    election_id = Column(UUID(as_uuid=True), ForeignKey("elections.id", ondelete="CASCADE"), nullable=False)
+    candidate_id = Column(UUID(as_uuid=True), ForeignKey("candidates.id"), nullable=True)
+
+    strategic_quadrant = Column(String(50), nullable=True)
+    action_type = Column(String(20), nullable=True)
+    action_priority = Column(String(10), nullable=True)
+    action_summary = Column(String(300), nullable=True)
+    is_about_our_candidate = Column(Boolean, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("video_id", "tenant_id", name="uq_yt_sv_per_tenant"),
+        Index("idx_yt_sv_tenant", "tenant_id"),
+        Index("idx_yt_sv_election", "election_id"),
+    )
 
 
 class SearchTrend(Base):

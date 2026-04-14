@@ -87,7 +87,7 @@ async def generate_daily_report(
         select(NewsArticle, Candidate.name)
         .join(Candidate, NewsArticle.candidate_id == Candidate.id)
         .where(
-            NewsArticle.tenant_id == tenant_id,
+            NewsArticle.election_id == election_id,
             func.date(NewsArticle.collected_at) == today,
         )
         .order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.collected_at.desc())
@@ -103,7 +103,7 @@ async def generate_daily_report(
         select(NewsArticle, Candidate.name)
         .join(Candidate, NewsArticle.candidate_id == Candidate.id)
         .where(
-            NewsArticle.tenant_id == tenant_id,
+            NewsArticle.election_id == election_id,
             func.date(NewsArticle.collected_at) == today,
             NewsArticle.sentiment == "negative",
         )

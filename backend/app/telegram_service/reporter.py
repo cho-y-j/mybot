@@ -220,7 +220,6 @@ async def _build_morning_briefing(
         select(NewsArticle, Candidate.name)
         .join(Candidate, NewsArticle.candidate_id == Candidate.id)
         .where(
-            NewsArticle.tenant_id == tenant_id,
             NewsArticle.election_id == election_id,
         )
         .order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.collected_at.desc())
@@ -266,7 +265,6 @@ async def _build_morning_briefing(
         select(NewsArticle, Candidate.name)
         .join(Candidate, NewsArticle.candidate_id == Candidate.id)
         .where(
-            NewsArticle.tenant_id == tenant_id,
             NewsArticle.election_id == election_id,
             NewsArticle.sentiment == "negative",
             func.date(NewsArticle.collected_at) == today,
@@ -386,7 +384,6 @@ async def _build_afternoon_briefing(
         select(NewsArticle, Candidate.name)
         .join(Candidate, NewsArticle.candidate_id == Candidate.id)
         .where(
-            NewsArticle.tenant_id == tenant_id,
             NewsArticle.election_id == election_id,
             NewsArticle.collected_at >= morning_cutoff,
         )
@@ -409,7 +406,6 @@ async def _build_afternoon_briefing(
         select(NewsArticle, Candidate.name)
         .join(Candidate, NewsArticle.candidate_id == Candidate.id)
         .where(
-            NewsArticle.tenant_id == tenant_id,
             NewsArticle.election_id == election_id,
             NewsArticle.sentiment == "negative",
             func.date(NewsArticle.collected_at) == today,
@@ -454,7 +450,6 @@ async def _build_afternoon_briefing(
 
         all_total = (await db.execute(
             select(func.count()).where(
-                NewsArticle.tenant_id == tenant_id,
                 NewsArticle.election_id == election_id,
                 func.date(NewsArticle.collected_at) == today,
             )
@@ -559,7 +554,6 @@ async def _build_daily_report(
         select(NewsArticle, Candidate.name)
         .join(Candidate, NewsArticle.candidate_id == Candidate.id)
         .where(
-            NewsArticle.tenant_id == tenant_id,
             NewsArticle.election_id == election_id,
             func.date(NewsArticle.collected_at) == today,
         )

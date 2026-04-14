@@ -141,7 +141,7 @@ async def generate_debate_script(
         from app.elections.models import CommunityPost
         recent_posts = (await db.execute(
             select(CommunityPost.title).where(
-                CommunityPost.tenant_id.in_(all_tids),
+                CommunityPost.election_id == election_id,
                 func.date(CommunityPost.collected_at) >= date.today() - timedelta(days=14),
             ).order_by(CommunityPost.collected_at.desc()).limit(10)
         )).scalars().all()

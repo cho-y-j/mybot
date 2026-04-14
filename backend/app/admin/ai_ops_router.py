@@ -136,7 +136,6 @@ async def verify_sentiment_opus(
 
     unverified_news = (await db.execute(
         select(NewsArticle).where(
-            NewsArticle.tenant_id.in_(all_tids),
             NewsArticle.election_id == election_id,
             NewsArticle.sentiment.in_(["positive", "negative"]),
             NewsArticle.sentiment_verified == False,
@@ -145,7 +144,6 @@ async def verify_sentiment_opus(
 
     unverified_community = (await db.execute(
         select(CommunityPost).where(
-            CommunityPost.tenant_id.in_(all_tids),
             CommunityPost.election_id == election_id,
             CommunityPost.sentiment.in_(["positive", "negative"]),
             CommunityPost.sentiment_verified == False,

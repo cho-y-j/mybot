@@ -343,7 +343,6 @@ async def _build_report_data(
         select(NewsArticle, Candidate.name)
         .join(Candidate, NewsArticle.candidate_id == Candidate.id)
         .where(
-            NewsArticle.tenant_id == tenant_id,
             NewsArticle.election_id == election_id,
         )
         .order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.collected_at.desc())
@@ -366,7 +365,6 @@ async def _build_report_data(
         select(NewsArticle, Candidate.name)
         .join(Candidate, NewsArticle.candidate_id == Candidate.id)
         .where(
-            NewsArticle.tenant_id == tenant_id,
             NewsArticle.election_id == election_id,
             NewsArticle.sentiment == "negative",
         )
@@ -406,7 +404,7 @@ async def _build_report_data(
     recent_community = (await db.execute(
         select(CommunityPost, Candidate.name)
         .join(Candidate, CommunityPost.candidate_id == Candidate.id)
-        .where(CommunityPost.tenant_id == tenant_id)
+        .where(CommunityPost.election_id == election_id)
         .order_by(CommunityPost.collected_at.desc())
         .limit(10)
     )).all()

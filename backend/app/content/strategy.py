@@ -133,7 +133,7 @@ async def _get_trending_issues(
     issue_counts = (await db.execute(
         select(CommunityPost.issue_category, func.count())
         .where(
-            CommunityPost.tenant_id == tenant_id,
+            CommunityPost.election_id == election_id,
             CommunityPost.issue_category.isnot(None),
             CommunityPost.issue_category != "",
             func.date(CommunityPost.collected_at) >= week_ago,

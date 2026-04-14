@@ -585,12 +585,9 @@ async def get_collected_news(
     기본 정렬: 발행일(published_at) 역순 — 모든 후보 섞여서 최신순.
     후보 필터는 candidate_id 파라미터로.
     """
-    from app.common.election_access import get_election_tenant_ids
-    all_tids = await get_election_tenant_ids(db, election_id)
     query = select(NewsArticle, Candidate.name, Candidate.is_our_candidate).join(
         Candidate, NewsArticle.candidate_id == Candidate.id
     ).where(
-        NewsArticle.tenant_id.in_(all_tids),
         NewsArticle.election_id == election_id,
     ).order_by(
         NewsArticle.published_at.desc().nullslast(),

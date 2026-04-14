@@ -202,7 +202,7 @@ async def get_analysis_overview(
         select(NewsArticle, Candidate.name)
         .join(Candidate, NewsArticle.candidate_id == Candidate.id)
         .where(
-            NewsArticle.tenant_id.in_(all_tids), NewsArticle.election_id == election_id,
+            NewsArticle.election_id == election_id,
             NewsArticle.sentiment == "negative",
             NewsArticle.is_relevant == True,
         )
