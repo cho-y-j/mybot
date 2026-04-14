@@ -79,6 +79,16 @@ async def build_chat_context(
     except Exception as e:
         logger.warning("rag_search_failed", error=str(e)[:100])
 
+    # ── 실시간 웹 검색 (최신성 요구 시) ──
+    try:
+        from app.services.realtime_search import build_realtime_context
+        realtime_block = await build_realtime_context(db, tenant_id, election_id, question)
+        if realtime_block:
+            sections.append(realtime_block)
+            logger.info("realtime_search_included", tenant=tenant_id)
+    except Exception as e:
+        logger.warning("realtime_search_failed", error=str(e)[:100])
+
     # ── 의도별 보충 데이터 (RAG로 커버 안 되는 구조화 데이터) ──
     today = date.today()
 
