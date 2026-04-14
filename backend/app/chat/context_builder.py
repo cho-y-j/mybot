@@ -64,16 +64,27 @@ async def build_chat_context(
     # ── 선거 기본 정보 (항상 포함) ──
     sections.append(_build_election_info(election, candidates, d_day))
 
+    # 출처 각주용 citations 수집 (build_chat_context_with_citations에서 사용)
+    _citations_capture = getattr(build_chat_context, "_citations", None)
+
     # ── RAG 벡터 검색 (최우선 — 질문과 관련된 데이터만) ──
     try:
         from app.services.embedding_service import search_similar
         rag_results = await search_similar(db, tenant_id, question, limit=10)
         if rag_results:
             lines = ["=== 질문 관련 데이터 (AI 벡터 검색) ==="]
-            for r in rag_results:
-                lines.append(f"[{r['source_type']}] {r['title'] or ''} (유사도 {r['similarity']})")
+            for i, r in enumerate(rag_results, 1):
+                ref_id = f"rag-{i}"
+                lines.append(f"[ref-{ref_id}] [{r['source_type']}] {r['title'] or ''} (유사도 {r['similarity']})")
                 if r['content']:
                     lines.append(f"  {r['content']}")
+                if _citations_capture is not None:
+                    _citations_capture.append({
+                        "id": ref_id, "type": r['source_type'],
+                        "title": r['title'] or '', "source_id": r.get('source_id'),
+                        "preview": (r['content'] or '')[:200],
+                        "similarity": r.get('similarity'),
+                    })
             sections.append("\n".join(lines))
             logger.info("rag_search_done", results=len(rag_results), tenant=tenant_id)
     except Exception as e:
@@ -81,11 +92,44 @@ async def build_chat_context(
 
     # ── 실시간 웹 검색 (최신성 요구 시) ──
     try:
-        from app.services.realtime_search import build_realtime_context
-        realtime_block = await build_realtime_context(db, tenant_id, election_id, question)
-        if realtime_block:
-            sections.append(realtime_block)
-            logger.info("realtime_search_included", tenant=tenant_id)
+        from app.services.realtime_search import build_realtime_context, needs_realtime, search_realtime_news
+        if needs_realtime(question):
+            from app.common.election_access import list_election_candidates
+            cands = await list_election_candidates(db, election_id, tenant_id=tenant_id)
+            our = next((c for c in cands if c.is_our_candidate), None)
+            keywords = []
+            if our: keywords.append(our.name)
+            for c in cands:
+                if not c.is_our_candidate and c.name not in keywords:
+                    keywords.append(c.name)
+                if len(keywords) >= 5: break
+            articles = await search_realtime_news(keywords, max_per_keyword=4, hours=48)
+            if articles:
+                lines = ["=== 실시간 웹 검색 (네이버 최근 48시간) ==="]
+                lines.append(f"※ 내부 DB에 없는 최신 정보.")
+                for i, a in enumerate(articles, 1):
+                    ref_id = f"rt-{i}"
+                    pub = ""
+                    try:
+                        from datetime import datetime as _dt
+                        if a.get("pub_date"):
+                            pub = f" ({_dt.fromisoformat(a['pub_date']).strftime('%m/%d %H:%M')})"
+                    except Exception:
+                        pass
+                    lines.append(f"[ref-{ref_id}] {a['title']}{pub}")
+                    lines.append(f"   출처: {a.get('source') or '네이버'} | {a['url']}")
+                    if a.get("description"):
+                        lines.append(f"   요약: {a['description'][:200]}")
+                    if _citations_capture is not None:
+                        _citations_capture.append({
+                            "id": ref_id, "type": "realtime_news",
+                            "title": a['title'], "url": a['url'],
+                            "source": a.get('source') or '네이버',
+                            "published_at": a.get('pub_date'),
+                            "preview": a.get('description', '')[:200],
+                        })
+                sections.append("\n".join(lines))
+                logger.info("realtime_search_included", tenant=tenant_id, count=len(articles))
     except Exception as e:
         logger.warning("realtime_search_failed", error=str(e)[:100])
 
@@ -121,6 +165,22 @@ async def build_chat_context(
 
     context = "\n\n".join(s for s in sections if s)
     return context
+
+
+async def build_chat_context_with_citations(
+    db: AsyncSession,
+    tenant_id: str,
+    election_id: str,
+    question: str,
+) -> tuple[str, list[dict]]:
+    """컨텍스트 + 출처 메타데이터 (프론트 각주 팝업용)."""
+    citations: list[dict] = []
+    build_chat_context._citations = citations
+    try:
+        context = await build_chat_context(db, tenant_id, election_id, question)
+    finally:
+        build_chat_context._citations = None
+    return context, citations
 
 
 def _detect_intents(question: str) -> list[str]:

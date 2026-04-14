@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from app.database import get_db
 from app.common.dependencies import CurrentUser
 from app.elections.models import Election
-from app.chat.context_builder import build_chat_context
+from app.chat.context_builder import build_chat_context, build_chat_context_with_citations
 from app.config import get_settings
 import structlog
 
@@ -33,6 +33,7 @@ class ChatResponse(BaseModel):
     reply: str
     session_id: str
     context_used: list[str] = []
+    citations: list[dict] = []
     timestamp: str
 
 
@@ -130,8 +131,8 @@ async def chat_send(
         for m in reversed(prev_msgs)
     ])
 
-    # DB에서 관련 데이터 자동 수집
-    context = await build_chat_context(db, tid, election_id, req.message)
+    # DB에서 관련 데이터 자동 수집 + 출처 각주 메타데이터
+    context, citations = await build_chat_context_with_citations(db, tid, election_id, req.message)
 
     # 캠프 메모리 (이전 보고서/콘텐츠 참조)
     from app.services.camp_context import build_camp_memory
@@ -174,6 +175,7 @@ async def chat_send(
         reply=reply,
         session_id=str(session_id),
         context_used=sections_used,
+        citations=citations or [],
         timestamp=datetime.now(timezone.utc).isoformat(),
     )
 

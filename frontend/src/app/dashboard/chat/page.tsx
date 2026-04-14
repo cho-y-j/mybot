@@ -4,12 +4,25 @@ import { useElection } from '@/hooks/useElection';
 import { api } from '@/services/api';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { CitationBadge } from '@/components/chat/CitationBadge';
+
+interface Citation {
+  id: string;
+  type: string;
+  title?: string;
+  source?: string;
+  url?: string;
+  published_at?: string;
+  preview?: string;
+  similarity?: number;
+}
 
 interface Message {
   id: string;
   role: 'user' | 'ai';
   content: string;
   context?: string[];
+  citations?: Citation[];
   time: string;
 }
 
@@ -96,6 +109,7 @@ export default function ChatPage() {
         role: 'ai',
         content: resp.reply,
         context: resp.context_used,
+        citations: resp.citations || [],
         time: new Date().toLocaleTimeString('ko'),
       };
       setMessages(prev => [...prev, aiMsg]);
@@ -248,12 +262,50 @@ export default function ChatPage() {
                   {msg.role === 'user' ? (
                     <span className="whitespace-pre-wrap">{msg.content}</span>
                   ) : (
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        // [ref-xxx] 텍스트를 CitationBadge로 치환
+                        p: ({ children }: any) => {
+                          const processNode = (node: any): any => {
+                            if (typeof node === 'string') {
+                              const parts = node.split(/(\[ref-[a-zA-Z0-9\-]+\])/g);
+                              return parts.map((p, i) => {
+                                const m = p.match(/^\[ref-([a-zA-Z0-9\-]+)\]$/);
+                                if (m && msg.citations) {
+                                  const idx = msg.citations.findIndex(c => c.id === m[1]);
+                                  if (idx >= 0) {
+                                    return <CitationBadge key={`c-${i}`} citation={msg.citations[idx]} num={idx + 1} />;
+                                  }
+                                }
+                                return <span key={`t-${i}`}>{p}</span>;
+                              });
+                            }
+                            return node;
+                          };
+                          const kids = Array.isArray(children) ? children.flatMap(processNode) : processNode(children);
+                          return <p>{kids}</p>;
+                        },
+                      }}
+                    >
+                      {msg.content}
+                    </ReactMarkdown>
                   )}
                 </div>
+                {/* 출처 목록 (하단) */}
+                {msg.role === 'ai' && msg.citations && msg.citations.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-[var(--card-border)]">
+                    <p className="text-[11px] text-[var(--muted)] mb-2 font-semibold">📎 출처 ({msg.citations.length})</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {msg.citations.map((c, i) => (
+                        <CitationBadge key={c.id} citation={c} num={i + 1} />
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {msg.context && msg.context.length > 0 && (
                   <div className="mt-2 pt-2 border-t border-[var(--card-border)]">
-                    <p className="text-[10px] text-[var(--muted)] mb-1">참고 데이터:</p>
+                    <p className="text-[10px] text-[var(--muted)] mb-1">참고 섹션:</p>
                     <div className="flex flex-wrap gap-1">
                       {msg.context.map((c, i) => (
                         <span key={i} className="text-[10px] bg-[var(--card-bg)] text-[var(--muted)] rounded px-1.5 py-0.5">{c}</span>
