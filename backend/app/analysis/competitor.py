@@ -526,7 +526,7 @@ async def _generate_ai_summary(
 
     try:
         text = await call_claude_text(
-            prompt, timeout=60,
+            prompt, timeout=180,
             context="competitor_gap_summary",
             tenant_id=tenant_id, db=db,
         )

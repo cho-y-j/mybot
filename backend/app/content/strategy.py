@@ -489,7 +489,7 @@ async def _generate_blog_outline(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=60)
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=180)
         if proc.returncode == 0 and stdout:
             outline_text = stdout.decode("utf-8").strip()
             if len(outline_text) > 30:

@@ -135,7 +135,7 @@ JSON array만 출력하세요. 다른 텍스트 절대 금지."""
     try:
         ai_result = await call_claude(
             prompt,
-            timeout=120,
+            timeout=300,
             context="media_analyze_batch",
             tenant_id=tenant_id,
             db=db,

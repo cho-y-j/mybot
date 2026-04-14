@@ -230,7 +230,7 @@ async def generate_debate_script(
     if camp_memory:
         prompt += f"\n{camp_memory}"
 
-    result = await call_claude(prompt, timeout=120, context="debate_script", tenant_id=tenant_id, db=db)
+    result = await call_claude(prompt, timeout=600, context="debate_script", tenant_id=tenant_id, db=db)
 
     if result:
         # 선거법 검증

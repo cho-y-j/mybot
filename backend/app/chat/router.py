@@ -190,7 +190,7 @@ async def _get_ai_response(
     try:
         result = await call_claude_text(
             full_prompt,
-            timeout=90,
+            timeout=180,
             context=chat_context_name,
             tenant_id=tenant_id,
             db=db,

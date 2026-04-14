@@ -73,7 +73,7 @@ class SentimentAnalyzer:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
 
             if proc.returncode == 0 and stdout:
                 import json
@@ -209,7 +209,7 @@ class SentimentAnalyzer:
                 f"텍스트:\n{numbered}"
             )
 
-            ai_result = await call_claude(prompt, timeout=45, context="batch_sentiment")
+            ai_result = await call_claude(prompt, timeout=180, context="batch_sentiment")
             if ai_result and "items" in ai_result:
                 for item in ai_result["items"]:
                     idx = item.get("n", 0) - 1
@@ -314,7 +314,7 @@ class SentimentAnalyzer:
             )
 
             ai_result = await call_claude(
-                prompt, timeout=60, context="sentiment_verify",
+                prompt, timeout=300, context="sentiment_verify",
                 model_tier="premium",  # Opus 강제
                 tenant_id=tenant_id,
                 db=db,

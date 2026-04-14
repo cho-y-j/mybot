@@ -455,7 +455,7 @@ async def generate_content(
     if camp_memory:
         prompt += f"\n{camp_memory}"
 
-    generated = await call_claude_text(prompt, timeout=120, context="content_generation", tenant_id=user["tenant_id"], db=db)
+    generated = await call_claude_text(prompt, timeout=300, context="content_generation", tenant_id=user["tenant_id"], db=db)
 
     if not generated:
         return {"error": "AI 생성 실패", "content": None, "ai_generated": False}

@@ -96,7 +96,7 @@ async def generate_multi_tone_content(
             )
 
             tasks.append(call_claude_text(
-                prompt, timeout=60,
+                prompt, timeout=300,
                 context=f"multi_tone_{platform}_{tone}",
                 tenant_id=tenant_id, db=db,
             ))
