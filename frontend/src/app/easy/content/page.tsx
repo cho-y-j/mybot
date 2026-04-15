@@ -50,6 +50,7 @@ function ContentWizardInner() {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [progressMsg, setProgressMsg] = useState('');
   const [result, setResult] = useState<any>(null);
 
   useEffect(() => {
@@ -79,6 +80,21 @@ function ContentWizardInner() {
   const generate = async () => {
     if (!election?.id || !topic.trim()) return;
     setGenerating(true);
+    // 진행 상태 rotate — 실제 서버 단계와 대략 맞춤
+    const steps = [
+      '🔍 RAG 벡터로 관련 수집 데이터 검색 중...',
+      '📊 후보 프로필·여론조사·과거 선거 데이터 병합 중...',
+      '📝 캠프 학습 메모리(이전 보고서) 불러오는 중...',
+      '⚖️ 공직선거법 조항 적용 중...',
+      '🤖 Claude Opus로 콘텐츠 작성 중... (최대 5분)',
+      '✅ 선거법 준수 검증 + RAG 저장 중...',
+    ];
+    let si = 0;
+    setProgressMsg(steps[0]);
+    const timer = setInterval(() => {
+      si = Math.min(si + 1, steps.length - 1);
+      setProgressMsg(steps[si]);
+    }, 8000);
     try {
       const t = localStorage.getItem('access_token');
       const p = new URLSearchParams({
@@ -96,7 +112,11 @@ function ContentWizardInner() {
       setResult(data);
     } catch (e: any) {
       setResult({ error: e.message });
-    } finally { setGenerating(false); }
+    } finally {
+      clearInterval(timer);
+      setGenerating(false);
+      setProgressMsg('');
+    }
   };
 
   // ───────── Step 1: 유형 선택 ─────────
@@ -232,10 +252,21 @@ function ContentWizardInner() {
       </div>
 
       {!result && (
-        <button onClick={generate} disabled={generating}
-          className="w-full py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-bold text-lg rounded-xl hover:from-blue-700 hover:to-blue-800 disabled:opacity-40">
-          {generating ? '✨ AI 생성 중... (최대 5분)' : '✨ 콘텐츠 생성하기'}
-        </button>
+        <>
+          <button onClick={generate} disabled={generating}
+            className="w-full py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-bold text-lg rounded-xl hover:from-blue-700 hover:to-blue-800 disabled:opacity-40">
+            {generating ? '✨ AI 생성 중...' : '✨ 콘텐츠 생성하기'}
+          </button>
+          {generating && progressMsg && (
+            <div className="mt-3 p-4 bg-blue-500/10 border border-blue-500/30 rounded-xl">
+              <div className="flex items-center gap-3">
+                <div className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full flex-shrink-0" />
+                <p className="text-sm text-blue-600 font-medium">{progressMsg}</p>
+              </div>
+              <p className="text-[11px] text-[var(--muted)] mt-2 ml-7">최대 5분까지 걸릴 수 있습니다. 창을 닫지 마세요.</p>
+            </div>
+          )}
+        </>
       )}
 
       {result?.error && (

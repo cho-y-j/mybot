@@ -342,7 +342,15 @@ async def generate_content(
     from app.services.ai_service import call_claude_text
 
     election, our, _ = await _load_election_data(db, user["tenant_id"], election_id)
-    region_short = _get_short(election.region_sido)
+    # election 속성을 scalar로 추출 — rich_context 중 세션 abort되더라도 lazy load 방지
+    e_type = election.election_type or ''
+    e_name = election.name or ''
+    e_sido = election.region_sido or ''
+    e_sigungu = election.region_sigungu or ''
+    e_date_iso = election.election_date.isoformat() if election.election_date else None
+    our_name = our.name if our else '후보'
+    our_party = our.party if our else '무소속'
+    region_short = _get_short(e_sido)
 
     # 콘텐츠 유형별 스펙
     type_specs = {
@@ -393,11 +401,11 @@ async def generate_content(
     )
 
     # ── 통합 프롬프트 (하나의 명확한 구조) ──
-    prompt = f"""당신은 {region_short} {election.election_type or ''} 선거 캠프의 10년 경력 프로 콘텐츠 라이터입니다.
+    prompt = f"""당신은 {region_short} {e_type} 선거 캠프의 10년 경력 프로 콘텐츠 라이터입니다.
 
 [후보 정보]
-- 우리 후보: {our.name if our else '후보'} ({our.party if our else '무소속'})
-- 선거: {election.name} ({election.region_sido or ''} {election.region_sigungu or ''})
+- 우리 후보: {our_name} ({our_party})
+- 선거: {e_name} ({e_sido} {e_sigungu})
 
 [작성 요청]
 - 주제: {topic}
@@ -443,10 +451,7 @@ async def generate_content(
     # 선거법 체크
     from app.content.compliance import ComplianceChecker
     checker = ComplianceChecker()
-    compliance = checker.check_content(
-        generated, content_type,
-        election.election_date.isoformat() if election.election_date else None,
-    )
+    compliance = checker.check_content(generated, content_type, e_date_iso)
 
     # ── 생성 결과 DB 저장 + RAG 임베딩 (Report 테이블 재사용 — 챗/히스토리에서 활용) ──
     saved_id = None

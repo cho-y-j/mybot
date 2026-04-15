@@ -87,6 +87,8 @@ async def build_rich_context(
             sections.append("\n".join(lines))
     except Exception as e:
         logger.warning("rich_ctx_rag_failed", error=str(e)[:100])
+        try: await db.rollback()
+        except Exception: pass
 
     # 3. 후보자 공식 프로필
     if include_profiles and candidates:
@@ -123,6 +125,8 @@ async def build_rich_context(
                 sections.append("\n".join(prof_lines))
         except Exception as e:
             logger.warning("rich_ctx_profile_failed", error=str(e)[:100])
+            try: await db.rollback()
+            except Exception: pass
 
     # 4. 과거 선거 데이터 (NEC)
     try:
@@ -137,6 +141,35 @@ async def build_rich_context(
             })
     except Exception as e:
         logger.warning("rich_ctx_history_failed", error=str(e)[:100])
+        try: await db.rollback()
+        except Exception: pass
+
+    # 4.5 여론조사 (같은 선거 공유, 공공 데이터)
+    try:
+        from app.elections.models import Survey
+        surveys = (await db.execute(
+            select(Survey).where(Survey.election_id == election_id)
+            .order_by(Survey.survey_date.desc()).limit(5)
+        )).scalars().all()
+        if surveys:
+            lines = ["=== 최근 여론조사 (같은 선거) ==="]
+            for s in surveys:
+                res = s.results or {}
+                parts = [f"{n}: {v}%" for n, v in sorted(res.items(), key=lambda x: -float(x[1] or 0))[:6]]
+                sid = f"survey-{str(s.id)[:8]}"
+                lines.append(f"[ref-{sid}] {s.survey_date} {s.survey_org} (N={s.sample_size or '?'}, 오차 ±{s.margin_of_error or '?'}%): {', '.join(parts)}")
+                if s.source_url:
+                    citations.append({
+                        "id": sid, "type": "survey",
+                        "title": f"{s.survey_org} 여론조사 ({s.survey_date})",
+                        "source": s.survey_org,
+                        "url": s.source_url,
+                    })
+            sections.append("\n".join(lines))
+    except Exception as e:
+        logger.warning("rich_ctx_survey_failed", error=str(e)[:100])
+        try: await db.rollback()
+        except Exception: pass
 
     # 5. 캠프 학습 메모리 (보고서 + 브리핑 + 이전 콘텐츠)
     try:
@@ -149,6 +182,8 @@ async def build_rich_context(
             sections.append(camp_mem)
     except Exception as e:
         logger.warning("rich_ctx_camp_failed", error=str(e)[:100])
+        try: await db.rollback()
+        except Exception: pass
 
     # 6. 공직선거법 조항 (콘텐츠/토론 법적 안전 필수)
     if include_law:
