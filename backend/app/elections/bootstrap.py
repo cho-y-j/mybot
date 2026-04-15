@@ -148,13 +148,14 @@ async def bootstrap_campaign(
         ), {"tid": tenant_id})).first()
 
         if not exists:
-            await db.execute(sql_text("""
+            new_row = (await db.execute(sql_text("""
                 INSERT INTO homepage.users
                   (code, name, email, password_hash, template_type, template_theme,
                    is_active, tenant_id, election_id, created_at, updated_at)
                 VALUES
                   (:code, :name, :email, :pwd, 'election', 'default',
                    true, cast(:tid as uuid), cast(:eid as uuid), NOW(), NOW())
+                RETURNING id
             """), {
                 "code": default_code,
                 "name": tenant_name,
@@ -162,13 +163,27 @@ async def bootstrap_campaign(
                 "pwd": "SSO_ONLY",  # homepage 직접 로그인 차단, mybot 토큰으로만 접근
                 "tid": tenant_id,
                 "eid": election_id,
-            })
+            })).first()
+            homepage_user_id = new_row[0] if new_row else None
             await db.flush()
             result["homepage"] = {"status": "created", "code": default_code,
                                   "url": f"/{default_code}"}
             logger.info("bootstrap_homepage_created", tenant=tenant_id, code=default_code)
         else:
+            homepage_user_id = exists[0]
             result["homepage"] = {"status": "exists"}
+
+        # 5b. 홈페이지 자동 채우기 — NEC 데이터 + 정당별 컬러 + AI 소개문
+        if homepage_user_id:
+            try:
+                from app.elections.homepage_autofill import auto_fill_homepage
+                fill = await auto_fill_homepage(db, tenant_id, election_id, homepage_user_id)
+                await db.flush()
+                result["homepage_autofill"] = fill
+                logger.info("bootstrap_homepage_filled", tenant=tenant_id, result=fill)
+            except Exception as af_err:
+                result["errors"].append(f"homepage_autofill: {str(af_err)[:200]}")
+                logger.warning("bootstrap_autofill_failed", error=str(af_err)[:300])
     except Exception as e:
         result["errors"].append(f"homepage: {str(e)[:200]}")
         logger.warning("bootstrap_homepage_failed", error=str(e))
