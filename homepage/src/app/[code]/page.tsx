@@ -8,6 +8,65 @@ interface PageProps {
   params: { code: string };
 }
 
+/**
+ * 수동 뉴스(homepage.news) + mybot DB의 "긍정 + 검증된 우리 관련 뉴스" 병합.
+ * FeedOverride(feed_type='ai_news')의 hidden/pin 적용.
+ */
+async function mergeAiNews(
+  userId: number,
+  electionId: string | null,
+  manualNews: any[],
+): Promise<any[]> {
+  const manual = manualNews.map((n) => ({
+    id: n.id,
+    title: n.title,
+    source: n.source,
+    url: n.url,
+    imageUrl: n.imageUrl,
+    publishedDate: n.publishedDate ? n.publishedDate.toISOString().split("T")[0] : null,
+    sortOrder: n.sortOrder,
+  }));
+
+  if (!electionId) return manual;
+
+  try {
+    const [aiRows, overrides] = await Promise.all([
+      prisma.$queryRawUnsafe<any[]>(
+        `SELECT title, url, source, summary, published_at, collected_at
+         FROM public.news_articles
+         WHERE election_id = $1::uuid
+           AND is_relevant = true AND is_about_our_candidate = true
+           AND sentiment = 'positive' AND sentiment_verified = true
+         ORDER BY published_at DESC NULLS LAST, collected_at DESC
+         LIMIT 60`,
+        electionId
+      ),
+      prisma.feedOverride.findMany({
+        where: { userId, feedType: "ai_news" },
+        select: { sourceKey: true, hidden: true, pinOrder: true },
+      }),
+    ]);
+
+    const overMap = new Map(overrides.map((o) => [o.sourceKey, o]));
+    const aiList = aiRows
+      .filter((r) => !overMap.get(r.url)?.hidden)
+      .map((r, i) => ({
+        id: -1 - i, // manual과 구분
+        title: r.title,
+        source: r.source,
+        url: r.url,
+        imageUrl: null,
+        publishedDate: r.published_at ? new Date(r.published_at).toISOString().split("T")[0] : null,
+        sortOrder: overMap.get(r.url)?.pinOrder ?? 1000 + i,
+      }));
+
+    return [...manual, ...aiList].sort((a, b) => a.sortOrder - b.sortOrder).slice(0, 30);
+  } catch {
+    return manual;
+  }
+}
+
+
 async function getSiteData(code: string): Promise<SiteData | null> {
   const user = await prisma.user.findUnique({
     where: { code, isActive: true },
@@ -16,6 +75,7 @@ async function getSiteData(code: string): Promise<SiteData | null> {
       name: true,
       templateType: true,
       plan: true,
+      electionId: true,
     },
   });
 
@@ -122,17 +182,7 @@ async function getSiteData(code: string): Promise<SiteData | null> {
       url: c.url,
       sortOrder: c.sortOrder,
     })),
-    news: news.map((n) => ({
-      id: n.id,
-      title: n.title,
-      source: n.source,
-      url: n.url,
-      imageUrl: n.imageUrl,
-      publishedDate: n.publishedDate
-        ? n.publishedDate.toISOString().split("T")[0]
-        : null,
-      sortOrder: n.sortOrder,
-    })),
+    news: await mergeAiNews(user.id, user.electionId, news),
     videos: videos.map((v) => ({
       id: v.id,
       videoId: v.videoId,
