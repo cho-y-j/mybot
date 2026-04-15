@@ -41,6 +41,9 @@ class SmartSetupRequest(BaseModel):
     # 플랜 — full(분석+홈), analysis_only(분석만), homepage_only(홈만)
     plan: str = "full"
 
+    # 사용자 지정 홈페이지 슬러그 (선택 — 없으면 tenant_id 앞 8자 자동)
+    homepage_code: Optional[str] = None
+
 
 def _get_default_schedule_templates() -> list[dict]:
     """
@@ -333,7 +336,10 @@ async def apply_setup(
                 )
                 # 2단계: 분석/리포트 자동 부트스트랩
                 async with async_session_factory() as bg_db2:
-                    boot = await bootstrap_campaign(bg_db2, tenant_id_str, election_id_str, plan=req.plan)
+                    boot = await bootstrap_campaign(
+                        bg_db2, tenant_id_str, election_id_str,
+                        plan=req.plan, homepage_code=req.homepage_code,
+                    )
                     await bg_db2.commit()
                     log.info("onboarding_bootstrap_done", election_id=election_id_str, result=boot)
 

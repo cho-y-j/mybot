@@ -84,6 +84,29 @@ async def issue_homepage_sso(
     }
 
 
+@router.get("/homepage/check-code")
+async def check_code_available(
+    code: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """가입 UI용 실시간 중복/형식 체크 (인증 불필요).
+
+    Returns:
+        available: bool, reason: str
+    """
+    c = (code or "").lower().strip()
+    if not CODE_PATTERN.match(c):
+        return {"available": False, "reason": "영문 소문자로 시작하는 3~30자(영문/숫자/하이픈)만 가능"}
+    if c in RESERVED_CODES:
+        return {"available": False, "reason": "시스템 예약어입니다"}
+    dup = (await db.execute(text(
+        "SELECT 1 FROM homepage.users WHERE code = :code"
+    ), {"code": c})).first()
+    if dup:
+        return {"available": False, "reason": "이미 사용 중입니다"}
+    return {"available": True, "reason": "사용 가능합니다"}
+
+
 class ChangeCodeRequest(BaseModel):
     new_code: str = Field(..., min_length=3, max_length=30)
 

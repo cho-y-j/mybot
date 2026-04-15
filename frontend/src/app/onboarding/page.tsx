@@ -26,6 +26,10 @@ export default function OnboardingPage() {
     our_name: '',
     our_party: '',
     plan: 'full' as 'full' | 'analysis_only' | 'homepage_only',
+    homepage_code: '',
+  });
+  const [codeCheck, setCodeCheck] = useState<{ available: boolean | null; reason: string }>({
+    available: null, reason: '',
   });
   const [competitors, setCompetitors] = useState<{ name: string; party: string }[]>([]);
 
@@ -340,6 +344,40 @@ export default function OnboardingPage() {
                 ))}
               </div>
             </div>
+
+            {/* 홈페이지 주소 직접 지정 */}
+            {form.plan !== 'analysis_only' && (
+              <div className="card">
+                <h3 className="font-semibold mb-2">🌐 내 홈페이지 주소</h3>
+                <p className="text-xs text-gray-500 mb-3">후보 홍보 시 이 링크를 공유합니다. 나중에 변경 가능.</p>
+                <div className="flex items-center gap-1">
+                  <span className="text-sm text-gray-500">ai.on1.kr/</span>
+                  <input type="text" maxLength={30}
+                    value={form.homepage_code}
+                    onChange={e => {
+                      const v = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                      setForm(f => ({ ...f, homepage_code: v }));
+                      setCodeCheck({ available: null, reason: '' });
+                      if (v.length >= 3) {
+                        fetch(`/api/sso/homepage/check-code?code=${encodeURIComponent(v)}`)
+                          .then(r => r.json())
+                          .then(d => setCodeCheck({ available: !!d.available, reason: d.reason || '' }))
+                          .catch(() => {});
+                      }
+                    }}
+                    placeholder="예: kimjingyun"
+                    className="input flex-1" />
+                </div>
+                {form.homepage_code.length >= 3 && codeCheck.available !== null && (
+                  <p className={`text-xs mt-2 ${codeCheck.available ? 'text-emerald-600' : 'text-red-500'}`}>
+                    {codeCheck.available ? '✅' : '❌'} {codeCheck.reason}
+                  </p>
+                )}
+                {!form.homepage_code && (
+                  <p className="text-xs text-gray-400 mt-2">(비워두면 8자리 임시 주소 자동 배정)</p>
+                )}
+              </div>
+            )}
 
             {/* 플랜 선택 */}
             <div className="card">

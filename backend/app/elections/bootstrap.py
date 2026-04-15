@@ -22,6 +22,7 @@ async def bootstrap_campaign(
     tenant_id: str,
     election_id: str,
     plan: str = "full",
+    homepage_code: str | None = None,
 ) -> dict:
     """
     캠프 자동 부트스트랩.
@@ -143,7 +144,18 @@ async def bootstrap_campaign(
         tenant_name = t_row[0] if t_row else "캠프"
         tenant_email = t_row[1] if t_row else None
 
+        # 사용자 지정 code가 있고 유효/미사용이면 그것, 아니면 tenant_id 앞 8자
         default_code = str(tenant_id).replace("-", "")[:8]
+        if homepage_code:
+            req_code = homepage_code.lower().strip()
+            from app.homepage_sso.router import CODE_PATTERN, RESERVED_CODES
+            valid = (CODE_PATTERN.match(req_code) and req_code not in RESERVED_CODES)
+            if valid:
+                dup = (await db.execute(sql_text(
+                    "SELECT 1 FROM homepage.users WHERE code = :c"
+                ), {"c": req_code})).first()
+                if not dup:
+                    default_code = req_code
         exists = (await db.execute(sql_text(
             "SELECT id FROM homepage.users WHERE tenant_id = cast(:tid as uuid)"
         ), {"tid": tenant_id})).first()
