@@ -73,7 +73,16 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if not request.url.path.startswith("/api/"):
             return await call_next(request)
 
-        client_ip = request.client.host if request.client else "unknown"
+        # NPM(reverse proxy) 뒤에서는 request.client.host가 항상 프록시 IP(172.18.0.x)라
+        # 모든 사용자가 같은 IP로 묶여 rate limit에 금방 걸림.
+        # X-Forwarded-For / X-Real-IP 헤더에서 진짜 클라이언트 IP 추출.
+        xff = request.headers.get("x-forwarded-for")
+        if xff:
+            client_ip = xff.split(",")[0].strip()
+        else:
+            client_ip = request.headers.get("x-real-ip") or (
+                request.client.host if request.client else "unknown"
+            )
         now = time.time()
         window_start = now - self.window_seconds
 
