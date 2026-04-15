@@ -79,7 +79,8 @@ async def issue_homepage_sso(
     return {
         "exists": True,
         "code": code,
-        "url": f"/{code}/admin?sso={token}",
+        # /_sso 예약 경로로 token 전달 — NPM이 homepage로 라우팅, middleware 통과
+        "url": f"/_sso?token={token}&redirect=/{code}/admin",
         "public_url": f"/{code}",
     }
 

@@ -1,11 +1,10 @@
 /**
- * ElectionPulse ↔ MyHome SSO 브릿지 (수신 측).
+ * homepage SSO 수신 — mybot에서 발급한 단기 JWT를 받아 homepage 세션 쿠키 발급.
  *
- * mybot이 발급한 단기 JWT(?token=...)를 받아서 검증하고
- * myhome 자체 session 쿠키를 구워준다. 그 후 /[code]/admin 으로 redirect.
+ * 경로가 /_sso 인 이유: NPM 라우팅에서 /api/*는 ep_backend로 가므로
+ * /api/auth/sso 에 두면 homepage에 도달 못함. /_sso는 예약 경로로 ep_homepage로 라우팅됨.
  *
- * 보안: HS256 + SSO_SECRET 환경변수 공유 (mybot의 APP_SECRET_KEY와 동일값)
- * 토큰 exp=60초 — 재사용/유출 리스크 최소화.
+ * 호출: GET /_sso?token=JWT&redirect=/<code>/admin
  */
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
@@ -16,15 +15,13 @@ const SSO_SECRET = process.env.SSO_SECRET || process.env.APP_SECRET_KEY || "";
 
 export async function GET(req: NextRequest) {
   const token = req.nextUrl.searchParams.get("token");
+  const redirectPath = req.nextUrl.searchParams.get("redirect") || "/";
   if (!token) {
-    return NextResponse.json(
-      { success: false, error: "token 파라미터 누락" },
-      { status: 400 }
-    );
+    return NextResponse.json({ success: false, error: "token 누락" }, { status: 400 });
   }
   if (!SSO_SECRET) {
     return NextResponse.json(
-      { success: false, error: "SSO_SECRET 환경변수 미설정" },
+      { success: false, error: "SSO_SECRET 미설정" },
       { status: 500 }
     );
   }
@@ -42,27 +39,18 @@ export async function GET(req: NextRequest) {
   }
 
   if (payload.type !== "homepage_sso") {
-    return NextResponse.json(
-      { success: false, error: "토큰 타입 불일치" },
-      { status: 401 }
-    );
+    return NextResponse.json({ success: false, error: "토큰 타입 불일치" }, { status: 401 });
   }
 
   const userId = Number(payload.sub);
   const code = String(payload.code || "");
   if (!userId || !code) {
-    return NextResponse.json(
-      { success: false, error: "토큰 payload 불완전" },
-      { status: 401 }
-    );
+    return NextResponse.json({ success: false, error: "토큰 payload 불완전" }, { status: 401 });
   }
 
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user || !user.isActive || user.code !== code) {
-    return NextResponse.json(
-      { success: false, error: "사용자 확인 실패" },
-      { status: 401 }
-    );
+    return NextResponse.json({ success: false, error: "사용자 확인 실패" }, { status: 401 });
   }
 
   const ip = req.headers.get("x-forwarded-for") || req.ip || "";
@@ -70,5 +58,9 @@ export async function GET(req: NextRequest) {
   const sessionId = await createSession(user.id, "user", false, ip, ua);
   setSessionCookie(sessionId, false);
 
-  return NextResponse.redirect(new URL(`/${code}/admin`, req.url));
+  // mh_user_type / mh_code 쿠키도 세팅 (middleware에서 사용)
+  const res = NextResponse.redirect(new URL(redirectPath, req.url));
+  res.cookies.set("mh_user_type", "user", { path: "/", httpOnly: false });
+  res.cookies.set("mh_code", code, { path: "/", httpOnly: false });
+  return res;
 }
