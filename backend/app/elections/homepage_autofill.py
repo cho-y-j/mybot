@@ -281,9 +281,10 @@ async def auto_fill_homepage(
             })
             result["schedules"] += 1
 
-    # 5. Block: intro (AI 3문단 소개) — 기존 없을 때만
+    # 5. Blocks — 기본 섹션 세트 (hero, intro, goals, schedule, news 등) 한 번만
+    # 템플릿이 blocks 기반 렌더링이라 섹션이 없으면 빈 화면. 기본 순서 고정 + visible=true.
     blk_count = (await db.execute(text(
-        "SELECT COUNT(*) FROM homepage.blocks WHERE user_id = :uid AND type = 'intro'"
+        "SELECT COUNT(*) FROM homepage.blocks WHERE user_id = :uid"
     ), {"uid": homepage_user_id})).scalar() or 0
 
     if blk_count == 0:
@@ -291,14 +292,25 @@ async def auto_fill_homepage(
             name=name, party=party, region=region_text, type_label=type_label,
             education=education, career=career, tenant_id=tenant_id, db=db,
         )
-        if intro_text:
+        default_blocks = [
+            ("hero", None, None),
+            ("keywords", None, None),
+            ("intro", f"{name} 후보 소개",
+             json.dumps({"text": intro_text or ""}, ensure_ascii=False) if intro_text else None),
+            ("goals", "공약", None),
+            ("schedule", "일정", None),
+            ("news", "관련 기사", None),
+            ("videos", "영상", None),
+            ("gallery", "활동", None),
+            ("contacts", "연락처", None),
+        ]
+        for i, (btype, btitle, bcontent) in enumerate(default_blocks, 1):
             await db.execute(text("""
                 INSERT INTO homepage.blocks (user_id, type, title, content, visible, sort_order, created_at, updated_at)
-                VALUES (:uid, 'intro', :title, cast(:content as jsonb), true, 1, NOW(), NOW())
+                VALUES (:uid, :bt, :btitle, cast(:content as jsonb), true, :so, NOW(), NOW())
             """), {
-                "uid": homepage_user_id,
-                "title": f"{name} 후보 소개",
-                "content": json.dumps({"text": intro_text}, ensure_ascii=False),
+                "uid": homepage_user_id, "bt": btype, "btitle": btitle,
+                "content": bcontent, "so": i,
             })
             result["blocks"] += 1
 
