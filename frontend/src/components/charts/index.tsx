@@ -153,31 +153,52 @@ export function SentimentPie({ positive, negative, neutral }: { positive: number
 
 // ──── 지지율 추이 Chart ────
 export function SurveyTrendChart({ data, candidates }: { data: any[]; candidates: string[] }) {
+  // 각 점에 변동률 병행 표시 — 지지율 + 전회 대비 Δ%
+  const TrendTooltip = ({ active, payload, label }: any) => {
+    if (!active || !payload?.length) return null;
+    const idx = data.findIndex(d => d.date === label);
+    const prev = idx > 0 ? data[idx - 1] : null;
+    return (
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg px-3 py-2 text-xs">
+        <div className="font-semibold mb-1">{label}</div>
+        {payload.map((p: any) => {
+          const cur = Number(p.value || 0);
+          const prevVal = prev ? Number(prev[p.dataKey] || 0) : null;
+          const delta = prevVal != null ? cur - prevVal : null;
+          const dText = delta == null ? '' :
+            delta > 0 ? ` ▲ +${delta.toFixed(1)}` :
+            delta < 0 ? ` ▼ ${delta.toFixed(1)}` : ' 동일';
+          const dColor = delta == null ? '' :
+            delta > 0 ? 'text-red-500' : delta < 0 ? 'text-blue-500' : 'text-gray-500';
+          return (
+            <div key={p.dataKey} className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full" style={{ background: p.color }} />
+              <span className="font-medium">{p.dataKey}</span>
+              <span>{cur.toFixed(1)}%</span>
+              {delta != null && <span className={dColor}>{dText}</span>}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   return (
     <ResponsiveContainer width="100%" height={320}>
-      <AreaChart data={data} margin={{ top: 5, right: 10, bottom: 0, left: -10 }}>
-        <defs>
-          {candidates.map((c, i) => (
-            <linearGradient key={c} id={`grad-${i}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={CANDIDATE_COLORS[i % CANDIDATE_COLORS.length]} stopOpacity={0.15} />
-              <stop offset="100%" stopColor={CANDIDATE_COLORS[i % CANDIDATE_COLORS.length]} stopOpacity={0} />
-            </linearGradient>
-          ))}
-        </defs>
+      <LineChart data={data} margin={{ top: 10, right: 20, bottom: 0, left: -10 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
         <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
         <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} unit="%" width={40} />
-        <Tooltip content={<CustomTooltip />} />
+        <Tooltip content={<TrendTooltip />} />
         <Legend content={<CustomLegend />} />
         {candidates.map((c, i) => (
-          <Area key={c} type="monotone" dataKey={c}
+          <Line key={c} type="monotone" dataKey={c}
             stroke={CANDIDATE_COLORS[i % CANDIDATE_COLORS.length]}
             strokeWidth={2.5}
-            fill={`url(#grad-${i})`}
-            dot={false}
+            dot={{ r: 3, fill: CANDIDATE_COLORS[i % CANDIDATE_COLORS.length], strokeWidth: 0 }}
             activeDot={{ r: 6, strokeWidth: 2, fill: '#fff', stroke: CANDIDATE_COLORS[i % CANDIDATE_COLORS.length] }} />
         ))}
-      </AreaChart>
+      </LineChart>
     </ResponsiveContainer>
   );
 }
