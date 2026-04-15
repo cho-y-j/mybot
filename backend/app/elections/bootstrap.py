@@ -122,6 +122,51 @@ async def bootstrap_campaign(
         logger.warning("bootstrap_embeddings_failed", error=str(e))
         result["embeddings"] = {"status": "failed"}
 
+    # 5. 홈페이지(myhome) 사용자 자동 프로비저닝
+    # - 같은 DB의 homepage 스키마에 User row 생성
+    # - code는 tenant_id 앞 8자리 (사용자가 나중에 설정 페이지에서 변경 가능)
+    # - 로그인은 mybot SSO만 허용 (password_hash는 placeholder)
+    try:
+        from sqlalchemy import text as sql_text
+        # tenant name/email 가져오기
+        t_row = (await db.execute(sql_text(
+            "SELECT name, owner_email FROM tenants WHERE id = cast(:tid as uuid)"
+        ), {"tid": tenant_id})).first()
+        tenant_name = t_row[0] if t_row else "캠프"
+        tenant_email = t_row[1] if t_row else None
+
+        default_code = str(tenant_id).replace("-", "")[:8]
+        exists = (await db.execute(sql_text(
+            "SELECT id FROM homepage.users WHERE tenant_id = cast(:tid as uuid)"
+        ), {"tid": tenant_id})).first()
+
+        if not exists:
+            await db.execute(sql_text("""
+                INSERT INTO homepage.users
+                  (code, name, email, password_hash, template_type, template_theme,
+                   is_active, tenant_id, election_id, created_at, updated_at)
+                VALUES
+                  (:code, :name, :email, :pwd, 'election', 'default',
+                   true, cast(:tid as uuid), cast(:eid as uuid), NOW(), NOW())
+            """), {
+                "code": default_code,
+                "name": tenant_name,
+                "email": tenant_email,
+                "pwd": "SSO_ONLY",  # homepage 직접 로그인 차단, mybot 토큰으로만 접근
+                "tid": tenant_id,
+                "eid": election_id,
+            })
+            await db.flush()
+            result["homepage"] = {"status": "created", "code": default_code,
+                                  "url": f"/{default_code}"}
+            logger.info("bootstrap_homepage_created", tenant=tenant_id, code=default_code)
+        else:
+            result["homepage"] = {"status": "exists"}
+    except Exception as e:
+        result["errors"].append(f"homepage: {str(e)[:200]}")
+        logger.warning("bootstrap_homepage_failed", error=str(e))
+        result["homepage"] = {"status": "failed", "reason": str(e)[:200]}
+
     logger.info("bootstrap_campaign_complete", election_id=election_id,
                 history=result["history_analysis"], survey=result["survey_analysis"],
                 report=result["first_report"], error_count=len(result["errors"]))
