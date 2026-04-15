@@ -22,7 +22,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.common.dependencies import CurrentUser
-from app.config import settings
+from app.config import get_settings
+
+settings = get_settings()
 
 router = APIRouter(prefix="/api/sso", tags=["sso"])
 

@@ -25,8 +25,8 @@ export async function GET(
     if (!user || !user.isActive) return errorResponse("사이트를 찾을 수 없습니다", 404);
     if (!user.electionId) return successResponse({ items: [] });
 
-    const [rows, overrides]: [any[], any[]] = await Promise.all([
-      prisma.$queryRawUnsafe(
+    const [rows, overrides] = await Promise.all([
+      prisma.$queryRawUnsafe<any[]>(
         `SELECT title, url, source, summary, published_at, collected_at
          FROM public.news_articles
          WHERE election_id = $1::uuid
