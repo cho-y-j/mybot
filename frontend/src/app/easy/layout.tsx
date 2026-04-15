@@ -16,6 +16,7 @@ const MENU_ADVANCED = [
   { href: '/easy/news', label: '📰 뉴스' },
   { href: '/easy/candidates', label: '👥 후보자' },
   { href: '/easy/surveys', label: '📋 여론조사' },
+  { href: '/easy/history', label: '🏛️ 과거 선거' },
   { href: '/easy/trends', label: '🔍 트렌드' },
   { href: '/easy/youtube', label: '📺 유튜브' },
   { href: '/easy/debate', label: '🎤 토론 대본' },

@@ -201,6 +201,33 @@ export default function EasyHome() {
         </div>
       </div>
 
+      {/* 분석 & 참고 자료 */}
+      <div>
+        <h2 className="text-lg font-bold mb-3">🔍 분석 & 참고</h2>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Link href="/easy/candidates"
+            className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 text-center hover:border-blue-500 transition">
+            <div className="text-3xl mb-2">👥</div>
+            <div className="font-semibold text-sm">후보 비교</div>
+          </Link>
+          <Link href="/easy/history"
+            className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 text-center hover:border-blue-500 transition">
+            <div className="text-3xl mb-2">🏛️</div>
+            <div className="font-semibold text-sm">과거 선거</div>
+          </Link>
+          <Link href="/easy/surveys"
+            className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 text-center hover:border-blue-500 transition">
+            <div className="text-3xl mb-2">📋</div>
+            <div className="font-semibold text-sm">여론조사</div>
+          </Link>
+          <Link href="/easy/trends"
+            className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 text-center hover:border-blue-500 transition">
+            <div className="text-3xl mb-2">🔍</div>
+            <div className="font-semibold text-sm">트렌드</div>
+          </Link>
+        </div>
+      </div>
+
       {/* 도움말 */}
       <div className="bg-[var(--muted-bg)] rounded-xl p-4 text-xs text-[var(--muted)]">
         <p className="font-semibold mb-1">💡 팁</p>
