@@ -46,6 +46,7 @@ function ContentWizardInner() {
   const [purpose, setPurpose] = useState(params.get('purpose') || 'promote');
   const [target, setTarget] = useState(params.get('target') || 'all');
   const [style, setStyle] = useState(params.get('style') || 'formal');
+  const [length, setLength] = useState(params.get('length') || 'normal');
 
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
@@ -103,6 +104,7 @@ function ContentWizardInner() {
         style,
         purpose,
         target,
+        length,
       });
       const r = await fetch(`/api/content/generate-content/${election.id}?${p}`, {
         method: 'POST',
@@ -247,6 +249,16 @@ function ContentWizardInner() {
           <select value={style} onChange={e => setStyle(e.target.value)}
             className="w-full px-3 py-2 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg">
             {STYLES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-[var(--muted)] block mb-1">분량</label>
+          <select value={length} onChange={e => setLength(e.target.value)}
+            className="w-full px-3 py-2 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg">
+            <option value="short">짧게</option>
+            <option value="normal">보통 (기본)</option>
+            <option value="long">길게</option>
+            <option value="very_long">매우 길게</option>
           </select>
         </div>
       </div>

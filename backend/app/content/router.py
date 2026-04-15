@@ -337,6 +337,7 @@ async def generate_content(
     context: str = "",
     purpose: str = "promote",
     target: str = "all",
+    length: str = "normal",  # short | normal | long | very_long
 ):
     """AI 콘텐츠 생성 — 실제 수집 데이터 기반 + 목적/대상별 최적화."""
     from app.services.ai_service import call_claude_text
@@ -352,19 +353,30 @@ async def generate_content(
     our_party = our.party if our else '무소속'
     region_short = _get_short(e_sido)
 
-    # 콘텐츠 유형별 스펙
+    # 콘텐츠 유형별 스펙 — length별 4단계
+    # short|normal|long|very_long
+    LEN_TABLE = {
+        "blog":    {"short": "800~1000자",  "normal": "1500~2000자", "long": "2500~3000자", "very_long": "4000~5000자"},
+        "sns":     {"short": "150자 이내",   "normal": "300자 이내",   "long": "500~700자",   "very_long": "1000~1500자"},
+        "youtube": {"short": "500자",        "normal": "900자 (3분)",  "long": "1800자 (6분)", "very_long": "3000자 (10분)"},
+        "card":    {"short": "장당 30자",    "normal": "장당 50자",    "long": "장당 80자",    "very_long": "장당 120자"},
+        "press":   {"short": "600자",        "normal": "1000자",       "long": "1500~1800자",  "very_long": "2500자"},
+        "defense": {"short": "500자",        "normal": "800자",        "long": "1200자",       "very_long": "1800자"},
+    }
+    chars_spec = LEN_TABLE.get(content_type, LEN_TABLE["blog"]).get(length, LEN_TABLE.get(content_type, LEN_TABLE["blog"])["normal"])
+
     type_specs = {
-        "blog": {"label": "블로그 글", "chars": "1500~2000자",
-                 "structure": "제목(SEO 키워드 포함, 25자 이내 클릭 유도) → 서론(문제 제기, 100자) → 본론 3단 소제목 (각 400~500자, 정책+근거 데이터) → 결론(행동 유도, 150자) → 해시태그 5~7개"},
-        "sns": {"label": "SNS 포스트", "chars": "300자 이내",
-                "structure": "첫 문장 훅(감정 유도) → 핵심 메시지 2~3문장 → 해시태그 5개. 이모지 3~5개 적절히."},
-        "youtube": {"label": "유튜브 영상 스크립트", "chars": "900자 (3분 분량)",
+        "blog": {"label": "블로그 글", "chars": chars_spec,
+                 "structure": "제목(SEO 키워드 포함, 25자 이내 클릭 유도) → 서론(문제 제기, 100자) → 본론 3~5단 소제목 (각 소제목 하에 정책+근거 데이터 충실히) → 결론(행동 유도) → 해시태그 5~7개"},
+        "sns": {"label": "SNS 포스트", "chars": chars_spec,
+                "structure": "첫 문장 훅(감정 유도) → 핵심 메시지 → 해시태그 5~10개. 이모지 적절히."},
+        "youtube": {"label": "유튜브 영상 스크립트", "chars": chars_spec,
                     "structure": "인트로 5초 훅 → 문제 제기 → 해결책(정책) → CTA(구독/좋아요) → 영상 제목 + 설명문 + 태그 20개"},
-        "card": {"label": "카드뉴스 5장", "chars": "장당 제목 15자 + 본문 50자",
+        "card": {"label": "카드뉴스 5장", "chars": chars_spec,
                  "structure": "1장(훅·질문) → 2~3장(문제 현황) → 4장(후보 해결책) → 5장(후보 소개 + CTA). 각 장마다 '===1장===' 구분"},
-        "press": {"label": "보도자료", "chars": "1000자",
+        "press": {"label": "보도자료", "chars": chars_spec,
                   "structure": "제목 → 부제 → 리드(핵심 1문장, 육하원칙) → 본문(배경/내용/의미) → 후보 코멘트 인용문 → 문의처(캠프 연락처 형식)"},
-        "defense": {"label": "해명/대응문", "chars": "800자",
+        "defense": {"label": "해명/대응문", "chars": chars_spec,
                     "structure": "사안 요약(중립 서술) → 사실 관계 정리(번호 목록) → 우리 입장(논리적, 감정 배제) → 향후 계획. 반박 공격 금지, 팩트 중심"},
     }
     spec = type_specs.get(content_type, type_specs["blog"])
@@ -420,15 +432,19 @@ async def generate_content(
 {rich_ctx}
 
 [작성 원칙]
-1. **사실 기반**: 위 참고 자료의 수치/인용만 사용. 추측·상상 금지.
-2. **데이터 부족 시**: WebSearch로 info.nec.go.kr 또는 공식 언론 확인 후 인용.
-3. **출처 각주**: 주요 수치/주장 뒤에 [ref-xxx] (참고자료의 ID) 또는 [web](URL) 표시.
+1. **참고 자료 최대한 활용 (필수)**: 위 [참고 자료]에 나온 뉴스/커뮤니티/유튜브 수집 데이터, 여론조사 수치,
+   후보 공식 프로필(학력·경력·공약), 과거 선거 결과를 **본문에 직접 인용**할 것.
+   - 수집 뉴스 제목·핵심 내용 실제 문장으로 녹여 넣기
+   - 여론조사 지지율·조사기관·조사일 명시
+   - 후보 경력/공약은 선관위 데이터 그대로 사용
+2. **추측·상상 금지**: 참고 자료에 없는 수치/사건은 WebSearch로 공식 확인. 확인 안 되면 일반 서술.
+3. **출처 각주**: 주요 수치·인용 뒤에 [ref-xxx] 또는 [web](URL) — 없으면 감점.
 4. **선거법 준수 (절대 위반 금지)**:
    - 제110조 비방 금지: 경쟁 후보 인신공격·모욕·근거 없는 의혹 X (공약/정책 비교는 OK)
    - 제250조 허위사실 공표 금지: 확인 안 된 사실 단정 X
    - 제112조 기부행위 금지: "무료/경품/선물" 암시 X
    - 제82조의8: 본문 첫줄에 **[AI 활용]** 필수 표기 (위반 시 과태료 300만원)
-5. **{spec['chars']} 엄수**: 길이 초과/부족 금지.
+5. **{spec['chars']} 엄수**: 길이 초과/부족 금지 — 이 범위 **반드시** 채울 것. 부족하면 참고 자료 인용 추가.
 6. **구조 준수**: "{spec['structure']}" 순서대로 작성.
 7. **숫자·사실 중심**: 추상적 미사여구 금지. 구체적 수치/날짜/지역명 명시.
 
