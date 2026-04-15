@@ -24,8 +24,15 @@ const PURPOSES = [
 const TARGETS = [
   { value: 'all', label: '전체 유권자' },
   { value: 'parents', label: '학부모' },
-  { value: 'youth', label: '청년층' },
-  { value: 'senior', label: '시니어층' },
+  { value: 'youth', label: '청년층 (20~30대)' },
+  { value: 'senior', label: '시니어층 (50~60대)' },
+];
+
+const STYLES = [
+  { value: 'formal', label: '공식 격식체' },
+  { value: 'casual', label: '친근 구어체' },
+  { value: 'emotional', label: '감성 공감' },
+  { value: 'technical', label: '전문 정책' },
 ];
 
 function ContentWizardInner() {
@@ -38,6 +45,7 @@ function ContentWizardInner() {
   const [topic, setTopic] = useState(params.get('topic') || '');
   const [purpose, setPurpose] = useState(params.get('purpose') || 'promote');
   const [target, setTarget] = useState(params.get('target') || 'all');
+  const [style, setStyle] = useState(params.get('style') || 'formal');
 
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
@@ -76,7 +84,7 @@ function ContentWizardInner() {
       const p = new URLSearchParams({
         content_type: contentType,
         topic: topic.trim(),
-        style: 'formal',
+        style,
         purpose,
         target,
       });
@@ -199,7 +207,7 @@ function ContentWizardInner() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div>
           <label className="text-xs text-[var(--muted)] block mb-1">목적</label>
           <select value={purpose} onChange={e => setPurpose(e.target.value)}
@@ -214,12 +222,19 @@ function ContentWizardInner() {
             {TARGETS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
         </div>
+        <div>
+          <label className="text-xs text-[var(--muted)] block mb-1">톤</label>
+          <select value={style} onChange={e => setStyle(e.target.value)}
+            className="w-full px-3 py-2 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg">
+            {STYLES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+          </select>
+        </div>
       </div>
 
       {!result && (
         <button onClick={generate} disabled={generating}
           className="w-full py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-bold text-lg rounded-xl hover:from-blue-700 hover:to-blue-800 disabled:opacity-40">
-          {generating ? '✨ AI 생성 중... (최대 1분)' : '✨ 콘텐츠 생성하기'}
+          {generating ? '✨ AI 생성 중... (최대 5분)' : '✨ 콘텐츠 생성하기'}
         </button>
       )}
 

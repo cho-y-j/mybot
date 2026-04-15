@@ -340,133 +340,96 @@ async def generate_content(
 ):
     """AI 콘텐츠 생성 — 실제 수집 데이터 기반 + 목적/대상별 최적화."""
     from app.services.ai_service import call_claude_text
-    from app.common.election_access import get_election_tenant_ids
 
     election, our, _ = await _load_election_data(db, user["tenant_id"], election_id)
     region_short = _get_short(election.region_sido)
-    all_tids = await get_election_tenant_ids(db, election_id)
 
-    # ── 실제 데이터 수집하여 프롬프트에 반영 ──
-    from app.elections.models import NewsArticle, CommunityPost
-    from sqlalchemy import func as sqlfunc
-    from datetime import date as dt_date, timedelta
+    # 콘텐츠 유형별 스펙
+    type_specs = {
+        "blog": {"label": "블로그 글", "chars": "1500~2000자",
+                 "structure": "제목(SEO 키워드 포함, 25자 이내 클릭 유도) → 서론(문제 제기, 100자) → 본론 3단 소제목 (각 400~500자, 정책+근거 데이터) → 결론(행동 유도, 150자) → 해시태그 5~7개"},
+        "sns": {"label": "SNS 포스트", "chars": "300자 이내",
+                "structure": "첫 문장 훅(감정 유도) → 핵심 메시지 2~3문장 → 해시태그 5개. 이모지 3~5개 적절히."},
+        "youtube": {"label": "유튜브 영상 스크립트", "chars": "900자 (3분 분량)",
+                    "structure": "인트로 5초 훅 → 문제 제기 → 해결책(정책) → CTA(구독/좋아요) → 영상 제목 + 설명문 + 태그 20개"},
+        "card": {"label": "카드뉴스 5장", "chars": "장당 제목 15자 + 본문 50자",
+                 "structure": "1장(훅·질문) → 2~3장(문제 현황) → 4장(후보 해결책) → 5장(후보 소개 + CTA). 각 장마다 '===1장===' 구분"},
+        "press": {"label": "보도자료", "chars": "1000자",
+                  "structure": "제목 → 부제 → 리드(핵심 1문장, 육하원칙) → 본문(배경/내용/의미) → 후보 코멘트 인용문 → 문의처(캠프 연락처 형식)"},
+        "defense": {"label": "해명/대응문", "chars": "800자",
+                    "structure": "사안 요약(중립 서술) → 사실 관계 정리(번호 목록) → 우리 입장(논리적, 감정 배제) → 향후 계획. 반박 공격 금지, 팩트 중심"},
+    }
+    spec = type_specs.get(content_type, type_specs["blog"])
 
-    since = dt_date.today() - timedelta(days=7)
-    data_block = ""
-
-    # 최근 AI 분석 뉴스 — 4사분면별 팩트
-    from sqlalchemy import text as sql_text
-    # election-shared: 원본은 공유, strategic_view는 현재 캠프 관점으로 LEFT JOIN
-    recent_news = (await db.execute(sql_text("""
-        SELECT n.title,
-               COALESCE(sv.strategic_quadrant, n.strategic_quadrant) AS strategic_quadrant,
-               n.ai_summary, n.ai_reason,
-               COALESCE(sv.action_summary, n.action_summary) AS action_summary,
-               n.ai_threat_level, n.sentiment
-        FROM news_articles n
-        LEFT JOIN news_strategic_views sv
-          ON sv.news_id = n.id AND sv.tenant_id = :tid
-        WHERE n.election_id = :eid
-          AND DATE(n.collected_at) >= :since
-          AND n.ai_analyzed_at IS NOT NULL
-        ORDER BY
-          CASE COALESCE(sv.strategic_quadrant, n.strategic_quadrant)
-            WHEN 'weakness' THEN 1
-            WHEN 'opportunity' THEN 2
-            WHEN 'strength' THEN 3
-            WHEN 'threat' THEN 4
-            ELSE 5
-          END,
-          n.published_at DESC NULLS LAST
-        LIMIT 15
-    """), {
-        "tid": user["tenant_id"],
-        "eid": str(election_id),
-        "since": since,
-    })).all()
-    if recent_news:
-        data_block += "\n[최근 7일 AI 분석 팩트 (4사분면 기반)]\n"
-        for r in recent_news:
-            sq = f"[{r.strategic_quadrant}]" if r.strategic_quadrant else "[-]"
-            data_block += f"{sq} {r.title[:70]}\n"
-            if r.ai_summary:
-                data_block += f"   요약: {r.ai_summary[:140]}\n"
-            if r.action_summary:
-                data_block += f"   액션: {r.action_summary[:100]}\n"
-
-    # 커뮤니티 이슈
-    hot_issues = (await db.execute(
-        select(CommunityPost.issue_category, sqlfunc.count())
-        .where(CommunityPost.election_id == election_id,
-               CommunityPost.issue_category.isnot(None),
-               sqlfunc.date(CommunityPost.collected_at) >= since)
-        .group_by(CommunityPost.issue_category)
-        .order_by(sqlfunc.count().desc()).limit(5)
-    )).all()
-    if hot_issues:
-        data_block += "\n[커뮤니티 뜨거운 이슈]\n"
-        for issue, cnt in hot_issues:
-            data_block += f"- {issue}: {cnt}건\n"
-
-    # 콘텐츠 유형별 프롬프트
-    type_prompts = {
-        "blog": "블로그 글. 1500~2000자.\n구조: 제목(SEO 최적화, 클릭 유도) → 서론(문제 제기) → 본론(후보 정책 + 근거 데이터) → 결론(행동 유도) → 해시태그 5개",
-        "sns": "SNS 포스트. 300자 이내.\n구조: 훅(첫 문장으로 스크롤 멈추기) → 핵심 메시지 → 해시태그 5개. 이모지 적절히.",
-        "youtube": "유튜브 영상 스크립트. 3분(900자).\n구조: 인트로(5초 시선 끌기) → 문제 제기 → 해결책(정책) → CTA(구독/좋아요) → 제목+설명문+태그",
-        "card": "카드뉴스 5장.\n각 장: 제목(15자) + 본문(50자). 1장: 훅, 2~4장: 핵심 내용, 5장: 후보 소개+CTA",
-        "press": "보도자료. 1000자.\n구조: 제목 → 부제 → 리드(핵심 1문장) → 본문(배경/내용/의미) → 후보 코멘트(인용) → 문의처",
-        "defense": "해명/대응문. 800자.\n구조: 사안 요약 → 사실 관계 정리 → 우리 입장 → 향후 계획. 감정적 반박 금지, 팩트 중심.",
+    purpose_map = {
+        "promote": "우리 후보 강점·비전 부각. 긍정적·희망적 톤.",
+        "attack": "경쟁 후보 약점을 팩트로만 지적 (비방·인신공격 금지, 데이터 기반 비교만).",
+        "defend": "부정 보도/공격 대응. 침착하고 논리적, 감정 배제.",
+        "policy": "구체 정책 설명. 쉬운 용어, 유권자 눈높이.",
+        "inform": "정보 안내 (행사/공지/일정). 간결·정확.",
     }
 
-    purpose_prompts = {
-        "promote": "우리 후보의 강점과 비전을 부각하는 홍보 콘텐츠. 긍정적이고 희망적인 톤.",
-        "attack": "경쟁 후보의 약점을 지적하되 비방이 아닌 팩트 비교 콘텐츠. 선거법 위반하지 않도록 주의.",
-        "defend": "부정적 보도/공격에 대한 방어/해명 콘텐츠. 침착하고 논리적인 톤.",
-        "policy": "후보의 구체적 정책을 설명하는 콘텐츠. 쉬운 용어로 유권자 눈높이에 맞게.",
+    target_map = {
+        "all": "전 연령 대상 — 보편적 관심사 중심.",
+        "youth": "20~30대 대상 — 구어체, 트렌드 용어, 일자리·주거·교육비 이슈.",
+        "senior": "50~60대 대상 — 격식체, 복지·건강·연금 이슈.",
+        "parents": "학부모 대상 — 교육·돌봄·급식·안전. 맘카페 친근 톤.",
     }
 
-    target_prompts = {
-        "all": "전 연령 대상. 보편적 관심사 중심.",
-        "youth": "20~30대 대상. ~요체, 트렌드 용어 사용, 일자리/주거/교육비 등 청년 이슈.",
-        "senior": "50~60대 대상. 격식체, 복지/건강/연금 등 시니어 관심사.",
-        "parents": "학부모 대상. 교육/돌봄/급식/안전 등 자녀 관련 이슈. 맘카페 톤.",
+    style_map = {
+        "formal": "공식적·신뢰감 있는 격식체",
+        "casual": "친근하고 편안한 구어체",
+        "emotional": "감성적·공감 유도 톤",
+        "technical": "전문적·정책 중심",
     }
 
-    style_desc = {"formal": "공식적이고 신뢰감 있는 격식체", "casual": "친근하고 편안한 구어체",
-                  "emotional": "감성적이고 공감을 유도하는 톤", "technical": "전문적이고 정책 중심"}.get(style, "공식 톤")
-
-    prompt = (
-        f"당신은 {region_short} {election.election_type or ''} 선거 캠프의 10년 경력 전문 콘텐츠 라이터입니다.\n\n"
-        f"[후보 정보]\n"
-        f"후보: {our.name if our else '후보'} ({our.party if our else '무소속'})\n"
-        f"지역: {election.region_sido or ''} {election.region_sigungu or ''}\n"
-        f"선거: {election.name}\n\n"
-        f"[콘텐츠 요청]\n"
-        f"주제: {topic}\n"
-        f"유형: {type_prompts.get(content_type, type_prompts['blog'])}\n"
-        f"목적: {purpose_prompts.get(purpose, purpose_prompts['promote'])}\n"
-        f"대상: {target_prompts.get(target, target_prompts['all'])}\n"
-        f"톤: {style_desc}\n"
-        f"{data_block}\n"
-        f"{'[추가 맥락] ' + context if context else ''}\n\n"
-        f"[필수 규칙]\n"
-        f"- [AI 활용] 표기를 본문 첫줄에 포함\n"
-        f"- 상대 후보 비방 금지 (공직선거법 제110조)\n"
-        f"- 허위사실 금지 (제250조)\n"
-        f"- 금품 제공 약속 금지 (제112조)\n"
-        f"- 위 수집 데이터의 팩트를 근거로 활용하여 구체적으로 작성\n"
-        f"- 추상적 미사여구 금지. 숫자와 사실 중심.\n\n"
-        f"한국어로 작성해주세요. 콘텐츠 본문만 출력하세요."
-    )
-
-    # 풍부한 컨텍스트 (RAG + NEC + 프로필 + 보고서 + 선거법) + 출처 각주
-    from app.services.rich_context import build_rich_context, LEGAL_SAFETY_PROMPT
+    # 풍부한 컨텍스트 (RAG + NEC + 프로필 + 보고서 + 선거법)
+    from app.services.rich_context import build_rich_context
     rich_ctx, citations = await build_rich_context(
         db, user["tenant_id"], str(election_id),
-        topic=f"{topic} {content_type}",
+        topic=f"{topic} {spec['label']}",
         max_rag=10, max_reports=2, max_briefings=3,
+        include_law=True,
     )
-    prompt += f"\n\n{rich_ctx}\n{LEGAL_SAFETY_PROMPT}"
+
+    # ── 통합 프롬프트 (하나의 명확한 구조) ──
+    prompt = f"""당신은 {region_short} {election.election_type or ''} 선거 캠프의 10년 경력 프로 콘텐츠 라이터입니다.
+
+[후보 정보]
+- 우리 후보: {our.name if our else '후보'} ({our.party if our else '무소속'})
+- 선거: {election.name} ({election.region_sido or ''} {election.region_sigungu or ''})
+
+[작성 요청]
+- 주제: {topic}
+- 유형: {spec['label']} ({spec['chars']})
+- 구조: {spec['structure']}
+- 목적: {purpose_map.get(purpose, purpose_map['promote'])}
+- 대상: {target_map.get(target, target_map['all'])}
+- 톤: {style_map.get(style, style_map['formal'])}
+{('- 추가 맥락: ' + context) if context else ''}
+
+[참고 자료 — 반드시 이 데이터에 근거하여 작성]
+{rich_ctx}
+
+[작성 원칙]
+1. **사실 기반**: 위 참고 자료의 수치/인용만 사용. 추측·상상 금지.
+2. **데이터 부족 시**: WebSearch로 info.nec.go.kr 또는 공식 언론 확인 후 인용.
+3. **출처 각주**: 주요 수치/주장 뒤에 [ref-xxx] (참고자료의 ID) 또는 [web](URL) 표시.
+4. **선거법 준수 (절대 위반 금지)**:
+   - 제110조 비방 금지: 경쟁 후보 인신공격·모욕·근거 없는 의혹 X (공약/정책 비교는 OK)
+   - 제250조 허위사실 공표 금지: 확인 안 된 사실 단정 X
+   - 제112조 기부행위 금지: "무료/경품/선물" 암시 X
+   - 제82조의8: 본문 첫줄에 **[AI 활용]** 필수 표기 (위반 시 과태료 300만원)
+5. **{spec['chars']} 엄수**: 길이 초과/부족 금지.
+6. **구조 준수**: "{spec['structure']}" 순서대로 작성.
+7. **숫자·사실 중심**: 추상적 미사여구 금지. 구체적 수치/날짜/지역명 명시.
+
+[출력 형식]
+- 콘텐츠 본문만 출력 (메타 설명/주석 없이)
+- 마크다운 사용 가능 (제목은 ##, 강조는 **, 표 가능)
+- 하단에 "---\\n참고: [ref-id1] [ref-id2]" 형식으로 사용한 출처 목록
+
+지금 작성하세요."""
 
     # WebSearch 허용 — 내부 데이터 부족 시 실시간 검증
     generated = await call_claude_text(
