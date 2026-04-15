@@ -111,6 +111,17 @@ async def bootstrap_campaign(
         result["errors"].append(msg)
         logger.warning("bootstrap_report_failed", error=str(e))
 
+    # 4. RAG 벡터 임베딩 (수집 + 분석 + 보고서 모두 임베딩 가능)
+    try:
+        from app.services.embedding_service import embed_existing_data
+        emb_result = await embed_existing_data(db, tenant_id, election_id)
+        result["embeddings"] = emb_result
+        logger.info("bootstrap_embeddings_done", election_id=election_id, result=emb_result)
+    except Exception as e:
+        result["errors"].append(f"embeddings: {str(e)[:200]}")
+        logger.warning("bootstrap_embeddings_failed", error=str(e))
+        result["embeddings"] = {"status": "failed"}
+
     logger.info("bootstrap_campaign_complete", election_id=election_id,
                 history=result["history_analysis"], survey=result["survey_analysis"],
                 report=result["first_report"], error_count=len(result["errors"]))

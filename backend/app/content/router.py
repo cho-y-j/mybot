@@ -448,7 +448,7 @@ async def generate_content(
         election.election_date.isoformat() if election.election_date else None,
     )
 
-    # ── 생성 결과 DB 저장 (Report 테이블 재사용 — 챗/히스토리에서 활용) ──
+    # ── 생성 결과 DB 저장 + RAG 임베딩 (Report 테이블 재사용 — 챗/히스토리에서 활용) ──
     saved_id = None
     try:
         from app.elections.models import Report
@@ -465,6 +465,20 @@ async def generate_content(
         await db.flush()
         saved_id = str(report.id)
         await db.commit()
+
+        # RAG 임베딩 — 생성 콘텐츠도 이후 챗/생성에서 재활용 가능
+        try:
+            from app.services.embedding_service import store_embedding
+            await store_embedding(
+                db, user["tenant_id"], str(election_id),
+                source_type="content",
+                source_id=saved_id,
+                title=f"[{content_type}] {topic[:100]}",
+                content=(generated or "")[:1500],
+            )
+        except Exception as emb_err:
+            import structlog
+            structlog.get_logger().warning("content_embed_failed", error=str(emb_err)[:200])
     except Exception as save_err:
         import structlog
         structlog.get_logger().warning("content_save_failed", error=str(save_err)[:200])

@@ -34,6 +34,9 @@ async def create_embedding(content: str) -> list[float] | None:
     return None
 
 
+SHARED_SOURCE_TYPES = {"news", "community", "youtube"}
+
+
 async def store_embedding(
     db: AsyncSession,
     tenant_id: str,
@@ -43,26 +46,46 @@ async def store_embedding(
     title: str,
     content: str,
 ) -> bool:
-    """텍스트를 임베딩하여 DB에 저장. 기존 있으면 업데이트."""
+    """텍스트를 임베딩하여 DB에 저장.
+    - shared 타입(news/community/youtube): tenant_id=NULL, election_id 기준 1건만 저장 (선거 단위 공유)
+    - private 타입(report/briefing/content): tenant_id별 저장
+    기존 있으면 업데이트.
+    """
     emb = await create_embedding(f"{title}\n{content}" if title else content)
     if not emb:
         return False
 
     vec_str = "[" + ",".join(str(v) for v in emb) + "]"
     preview = (content or "")[:300]
+    is_shared = source_type in SHARED_SOURCE_TYPES
 
     try:
-        await db.execute(text(
-            "DELETE FROM embeddings WHERE source_type = :stype AND source_id = cast(:sid as uuid) AND tenant_id = cast(:tid as uuid)"
-        ), {"stype": source_type, "sid": source_id, "tid": tenant_id})
-        await db.execute(text(
-            "INSERT INTO embeddings (tenant_id, election_id, source_type, source_id, title, content_preview, embedding)"
-            " VALUES (cast(:tid as uuid), cast(:eid as uuid), :stype, cast(:sid as uuid), :title, :preview, cast(:emb as vector))"
-        ), {
-            "tid": tenant_id, "eid": election_id,
-            "stype": source_type, "sid": source_id,
-            "title": title, "preview": preview, "emb": vec_str,
-        })
+        if is_shared:
+            await db.execute(text(
+                "DELETE FROM embeddings WHERE source_type = :stype AND source_id = cast(:sid as uuid)"
+                " AND tenant_id IS NULL AND election_id = cast(:eid as uuid)"
+            ), {"stype": source_type, "sid": source_id, "eid": election_id})
+            await db.execute(text(
+                "INSERT INTO embeddings (tenant_id, election_id, source_type, source_id, title, content_preview, embedding)"
+                " VALUES (NULL, cast(:eid as uuid), :stype, cast(:sid as uuid), :title, :preview, cast(:emb as vector))"
+            ), {
+                "eid": election_id,
+                "stype": source_type, "sid": source_id,
+                "title": title, "preview": preview, "emb": vec_str,
+            })
+        else:
+            await db.execute(text(
+                "DELETE FROM embeddings WHERE source_type = :stype AND source_id = cast(:sid as uuid)"
+                " AND tenant_id = cast(:tid as uuid)"
+            ), {"stype": source_type, "sid": source_id, "tid": tenant_id})
+            await db.execute(text(
+                "INSERT INTO embeddings (tenant_id, election_id, source_type, source_id, title, content_preview, embedding)"
+                " VALUES (cast(:tid as uuid), cast(:eid as uuid), :stype, cast(:sid as uuid), :title, :preview, cast(:emb as vector))"
+            ), {
+                "tid": tenant_id, "eid": election_id,
+                "stype": source_type, "sid": source_id,
+                "title": title, "preview": preview, "emb": vec_str,
+            })
         return True
     except Exception as e:
         logger.error("embedding_store_error", error=str(e)[:200])
@@ -79,8 +102,11 @@ async def search_similar(
     query: str,
     limit: int = 10,
     source_types: list[str] | None = None,
+    election_id: str | None = None,
 ) -> list[dict]:
-    """질문과 유사한 문서 검색. 코사인 유사도 기준."""
+    """질문과 유사한 문서 검색. 코사인 유사도 기준.
+    - tenant_id 소유 private 임베딩 + election_id 공유 임베딩(news/community/youtube) 모두 검색.
+    """
     emb = await create_embedding(query)
     if not emb:
         return []
@@ -92,15 +118,23 @@ async def search_similar(
         types_sql = ",".join(f"'{t}'" for t in source_types)
         type_filter = f"AND source_type IN ({types_sql})"
 
+    # private(내 캠프) + shared(같은 선거 공유) 둘 다 검색
+    where_scope = "(tenant_id = cast(:tid as uuid)"
+    params = {"tid": tenant_id, "qvec": vec_str, "lim": limit}
+    if election_id:
+        where_scope += " OR (tenant_id IS NULL AND election_id = cast(:eid as uuid))"
+        params["eid"] = election_id
+    where_scope += ")"
+
     try:
         rows = (await db.execute(text(f"""
             SELECT source_type, source_id, title, content_preview,
                    1 - (embedding <=> cast(:qvec as vector)) as similarity
             FROM embeddings
-            WHERE tenant_id = cast(:tid as uuid) {type_filter}
+            WHERE {where_scope} {type_filter}
             ORDER BY embedding <=> cast(:qvec as vector)
             LIMIT :lim
-        """), {"tid": tenant_id, "qvec": vec_str, "lim": limit})).fetchall()
+        """), params)).fetchall()
 
         return [
             {
@@ -147,20 +181,47 @@ async def embed_batch_items(
 
 
 async def embed_existing_data(db: AsyncSession, tenant_id: str, election_id: str) -> dict:
-    """기존 데이터 일괄 임베딩 (최초 구축용)."""
+    """기존 데이터 일괄 임베딩. 이미 임베딩된 것은 스킵 (효율화)."""
     result = {}
 
-    # 보고서 + 브리핑
+    # 이미 임베딩된 source_id 조회 (스킵용)
+    # - private 타입(report/briefing/content): 내 캠프 기준
+    # - shared 타입(news/community/youtube): election 단위 — 다른 캠프가 만든 것도 재사용
+    existing_rows = (await db.execute(text("""
+        SELECT source_type, source_id FROM embeddings
+        WHERE tenant_id = cast(:tid as uuid)
+           OR (tenant_id IS NULL AND election_id = cast(:eid as uuid))
+    """), {"tid": tenant_id, "eid": election_id})).fetchall()
+    existing_ids: dict[str, set] = {}
+    for r in existing_rows:
+        existing_ids.setdefault(r.source_type, set()).add(str(r.source_id))
+
+    def _skip(stype: str, sid: str) -> bool:
+        return sid in existing_ids.get(stype, set())
+
+    # 보고서 + 브리핑 + 콘텐츠 (Report 테이블)
     reports = (await db.execute(text("""
         SELECT id, report_type, title, content_text FROM reports
         WHERE tenant_id = :tid AND election_id = :eid AND content_text IS NOT NULL
-        ORDER BY report_date DESC LIMIT 30
+        ORDER BY report_date DESC LIMIT 50
     """), {"tid": tenant_id, "eid": election_id})).fetchall()
 
     count = 0
     for r in reports:
-        stype = "report" if r.report_type in ("daily", "weekly", "ai_daily") else "briefing"
-        ok = await store_embedding(db, tenant_id, election_id, stype, str(r.id), r.title or r.report_type, r.content_text)
+        if r.report_type in ("daily", "weekly", "ai_daily"):
+            stype = "report"
+        elif r.report_type in ("morning_brief", "afternoon_brief", "ai_morning_brief", "ai_afternoon_brief"):
+            stype = "briefing"
+        elif r.report_type in ("blog", "sns", "youtube", "card", "press", "defense", "debate_script"):
+            stype = "content"
+        else:
+            stype = "report"
+
+        if _skip(stype, str(r.id)):
+            continue
+
+        ok = await store_embedding(db, tenant_id, election_id, stype, str(r.id),
+                                   r.title or r.report_type, r.content_text)
         if ok:
             count += 1
             try:
@@ -169,7 +230,7 @@ async def embed_existing_data(db: AsyncSession, tenant_id: str, election_id: str
                 pass
     result["reports"] = count
 
-    # 뉴스 (election-shared)
+    # 뉴스 (election-shared) — 임베딩 안 된 것만
     news = (await db.execute(text("""
         SELECT id, title, ai_summary, ai_reason FROM news_articles
         WHERE election_id = :eid AND is_relevant = true AND ai_summary IS NOT NULL
@@ -178,6 +239,8 @@ async def embed_existing_data(db: AsyncSession, tenant_id: str, election_id: str
 
     count = 0
     for n in news:
+        if _skip("news", str(n.id)):
+            continue
         content = f"{n.ai_summary or ''}\n{n.ai_reason or ''}"
         ok = await store_embedding(db, tenant_id, election_id, "news", str(n.id), n.title, content)
         if ok:
@@ -197,6 +260,8 @@ async def embed_existing_data(db: AsyncSession, tenant_id: str, election_id: str
 
     count = 0
     for c in comm:
+        if _skip("community", str(c.id)):
+            continue
         ok = await store_embedding(db, tenant_id, election_id, "community", str(c.id), c.title, c.ai_summary or "")
         if ok:
             count += 1
@@ -215,6 +280,8 @@ async def embed_existing_data(db: AsyncSession, tenant_id: str, election_id: str
 
     count = 0
     for y in yt:
+        if _skip("youtube", str(y.id)):
+            continue
         ok = await store_embedding(db, tenant_id, election_id, "youtube", str(y.id), y.title, y.ai_summary or "")
         if ok:
             count += 1

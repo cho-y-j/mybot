@@ -279,7 +279,22 @@ async def generate_debate_script(
                 report_date=date.today(),
             )
             db.add(report)
+            await db.flush()
+            debate_report_id = str(report.id)
             await db.commit()
+
+            # RAG 임베딩 — 토론 대본도 이후 챗에서 재활용 가능
+            try:
+                from app.services.embedding_service import store_embedding
+                await store_embedding(
+                    db, tenant_id, str(election_id),
+                    source_type="content",
+                    source_id=debate_report_id,
+                    title=f"[토론] {our.name} vs {opponent.name}",
+                    content=body_text[:1500],
+                )
+            except Exception as emb_err:
+                logger.warning("debate_embed_failed", error=str(emb_err)[:200])
         except Exception as save_err:
             logger.warning("debate_save_failed", error=str(save_err)[:200])
 

@@ -69,7 +69,7 @@ async def build_rich_context(
     # 2. RAG 벡터 검색 — 주제와 관련된 데이터
     try:
         from app.services.embedding_service import search_similar
-        rag = await search_similar(db, tenant_id, topic, limit=max_rag)
+        rag = await search_similar(db, tenant_id, topic, limit=max_rag, election_id=election_id)
         if rag:
             lines = ["=== 주제 관련 수집 데이터 (AI 벡터 검색) ==="]
             for i, r in enumerate(rag, 1):

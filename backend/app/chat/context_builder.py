@@ -71,7 +71,7 @@ async def build_chat_context(
     # ── RAG 벡터 검색 (최우선 — 질문과 관련된 데이터만) ──
     try:
         from app.services.embedding_service import search_similar
-        rag_results = await search_similar(db, tenant_id, question, limit=10)
+        rag_results = await search_similar(db, tenant_id, question, limit=10, election_id=str(election_id) if election_id else None)
         if rag_results:
             lines = ["=== 질문 관련 데이터 (AI 벡터 검색) ==="]
             for i, r in enumerate(rag_results, 1):
