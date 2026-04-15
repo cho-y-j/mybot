@@ -208,7 +208,7 @@ async def _generate_recommendations(
         f"- 선거법 위반 소지 없도록"
     )
 
-    result = await call_claude(prompt, timeout=60, context="swing_voter_cta", tenant_id=tenant_id, db=db)
+    result = await call_claude(prompt, timeout=300, context="swing_voter_cta", tenant_id=tenant_id, db=db)
 
     if result and "items" in result:
         return result["items"][:5]

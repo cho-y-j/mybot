@@ -1398,14 +1398,31 @@ def alert_check(self, tenant_id: str, election_id: str):
         ))
         _run_async(monitor.close())
 
-        # 검색량 급등 체크
+        # 검색량 급등 체크 — AI 동명이인 검증 + Redis dedup
         try:
-            from app.elections.models import SearchTrend
+            from app.elections.models import SearchTrend, NewsArticle
             from sqlalchemy import func as sqlfunc
             yesterday = date.today() - timedelta(days=1)
             two_days_ago = date.today() - timedelta(days=2)
 
+            # Redis 클라이언트 (dedup용)
+            import redis
+            from app.config import get_settings
+            try:
+                r = redis.from_url(get_settings().REDIS_URL or "redis://ep_redis:6379")
+            except Exception:
+                r = None
+
             for cand in candidates:
+                # 1. dedup: 오늘 이미 같은 후보 search_spike 알림 발송했으면 스킵
+                dedup_key = f"alert:search_spike:{tenant_id}:{cand.name}:{date.today().isoformat()}"
+                if r:
+                    try:
+                        if r.exists(dedup_key):
+                            continue
+                    except Exception:
+                        pass
+
                 today_vol = session.execute(
                     select(sqlfunc.max(SearchTrend.relative_volume)).where(
                         SearchTrend.keyword == cand.name,
@@ -1420,16 +1437,61 @@ def alert_check(self, tenant_id: str, election_id: str):
                     )
                 ).scalar() or 0
 
-                if prev_vol > 0 and today_vol > prev_vol * 2:
+                # 임계치 강화: 2배 → 3배
+                if prev_vol > 0 and today_vol > prev_vol * 3:
+                    # 2. AI 검증: 같은 시기 실제 정치 관련 뉴스가 증가했는지
+                    political_news_today = session.execute(
+                        select(sqlfunc.count(NewsArticle.id)).where(
+                            NewsArticle.candidate_id == cand.id,
+                            func.date(NewsArticle.collected_at) == date.today(),
+                            NewsArticle.is_relevant == True,
+                        )
+                    ).scalar() or 0
+                    political_news_prev = session.execute(
+                        select(sqlfunc.count(NewsArticle.id)).where(
+                            NewsArticle.candidate_id == cand.id,
+                            func.date(NewsArticle.collected_at) == yesterday,
+                            NewsArticle.is_relevant == True,
+                        )
+                    ).scalar() or 0
+
+                    # 정치 관련 뉴스도 함께 늘었으면 진짜 이슈, 아니면 동명이인 의심
+                    political_increase = political_news_today >= political_news_prev + 3
+
+                    if not political_increase:
+                        logger.info("search_spike_skipped_homonym",
+                                    candidate=cand.name, today_vol=today_vol, prev_vol=prev_vol,
+                                    political_news_today=political_news_today,
+                                    political_news_prev=political_news_prev,
+                                    reason="검색량은 늘었으나 정치 뉴스는 안 늘어 — 동명이인 가능성")
+                        # dedup 키 저장 (오늘 하루 더 안 보냄)
+                        if r:
+                            try:
+                                r.setex(dedup_key, 86400, "skipped_homonym")
+                            except Exception:
+                                pass
+                        continue
+
                     is_our = cand.is_our_candidate
                     alerts.append({
                         "severity": "critical" if is_our else "warning",
                         "candidate": cand.name,
                         "type": "search_spike",
-                        "message": f"{cand.name} 검색량 급등: {prev_vol:.1f} → {today_vol:.1f} ({today_vol/prev_vol:.1f}배)",
-                        "details": {"previous": prev_vol, "current": today_vol},
+                        "message": f"{cand.name} 검색량 급등: {prev_vol:.1f} → {today_vol:.1f} ({today_vol/prev_vol:.1f}배) · 정치 뉴스 +{political_news_today - political_news_prev}건",
+                        "details": {
+                            "previous": prev_vol, "current": today_vol,
+                            "political_news_today": political_news_today,
+                            "political_news_prev": political_news_prev,
+                        },
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     })
+
+                    # dedup 키 저장 (오늘 같은 후보 알림 1회만)
+                    if r:
+                        try:
+                            r.setex(dedup_key, 86400, "sent")
+                        except Exception:
+                            pass
         except Exception as e:
             logger.warning("search_spike_check_error", error=str(e)[:200])
 

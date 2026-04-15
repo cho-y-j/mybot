@@ -57,7 +57,7 @@ async def generate_ai_briefing(
         f"- 데이터에 근거한 내용만 포함"
     )
 
-    result = await call_claude(prompt, timeout=60, context="ai_briefing", tenant_id=tenant_id, db=db)
+    result = await call_claude(prompt, timeout=300, context="ai_briefing", tenant_id=tenant_id, db=db)
     if result:
         return {
             "rank": our_rank,

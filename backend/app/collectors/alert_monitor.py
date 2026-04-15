@@ -84,9 +84,22 @@ class AlertMonitor:
             prev_count = prev.get("news_count", 0) if prev else 0
             prev_negative = prev.get("negative_count", 0) if prev else 0
 
+            # 알림 종류별 dedup 헬퍼 (오늘 같은 후보 같은 type 1회만)
+            async def _can_send(alert_type: str) -> bool:
+                if not self.redis:
+                    return True
+                try:
+                    key = f"alert:dedup:{tenant_id}:{candidate}:{alert_type}:{now.date().isoformat()}"
+                    if await self.redis.exists(key):
+                        return False
+                    await self.redis.setex(key, 86400, "sent")
+                    return True
+                except Exception:
+                    return True
+
             # 3. 스파이크 감지
             # 3a. 뉴스 급증 (이전 대비 threshold_news_spike 이상 증가)
-            if prev_count > 0 and news_count - prev_count >= threshold_news_spike:
+            if prev_count > 0 and news_count - prev_count >= threshold_news_spike and await _can_send("news_spike"):
                 severity = SEVERITY_CRITICAL if candidate == our_candidate else SEVERITY_WARNING
                 alerts.append({
                     "severity": severity,
@@ -102,7 +115,7 @@ class AlertMonitor:
                 })
 
             # 3b. 부정 기사 급증
-            if prev_negative > 0 and negative_count - prev_negative >= 3:
+            if prev_negative > 0 and negative_count - prev_negative >= 3 and await _can_send("negative_spike"):
                 severity = SEVERITY_CRITICAL if candidate == our_candidate else SEVERITY_WARNING
                 alerts.append({
                     "severity": severity,
@@ -117,11 +130,21 @@ class AlertMonitor:
                     "timestamp": now.isoformat(),
                 })
 
-            # 3c. 위기 키워드 감지 (새로 등장한 위기 기사)
+            # 3c. 위기 키워드 감지 (새로 등장한 위기 기사) — URL 단위 dedup
             prev_crisis_urls = set(prev.get("crisis_urls", [])) if prev else set()
             new_crisis = [a for a in crisis_articles if a["url"] not in prev_crisis_urls]
             if new_crisis:
                 for article in new_crisis[:3]:
+                    # URL 단위 dedup (이미 알림 발송한 URL은 제외)
+                    url_dedup_key = f"alert:url:{tenant_id}:{article['url']}"
+                    if self.redis:
+                        try:
+                            if await self.redis.exists(url_dedup_key):
+                                continue
+                            await self.redis.setex(url_dedup_key, 86400 * 7, "sent")  # 7일
+                        except Exception:
+                            pass
+
                     is_our = candidate == our_candidate
                     severity = SEVERITY_CRITICAL if is_our else SEVERITY_INFO
                     alerts.append({
@@ -140,7 +163,7 @@ class AlertMonitor:
             # 3d. 부정 비율 과다 (전체 뉴스 중 부정 비율)
             if news_count >= 5:
                 neg_ratio = negative_count / news_count
-                if neg_ratio >= threshold_negative_ratio and candidate == our_candidate:
+                if neg_ratio >= threshold_negative_ratio and candidate == our_candidate and await _can_send("high_negative_ratio"):
                     alerts.append({
                         "severity": SEVERITY_WARNING,
                         "candidate": candidate,
