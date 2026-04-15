@@ -79,8 +79,8 @@ async def issue_homepage_sso(
     return {
         "exists": True,
         "code": code,
-        # /_sso 예약 경로로 token 전달 — NPM이 homepage로 라우팅, middleware 통과
-        "url": f"/_sso?token={token}&redirect=/{code}/admin",
+        # /sso 경로로 token 전달 (NPM /api/* 외, Next.js 라우트로 인식)
+        "url": f"/sso?token={token}&redirect=/{code}/admin",
         "public_url": f"/{code}",
     }
 

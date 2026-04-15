@@ -1,10 +1,10 @@
 /**
  * homepage SSO 수신 — mybot에서 발급한 단기 JWT를 받아 homepage 세션 쿠키 발급.
  *
- * 경로가 /_sso 인 이유: NPM 라우팅에서 /api/*는 ep_backend로 가므로
- * /api/auth/sso 에 두면 homepage에 도달 못함. /_sso는 예약 경로로 ep_homepage로 라우팅됨.
+ * 경로 /sso 이유: /api/*는 NPM이 mybot으로 보내므로 homepage 경로는 /api 외여야 함.
+ * Next.js는 _로 시작하는 폴더를 private 취급해 라우트 제외 → /_sso는 불가능, /sso 사용.
  *
- * 호출: GET /_sso?token=JWT&redirect=/<code>/admin
+ * 호출: GET /sso?token=JWT&redirect=/<code>/admin
  */
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";

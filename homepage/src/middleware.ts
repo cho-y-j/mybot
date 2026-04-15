@@ -4,7 +4,7 @@ import type { NextRequest } from "next/server";
 const COOKIE_NAME = "mh_session";
 
 // 시스템 경로 (동적 [code] 라우트와 충돌 방지)
-const SYSTEM_PATHS = ["/super-admin", "/api", "/_next", "/_sso", "/favicon.ico"];
+const SYSTEM_PATHS = ["/super-admin", "/api", "/_next", "/sso", "/favicon.ico"];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
