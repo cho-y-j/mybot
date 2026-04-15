@@ -5,31 +5,30 @@ import { useState, useEffect } from 'react';
 import { api } from '@/services/api';
 import FloatingAssistant from '@/components/easy/FloatingAssistant';
 
-// 매일 여러 번 보는 핵심
+// 일상
 const MENU_DAILY = [
-  { href: '/easy', label: '🏠 홈', icon: '🏠' },
-  { href: '/easy/reports', label: '📊 보고서', icon: '📊' },
-  { href: '/easy/assistant', label: '💬 AI 비서', icon: '💬' },
+  { href: '/easy', label: '🏠 홈' },
+  { href: '/easy/reports', label: '📊 보고서' },
+  { href: '/easy/assistant', label: '💬 AI 비서' },
 ];
 
-// 생성 (콘텐츠 제작)
+// 생성 (토론 대본 포함 — 콘텐츠 만들기 내부 유형으로 통합됨)
 const MENU_CREATE = [
   { href: '/easy/content', label: '📝 콘텐츠 만들기' },
-  { href: '/easy/debate', label: '🎤 토론 대본' },
 ];
 
-// 분석 (중요도 순 — 내 위치 → 여론 → 원인)
+// 분석 (과거 선거 포함)
 const MENU_ANALYSIS = [
   { href: '/easy/candidates', label: '👥 후보 비교' },
   { href: '/easy/surveys', label: '📋 여론조사' },
   { href: '/easy/news', label: '📰 뉴스 분석' },
   { href: '/easy/youtube', label: '📺 미디어 분석' },
   { href: '/easy/trends', label: '🔍 키워드 트렌드' },
+  { href: '/easy/history', label: '🏛️ 과거 선거' },
 ];
 
-// 참고 (가끔)
-const MENU_REFERENCE = [
-  { href: '/easy/history', label: '🏛️ 과거 선거' },
+// 기타
+const MENU_MISC = [
   { href: '/easy/schedules', label: '⏰ 스케줄' },
 ];
 
@@ -114,70 +113,49 @@ export default function EasyLayout({ children }: { children: React.ReactNode }) 
         <nav className="flex-1 py-2 overflow-y-auto">
           <HomepageLink />
 
-          {/* 일상 업무 */}
-          {MENU_DAILY.map(item => {
-            const active = pathname === item.href || pathname.startsWith(item.href + '/');
-            return (
-              <Link key={item.href} href={item.href}
-                className={`flex items-center gap-3 px-4 py-3 text-sm transition
-                  ${active ? 'bg-blue-500/20 text-blue-500 border-r-4 border-blue-500 font-semibold'
-                           : 'text-[var(--foreground)] hover:bg-[var(--muted-bg)]'}`}>
+          {(() => {
+            const isActive = (href: string) =>
+              href === '/easy'
+                ? pathname === '/easy'
+                : pathname === href || pathname.startsWith(href + '/');
+            const linkClass = (active: boolean) =>
+              `flex items-center gap-3 px-4 py-2.5 text-sm transition ${
+                active
+                  ? 'bg-blue-500/20 text-blue-500 border-r-4 border-blue-500 font-semibold'
+                  : 'text-[var(--foreground)] hover:bg-[var(--muted-bg)]'
+              }`;
+            const Divider = () => (
+              <div className="my-2 mx-4 border-t border-[var(--card-border)]" />
+            );
+            // 현재 페이지 재클릭 시 강제 리셋 (step 초기화 등)
+            const handleNav = (href: string) => (e: React.MouseEvent) => {
+              if (pathname === href || pathname.startsWith(href + '/')) {
+                e.preventDefault();
+                router.push(`${href}?_r=${Date.now()}`);
+              }
+            };
+            const renderItem = (item: { href: string; label: string }) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={handleNav(item.href)}
+                className={linkClass(isActive(item.href))}
+              >
                 {item.label}
               </Link>
             );
-          })}
-
-          {/* 생성 */}
-          <div className="mt-3 px-4 py-1 text-[10px] text-[var(--muted)] font-semibold uppercase tracking-wider">✍️ 생성</div>
-          {MENU_CREATE.map(item => {
-            const active = pathname === item.href || pathname.startsWith(item.href + '/');
             return (
-              <Link key={item.href} href={item.href}
-                className={`flex items-center gap-3 px-4 py-2.5 text-sm transition
-                  ${active ? 'bg-blue-500/20 text-blue-500 border-r-4 border-blue-500 font-semibold'
-                           : 'text-[var(--foreground)] hover:bg-[var(--muted-bg)]'}`}>
-                {item.label}
-              </Link>
+              <>
+                {MENU_DAILY.map(renderItem)}
+                <Divider />
+                {MENU_CREATE.map(renderItem)}
+                <Divider />
+                {MENU_ANALYSIS.map(renderItem)}
+                <Divider />
+                {MENU_MISC.map(renderItem)}
+              </>
             );
-          })}
-
-          {/* 분석 */}
-          <div className="mt-3 px-4 py-1 text-[10px] text-[var(--muted)] font-semibold uppercase tracking-wider">📊 분석</div>
-          {MENU_ANALYSIS.map(item => {
-            const active = pathname === item.href || pathname.startsWith(item.href + '/');
-            return (
-              <Link key={item.href} href={item.href}
-                className={`flex items-center gap-3 px-4 py-2.5 text-sm transition
-                  ${active ? 'bg-blue-500/20 text-blue-500 border-r-4 border-blue-500 font-semibold'
-                           : 'text-[var(--foreground)] hover:bg-[var(--muted-bg)]'}`}>
-                {item.label}
-              </Link>
-            );
-          })}
-
-          {/* 참고 (접힘) */}
-          <div className="mt-3">
-            <button onClick={() => setAdvancedOpen(!advancedOpen)}
-              className="w-full flex items-center justify-between px-4 py-2 text-[10px] text-[var(--muted)] hover:bg-[var(--muted-bg)] font-semibold uppercase tracking-wider">
-              <span>📚 참고 {advancedOpen ? '▼' : '▶'}</span>
-              <span className="lowercase">({MENU_REFERENCE.length})</span>
-            </button>
-            {advancedOpen && (
-              <div>
-                {MENU_REFERENCE.map(item => {
-                  const active = pathname === item.href || pathname.startsWith(item.href + '/');
-                  return (
-                    <Link key={item.href} href={item.href}
-                      className={`block px-4 py-2 text-xs transition
-                        ${active ? 'bg-blue-500/20 text-blue-500 font-semibold'
-                                 : 'text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--muted-bg)]'}`}>
-                      {item.label}
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          })()}
         </nav>
 
         <div className="border-t border-[var(--card-border)] p-3 space-y-2">
@@ -202,10 +180,7 @@ export default function EasyLayout({ children }: { children: React.ReactNode }) 
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5M3.75 17.25h16.5" />
               </svg>
             </button>
-            <div className="text-sm font-semibold text-blue-500 flex items-center gap-2 truncate">
-              <span>😊 쉬운 모드</span>
-              <span className="text-[10px] text-[var(--muted)] hidden sm:inline">비전문가용 간편 화면</span>
-            </div>
+            <div className="text-sm font-semibold text-blue-500 truncate">😊 쉬운 모드</div>
           </div>
           <button onClick={switchToExpert}
             className="text-xs px-2 lg:px-3 py-1.5 bg-gray-700/30 hover:bg-gray-700/50 text-[var(--foreground)] rounded-lg transition font-medium whitespace-nowrap">

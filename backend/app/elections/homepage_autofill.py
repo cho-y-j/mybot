@@ -314,7 +314,134 @@ async def auto_fill_homepage(
             })
             result["blocks"] += 1
 
+    # 6. 네이버/웹 검색으로 유튜브·블로그·공약 자동 수집 (기존 없을 때만)
+    try:
+        fetched = await _naver_autofetch(
+            db, tenant_id, homepage_user_id,
+            candidate_name=name, region=region_text, type_label=type_label,
+        )
+        result["naver_autofetch"] = fetched
+    except Exception as e:
+        logger.warning("autofill_naver_failed", error=str(e)[:200])
+        result["naver_autofetch"] = {"status": "failed"}
+
     logger.info("autofill_homepage_done", tenant=tenant_id, election=election_id, result=result)
+    return result
+
+
+async def _naver_autofetch(
+    db: AsyncSession,
+    tenant_id: str,
+    homepage_user_id: int,
+    candidate_name: str,
+    region: str,
+    type_label: str,
+) -> dict:
+    """네이버/웹 검색으로 후보 공식 정보 자동 수집.
+
+    수집 항목:
+    - YouTube 채널 URL → external_channels (platform=youtube)
+    - 네이버 블로그 URL → external_channels (platform=naver_blog)
+    - 대표 공약 5~7개 → pledges (기존 0개일 때만)
+
+    Claude WebSearch 사용 (이미 권한 있음).
+    """
+    result = {"channels": 0, "pledges": 0}
+
+    # 이미 있으면 스킵
+    ch_cnt = (await db.execute(text(
+        "SELECT COUNT(*) FROM homepage.external_channels WHERE user_id = :uid"
+    ), {"uid": homepage_user_id})).scalar() or 0
+    pl_cnt = (await db.execute(text(
+        "SELECT COUNT(*) FROM homepage.pledges WHERE user_id = :uid"
+    ), {"uid": homepage_user_id})).scalar() or 0
+
+    if ch_cnt > 0 and pl_cnt > 0:
+        return result  # 이미 수동 입력됐으면 건드리지 않음
+
+    try:
+        from app.services.ai_service import call_claude
+        prompt = f"""당신은 선거 후보 공식 정보 수집 담당자입니다. 네이버·구글을 WebSearch로 검색해서
+아래 후보의 **공개된 공식 정보**만 찾아 JSON으로 반환하세요.
+
+후보: {candidate_name} ({region} {type_label} 예비후보)
+
+검색할 것:
+1. 후보 공식 YouTube 채널 URL (채널 ID 또는 /channel/UCxxx, /@handle 형식)
+2. 후보 공식 네이버 블로그 URL (blog.naver.com/xxx)
+3. 대표 공약 5~7개 (선관위 공약 우선, 보도자료에서 추출, 제목 + 1줄 설명)
+
+**원칙**:
+- 🟢 사실 소스에서만 (공식 홈페이지, 언론 보도, 선관위)
+- 🟡 커뮤니티·댓글은 참고 금지
+- 확인 안 되면 null로 반환 (추측 금지)
+- 동명이인 주의 ({region} {type_label} 후보가 맞는지 지역·선거 유형 재확인)
+
+반드시 아래 JSON만 반환:
+{{
+  "youtube_url": "https://www.youtube.com/@xxx" or null,
+  "youtube_channel_id": "UCxxx" or null,
+  "blog_url": "https://blog.naver.com/xxx" or null,
+  "pledges": [
+    {{"title": "공약 제목", "description": "1~2줄 설명"}},
+    ...
+  ]
+}}"""
+
+        data = await call_claude(
+            prompt, timeout=180, context="homepage_autofetch",
+            tenant_id=tenant_id, db=db, web_search=True,
+        )
+        if not data or not isinstance(data, dict):
+            return result
+
+        # YouTube 채널 추가
+        yt_url = data.get("youtube_url")
+        yt_id = data.get("youtube_channel_id")
+        if (yt_url or yt_id) and ch_cnt == 0:
+            await db.execute(text("""
+                INSERT INTO homepage.external_channels (user_id, platform, channel_id, channel_url, is_active, created_at)
+                VALUES (:uid, 'youtube', :cid, :curl, true, NOW())
+            """), {"uid": homepage_user_id, "cid": yt_id, "curl": yt_url})
+            result["channels"] += 1
+
+        # 블로그 추가
+        blog_url = data.get("blog_url")
+        if blog_url and ch_cnt == 0:
+            # blog.naver.com/{id} 에서 id 추출
+            import re
+            m = re.search(r"blog\.naver\.com/([^/?]+)", blog_url)
+            blog_id = m.group(1) if m else None
+            await db.execute(text("""
+                INSERT INTO homepage.external_channels (user_id, platform, channel_id, channel_url, is_active, created_at)
+                VALUES (:uid, 'naver_blog', :cid, :curl, true, NOW())
+            """), {"uid": homepage_user_id, "cid": blog_id, "curl": blog_url})
+            result["channels"] += 1
+
+        # 공약 추가 (기존 0개일 때만)
+        pledges = data.get("pledges") or []
+        if pl_cnt == 0 and isinstance(pledges, list):
+            for i, p in enumerate(pledges[:7]):
+                if not isinstance(p, dict):
+                    continue
+                title = (p.get("title") or "")[:200]
+                desc = p.get("description") or ""
+                if not title:
+                    continue
+                icon = icon_for_pledge(title, desc)
+                import json
+                await db.execute(text("""
+                    INSERT INTO homepage.pledges (user_id, icon, title, description, details, sort_order, created_at)
+                    VALUES (:uid, :icon, :title, :desc, cast('[]' as jsonb), :so, NOW())
+                """), {"uid": homepage_user_id, "icon": icon, "title": title,
+                       "desc": desc[:1000] if desc else None, "so": i})
+                result["pledges"] += 1
+
+        logger.info("homepage_autofetch_done",
+                    candidate=candidate_name, result=result)
+    except Exception as e:
+        logger.warning("homepage_autofetch_failed", error=str(e)[:200])
+
     return result
 
 

@@ -12,6 +12,7 @@ const CONTENT_TYPES = [
   { value: 'card', icon: '🎨', label: '카드뉴스', desc: '이미지 카드용 짧은 메시지' },
   { value: 'press', icon: '📰', label: '보도자료', desc: '언론사 송부용 공식 자료' },
   { value: 'defense', icon: '🛡️', label: '해명 자료', desc: '부정 보도 대응용' },
+  { value: 'debate', icon: '🎤', label: '토론 대본', desc: '방송/합동 토론 오프닝·반박·클로징 JSON' },
 ];
 
 const PURPOSES = [
@@ -55,9 +56,18 @@ function ContentWizardInner() {
   const [result, setResult] = useState<any>(null);
 
   useEffect(() => {
+    // _r 파라미터 있으면 재진입 → 전체 리셋
+    if (params.get('_r')) {
+      setStep(1);
+      setContentType('blog');
+      setTopic('');
+      setResult(null);
+      setProgressMsg('');
+      return;
+    }
     if (params.get('topic')) setStep(3);
     else if (params.get('type')) setStep(2);
-  }, []);
+  }, [params]);
 
   useEffect(() => {
     if (step !== 2 || !election?.id) return;
@@ -98,18 +108,29 @@ function ContentWizardInner() {
     }, 8000);
     try {
       const t = (sessionStorage.getItem('access_token') || localStorage.getItem('access_token'));
-      const p = new URLSearchParams({
-        content_type: contentType,
-        topic: topic.trim(),
-        style,
-        purpose,
-        target,
-        length,
-      });
-      const r = await fetch(`/api/content/generate-content/${election.id}?${p}`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${t}` },
-      });
+      let r: Response;
+      if (contentType === 'debate') {
+        // 토론 대본은 전용 엔드포인트 (JSON 구조 다름)
+        r = await fetch(`/api/content/debate-script/${election.id}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
+          body: JSON.stringify({
+            topics: topic.trim() ? [topic.trim()] : [],
+            style: style === 'aggressive' ? 'aggressive'
+                  : style === 'emotional' ? 'defensive' : 'balanced',
+            debate_format: 'broadcast',
+            speech_minutes: length === 'short' ? 2 : length === 'long' ? 5 : length === 'very_long' ? 8 : 3,
+          }),
+        });
+      } else {
+        const p = new URLSearchParams({
+          content_type: contentType, topic: topic.trim(), style, purpose, target, length,
+        });
+        r = await fetch(`/api/content/generate-content/${election.id}?${p}`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${t}` },
+        });
+      }
       const data = await r.json();
       setResult(data);
     } catch (e: any) {
@@ -284,6 +305,57 @@ function ContentWizardInner() {
       {result?.error && (
         <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-500 text-sm">
           ❌ {result.error}
+        </div>
+      )}
+
+      {/* 토론 대본 결과 (JSON 구조) */}
+      {result?.opening && (
+        <div className="space-y-4">
+          <div className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-bold">🎤 토론 대본 생성 완료</h2>
+              <button onClick={() => { setResult(null); setStep(1); }}
+                className="text-xs px-3 py-1 bg-[var(--muted-bg)] rounded hover:bg-blue-500/10">↻ 다시</button>
+            </div>
+            <div className="space-y-4 text-sm">
+              <section>
+                <h3 className="font-semibold text-blue-500 mb-1">🎙️ 오프닝</h3>
+                <p className="whitespace-pre-wrap">{result.opening}</p>
+              </section>
+              {result.key_points?.length > 0 && (
+                <section>
+                  <h3 className="font-semibold text-blue-500 mb-1">💪 핵심 포인트 ({result.key_points.length})</h3>
+                  <div className="space-y-2">
+                    {result.key_points.map((kp: any, i: number) => (
+                      <div key={i} className="p-3 bg-[var(--muted-bg)] rounded">
+                        <div className="font-semibold text-xs">{kp.topic}</div>
+                        <div className="text-xs mt-1"><span className="text-[var(--muted)]">입장:</span> {kp.our_position}</div>
+                        <div className="text-xs mt-1"><span className="text-[var(--muted)]">근거:</span> {kp.data_point}</div>
+                        <div className="text-xs mt-1 text-red-500"><span className="text-[var(--muted)]">공격 질문:</span> {kp.attack_question}</div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+              {result.rebuttals?.length > 0 && (
+                <section>
+                  <h3 className="font-semibold text-blue-500 mb-1">🛡️ 예상 공격·반박 ({result.rebuttals.length})</h3>
+                  <div className="space-y-2">
+                    {result.rebuttals.map((r: any, i: number) => (
+                      <div key={i} className="p-3 bg-[var(--muted-bg)] rounded">
+                        <div className="text-xs text-red-500">상대: {r.opponent_claim}</div>
+                        <div className="text-xs mt-1">우리: {r.our_response}</div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+              <section>
+                <h3 className="font-semibold text-blue-500 mb-1">🏁 클로징</h3>
+                <p className="whitespace-pre-wrap">{result.closing}</p>
+              </section>
+            </div>
+          </div>
         </div>
       )}
 

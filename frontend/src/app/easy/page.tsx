@@ -163,13 +163,13 @@ export default function EasyHome() {
             <div className="text-2xl font-black text-blue-500">{summary.news_today}</div>
             <div className="text-xs text-[var(--muted)] mt-1">📰 뉴스</div>
           </Link>
-          <Link href="/easy/reports" className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 text-center hover:border-green-500 transition">
+          <Link href="/easy/youtube" className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 text-center hover:border-green-500 transition">
             <div className="text-2xl font-black text-green-500">{summary.comm_today}</div>
             <div className="text-xs text-[var(--muted)] mt-1">💬 커뮤니티</div>
           </Link>
           <Link href="/easy/youtube" className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 text-center hover:border-red-500 transition">
             <div className="text-2xl font-black text-red-500">{summary.yt_today}</div>
-            <div className="text-xs text-[var(--muted)] mt-1">📺 유튜브</div>
+            <div className="text-xs text-[var(--muted)] mt-1">📺 미디어</div>
           </Link>
         </div>
       </div>
