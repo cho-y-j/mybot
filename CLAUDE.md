@@ -155,6 +155,36 @@ session.add(YouTubeVideo(..., published_at=pub_at))  # None이면 NULL 저장
 - 다음 분석부터 프롬프트에 포함되어 정확도 향상 (누적 학습)
 - 캠프별 격리 (tenant_id × name 기준 업데이트)
 
+### 1.16. 출처 각주 + WebSearch + 사실 기반 답변 (2026-04-15)
+- **항상 WebSearch 허용** — ai_service.call_claude(web_search=True)
+  - CLI 옵션: `--permission-mode default --allowedTools WebSearch,WebFetch`
+  - 내부 DB에 없는 정보는 AI가 직접 웹 검색하여 사실 확인
+- **출처 각주 필수**:
+  - 내부 데이터: `[ref-rag-1]`, `[ref-rt-1]` 등 태그
+  - 웹 검색: `[web](URL)` 형식
+  - NEC 공식: `[ref-nec-xxx]`
+- **citations 배열 응답**: id, type, title, url, source, published_at, preview
+- **클릭 팝업**: components/chat/CitationBadge.tsx — 원문 링크 + 요약 표시
+
+### 1.17. 후보자 공식 프로필 (info.nec.go.kr) (2026-04-15)
+- `candidate_profiles` 테이블: 학력/경력/재산/병역/납세/전과/선관위공약/생년월일/주소
+- DB 캐시 있으면 즉시 답변, 없으면 AI가 WebSearch로 info.nec.go.kr 조회
+- 챗/토론/콘텐츠 모두 활용
+
+### 1.18. 일일 보고서 자기 재귀 금지 (2026-04-15)
+**ai_report.py는 camp_memory 호출 시 max_reports=0, max_briefings=0 필수.**
+- Why: 보고서 생성 프롬프트에 이전 보고서를 다시 넣으면 AI가 혼동 → "작성 완료" 메타답변 (500자)
+- 챗/토론/콘텐츠는 정상 작동 (자기 자신 재귀 아님)
+- 연속성은 `prev_reports` 300자 요약 주입으로 대체
+
+### 1.19. 쉬운 모드 + 전문가 모드 (2026-04-15)
+- 두 모드 공존: `/easy/*` (비전문가) + `/dashboard/*` (전문가)
+- localStorage `preferred_mode` = "easy" | "expert"
+- 신규 가입자 기본값: `/easy`
+- 전환 버튼: 쉬운 모드 상단 sticky 헤더 / 전문가 헤더 우측
+- `/easy/{news,candidates,surveys,trends,youtube,debate,schedules}` 는 dashboard 컴포넌트 재사용
+- `/easy` 레이아웃: 2단계 사이드바 + FloatingAssistant (모든 페이지 우하단 챗)
+
 ### 1.13. 온보딩 시 선거 중복 생성 금지 (2026-04-13)
 가입 시 동일한 선거가 이미 존재하면 **새로 만들지 않고 기존 election을 재사용**한다.
 - 매칭 키: `election_type + region_sido + region_sigungu + election_date`
@@ -369,29 +399,42 @@ session.add(YouTubeVideo(..., published_at=pub_at))  # None이면 NULL 저장
 ## 5. 참고 — 주요 파일 위치
 
 ### Backend 핵심
-- `backend/app/services/ai_service.py` — 모든 AI 호출의 단일 진입점 (`--system-prompt` 사용)
-- `backend/app/services/embedding_service.py` — RAG 벡터 임베딩 (Ollama bge-m3) + 검색 (2026-04-14 신규)
-- `backend/app/services/camp_context.py` — 캠프 학습 데이터 (보고서/브리핑 전문)
-- `backend/app/collectors/tasks.py` — Celery 스케줄 수집 태스크 (election-shared upsert)
-- `backend/app/collectors/instant.py` — 사용자 트리거 즉시 수집 (AI 스크리닝 포함)
-- `backend/app/collectors/ai_screening.py` — 수집 단계 AI 스크리닝 + **동명이인 자동 학습**
-- `backend/app/collectors/naver.py` — 네이버 뉴스/블로그/카페
-- `backend/app/collectors/youtube.py` — YouTube Data API
-- `backend/app/analysis/sentiment.py` — 감성 분석 (SentimentAnalyzer)
+- `backend/app/services/ai_service.py` — 모든 AI 호출의 단일 진입점 (`--system-prompt`, `web_search` 파라미터)
+- `backend/app/services/embedding_service.py` — RAG 벡터 임베딩 (Ollama bge-m3) + 검색
+- `backend/app/services/camp_context.py` — 캠프 학습 데이터 (보고서/브리핑 전문) **※ ai_report.py는 max_reports=0으로 호출 필수**
+- `backend/app/services/rich_context.py` — 챗/토론/콘텐츠 공용 컨텍스트 빌더 + LEGAL_SAFETY_PROMPT
+- `backend/app/services/realtime_search.py` — 네이버 뉴스 48시간 실시간 조회
+- `backend/app/services/today_actions.py` — 쉬운 모드 홈 우선순위 액션 추천
+- `backend/app/services/easy_router.py` — `GET /api/easy/today/{election_id}`
+- `backend/app/collectors/tasks.py` — Celery 스케줄 수집 (election-shared upsert)
+- `backend/app/collectors/instant.py` — 사용자 트리거 즉시 수집
+- `backend/app/collectors/ai_screening.py` — 수집 단계 AI 스크리닝 + 동명이인 자동 학습
 - `backend/app/analysis/media_analyzer.py` — 4사분면 배치 분석 (3매체 병렬, 동명이인 학습)
-- `backend/app/analysis/strategic_views.py` — 캠프별 관점 분석 upsert 헬퍼 (2026-04-14 신규)
-- `backend/app/chat/router.py` — AI 챗 (대화 이력 저장)
-- `backend/app/chat/context_builder.py` — 챗 컨텍스트 빌더 (RAG 검색 + 의도별 보충)
-- `backend/app/chat/models.py` — ChatMessage 모델
-- `backend/app/elections/onboarding.py` — 캠프 가입 자동화 (완료 검증 포함)
-- `backend/app/elections/models.py` — ORM 모델 (NewsArticle + NewsStrategicView 등)
-- `backend/app/content/compliance.py` — 선거법 검증 (AI 기반, 10개 조항 전문 포함)
+- `backend/app/analysis/strategic_views.py` — 캠프별 관점 분석 upsert 헬퍼
+- `backend/app/chat/router.py` — AI 챗 + 시스템 프롬프트 (사실 기반 출처 각주 7원칙)
+- `backend/app/chat/context_builder.py` — 챗 컨텍스트 (RAG + 실시간 + 과거선거 + 프로필 + 선거법)
+- `backend/app/elections/onboarding.py` — 캠프 가입 + 완료 검증 (후보/선거 연결 필수)
+- `backend/app/elections/models.py` — ORM: Candidate(election-shared) + CandidateProfile + *_StrategicView
+- `backend/app/elections/history_router.py` — `GET /api/history/election-history/by-region/{id}` (후보 비교용)
+- `backend/app/common/election_access.py` — 선거 접근 권한 + list_election_candidates 헬퍼
+- `backend/app/content/compliance.py` — 선거법 10개 조항 전문 (AI 검증)
+- `backend/app/reports/ai_report.py` — **max_reports=0, max_briefings=0 (자기 재귀 금지)**
 - `backend/migrations/2026_04_14_election_shared_data.sql` — election-shared 구조 전환
+- `backend/migrations/2026_04_15_candidates_shared.sql` — Candidate 통합
 
 ### Frontend
-- `frontend/src/app/dashboard/` — 주요 대시보드 페이지
-- `frontend/src/app/admin/` — 관리자 패널 (7개 페이지 + layout + 사이드바)
-- `frontend/src/app/onboarding/page.tsx` — 가입 온보딩 UI (선거명 자동 생성 — 기초단체장은 시군구 포함)
+- `frontend/src/app/dashboard/` — 전문가 모드 (기존 모든 페이지)
+- `frontend/src/app/easy/` — 쉬운 모드 (Phase 7)
+  - `layout.tsx` — 2단계 사이드바 + sticky 헤더 + FloatingAssistant
+  - `page.tsx` — Today's Action 홈
+  - `assistant/page.tsx` — AI 비서 풀스크린
+  - `content/page.tsx` — 3단계 마법사
+  - `reports/page.tsx` — 유형선택 + PDF 미리보기
+  - `{news,candidates,surveys,trends,youtube,debate,schedules}/page.tsx` — dashboard 컴포넌트 재사용
+- `frontend/src/app/admin/` — 관리자 패널 (7개 페이지)
+- `frontend/src/app/onboarding/page.tsx` — 가입 UI (기초단체장은 시군구 포함)
+- `frontend/src/components/easy/FloatingAssistant.tsx` — 모든 페이지 우하단 부동 챗
+- `frontend/src/components/chat/CitationBadge.tsx` — 출처 각주 인라인 배지 + 모달 팝업
 
 ---
 

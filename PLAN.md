@@ -346,9 +346,27 @@
 
 ## P7-07. 모드 토글 — 완료
 - [x] 대시보드 헤더: "😊 쉬운 모드" 토글
-- [x] /easy 레이아웃: "🔬 전문가 모드로 전환"
+- [x] /easy 레이아웃: 상단 sticky 헤더 "🔬 전문가 모드로 전환"
 - [x] /login → 기본 /easy (신규 사용자)
 - [x] / (홈) → localStorage 모드별 리다이렉트
+
+## P7-08. 쉬운 모드 보완 (2026-04-15 후속) — 완료
+- [x] /easy/reports 유형 선택 (일일/주간/오전/오후/자유) + PDF 미리보기 + 다운로드
+- [x] 보고서 마크다운/텍스트 자동 감지 (/\n[=#]/ 기반)
+- [x] /easy/assistant 화면 짤림 수정 (h-[calc(100vh-9rem)])
+- [x] 전문가 메뉴 래퍼 (/easy/news, /easy/candidates, /easy/surveys, /easy/trends,
+      /easy/youtube, /easy/debate, /easy/schedules) — 기존 dashboard 컴포넌트 재사용
+- [x] 후보 비교 페이지 개선:
+  - 경쟁자 갭 area 기준 dedup (같은 area 반복 제거)
+  - 역대 선거 섹션 신규: 연도별 당선자/득표율 + 투표율 추이 + 정당 우세도
+  - 백엔드: GET /api/history/election-history/by-region/{election_id}
+
+## P7-BUG. 일일 보고서 자기 재귀 참조 버그 수정 — 완료 (2026-04-15)
+- 원인: P5-01에서 camp_context 공통 모듈 수정 시 max_reports=3, max_briefings=4 기본값
+        → ai_report.py도 camp_context 호출 → 보고서가 자기 자신을 학습 컨텍스트로 포함
+        → 프롬프트 30,000자 폭발 → AI 혼동 → "작성 완료" 메타답변 (500자)
+- 수정: ai_report.py에서만 max_reports=0, max_briefings=0 (자기 재귀 차단)
+- 챗/토론/콘텐츠는 기존 유지 (재귀 아님)
 
 ---
 
