@@ -22,7 +22,7 @@ export default function CandidateComparisonPage() {
     if (!election) return;
     setLoading(true);
     try {
-      const token = localStorage.getItem('access_token');
+      const token = (sessionStorage.getItem('access_token') || localStorage.getItem('access_token'));
       const [gp, sv, md, hist] = await Promise.all([
         api.getCompetitorGaps(election.id).catch(() => null),
         api.getSurveys(election.id).catch(() => ({ surveys: [] })),

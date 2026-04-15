@@ -97,7 +97,7 @@ export default function ReportsPage() {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('access_token')}`,
+          Authorization: `Bearer ${(sessionStorage.getItem('access_token') || localStorage.getItem('access_token'))}`,
         },
         body: JSON.stringify({ content_text: editContent, status: 'confirmed' }),
       });
@@ -115,7 +115,7 @@ export default function ReportsPage() {
     setLoadingPdf(true);
     try {
       const res = await fetch(pdfUrl, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` },
+        headers: { Authorization: `Bearer ${(sessionStorage.getItem('access_token') || localStorage.getItem('access_token'))}` },
       });
       if (res.ok) {
         const blob = await res.blob();
@@ -273,7 +273,7 @@ export default function ReportsPage() {
                         className="px-3 py-1.5 bg-violet-600 text-white rounded-lg text-sm hover:bg-violet-700"
                         onClick={async (e) => {
                           e.preventDefault();
-                          const res = await fetch(pdfUrl, { headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` } });
+                          const res = await fetch(pdfUrl, { headers: { Authorization: `Bearer ${(sessionStorage.getItem('access_token') || localStorage.getItem('access_token'))}` } });
                           if (res.ok) {
                             const blob = await res.blob();
                             const url = URL.createObjectURL(blob);

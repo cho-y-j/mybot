@@ -12,6 +12,7 @@ export default function LoginPage() {
   const [needs2FA, setNeeds2FA] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [remember, setRemember] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,7 +21,7 @@ export default function LoginPage() {
 
     try {
       const data = await api.login(email, password, totpCode || undefined);
-      api.setTokens(data);
+      api.setTokens(data, remember);
       if (data?.user?.is_superadmin) {
         router.push('/admin');
       } else {
@@ -106,6 +107,16 @@ export default function LoginPage() {
             {error && (
               <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-sm p-3 rounded-xl">{error}</div>
             )}
+
+            <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={remember}
+                onChange={e => setRemember(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500 focus:ring-blue-500 focus:ring-offset-0"
+              />
+              <span>로그인 상태 유지 (체크 안 하면 창 닫을 때 자동 로그아웃)</span>
+            </label>
 
             <button
               type="submit"

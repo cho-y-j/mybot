@@ -9,7 +9,7 @@ export default function AdminDashboard() {
   const [pendingUsers, setPendingUsers] = useState<any[]>([]);
 
   const headers = (): Record<string, string> => ({
-    Authorization: `Bearer ${localStorage.getItem('access_token')}`,
+    Authorization: `Bearer ${(sessionStorage.getItem('access_token') || localStorage.getItem('access_token'))}`,
     'Content-Type': 'application/json',
   });
 

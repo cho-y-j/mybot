@@ -42,7 +42,7 @@ export default function SettingsPage() {
     try { setTenant(await api.getMyTenant()); } catch {}
     try {
       const res = await fetch('/api/telegram/recipients', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` },
+        headers: { Authorization: `Bearer ${(sessionStorage.getItem('access_token') || localStorage.getItem('access_token'))}` },
       });
       if (res.ok) setTgData(await res.json());
     } catch {}
@@ -63,7 +63,7 @@ export default function SettingsPage() {
     try {
       const res = await fetch('/api/telegram/connect-bot', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('access_token')}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${(sessionStorage.getItem('access_token') || localStorage.getItem('access_token'))}` },
         body: JSON.stringify(botForm),
       });
       const data = await res.json();
@@ -80,7 +80,7 @@ export default function SettingsPage() {
     try {
       const res = await fetch('/api/telegram/recipients', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('access_token')}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${(sessionStorage.getItem('access_token') || localStorage.getItem('access_token'))}` },
         body: JSON.stringify(recipientForm),
       });
       const data = await res.json();
@@ -96,7 +96,7 @@ export default function SettingsPage() {
     try {
       await fetch(`/api/telegram/recipients/${id}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` },
+        headers: { Authorization: `Bearer ${(sessionStorage.getItem('access_token') || localStorage.getItem('access_token'))}` },
       });
       loadAll();
     } catch {}
@@ -106,7 +106,7 @@ export default function SettingsPage() {
     try {
       await fetch(`/api/telegram/recipients/${id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('access_token')}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${(sessionStorage.getItem('access_token') || localStorage.getItem('access_token'))}` },
         body: JSON.stringify({ [field]: !currentVal }),
       });
       loadAll();

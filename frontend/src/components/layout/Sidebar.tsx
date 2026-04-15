@@ -51,7 +51,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void } = {}) {
 
   useEffect(() => {
     try {
-      const u = JSON.parse(localStorage.getItem('user') || '{}');
+      const u = JSON.parse((sessionStorage.getItem('user') || localStorage.getItem('user')) || '{}');
       setIsSuperAdmin(!!u.is_superadmin);
     } catch {}
   }, []);

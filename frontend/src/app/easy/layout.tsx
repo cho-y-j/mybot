@@ -37,7 +37,7 @@ function HomepageLink() {
   const [info, setInfo] = useState<{ exists: boolean; code?: string; url?: string; public_url?: string } | null>(null);
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token');
+    const token = (sessionStorage.getItem('access_token') || localStorage.getItem('access_token'));
     if (!token) return;
     fetch('/api/sso/homepage', { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.ok ? r.json() : null)
@@ -70,7 +70,7 @@ export default function EasyLayout({ children }: { children: React.ReactNode }) 
   const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
-    const u = localStorage.getItem('user');
+    const u = (sessionStorage.getItem('user') || localStorage.getItem('user'));
     if (u) {
       try { setUser(JSON.parse(u)); } catch {}
     }

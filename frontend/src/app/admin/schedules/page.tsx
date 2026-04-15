@@ -7,7 +7,7 @@ export default function SchedulesPage() {
   const [triggering, setTriggering] = useState<string | null>(null);
 
   const headers = (): Record<string, string> => ({
-    Authorization: `Bearer ${localStorage.getItem('access_token')}`,
+    Authorization: `Bearer ${(sessionStorage.getItem('access_token') || localStorage.getItem('access_token'))}`,
     'Content-Type': 'application/json',
   });
 

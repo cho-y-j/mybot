@@ -29,7 +29,7 @@ export default function EasyHome() {
   const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
-    const u = localStorage.getItem('user');
+    const u = (sessionStorage.getItem('user') || localStorage.getItem('user'));
     if (u) { try { setUser(JSON.parse(u)); } catch {} }
   }, []);
 
@@ -42,7 +42,7 @@ export default function EasyHome() {
 
   const loadActions = async () => {
     try {
-      const token = localStorage.getItem('access_token');
+      const token = (sessionStorage.getItem('access_token') || localStorage.getItem('access_token'));
       const resp = await fetch(`/api/easy/today/${election?.id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });

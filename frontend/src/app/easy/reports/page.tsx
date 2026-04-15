@@ -95,7 +95,7 @@ function ReportsInner() {
     setLoadingPdf(true);
     try {
       const res = await fetch(pdfUrl, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` },
+        headers: { Authorization: `Bearer ${(sessionStorage.getItem('access_token') || localStorage.getItem('access_token'))}` },
       });
       if (res.ok) {
         const blob = await res.blob();
@@ -231,7 +231,7 @@ function ReportsInner() {
                       <a href={pdfUrl} download
                         onClick={async (e) => {
                           e.preventDefault();
-                          const res = await fetch(pdfUrl, { headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` } });
+                          const res = await fetch(pdfUrl, { headers: { Authorization: `Bearer ${(sessionStorage.getItem('access_token') || localStorage.getItem('access_token'))}` } });
                           if (res.ok) {
                             const blob = await res.blob();
                             const a = document.createElement('a');

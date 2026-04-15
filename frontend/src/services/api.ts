@@ -11,33 +11,53 @@ interface TokenPair {
   expires_in: number;
 }
 
+// sessionStorage 기본 (창 닫으면 로그아웃) + "기억하기" 체크 시 localStorage
+// 두 곳 모두 조회해서 어디에 있든 읽음. 쓸 때는 선택된 곳에만.
+const AUTH_KEYS = ['access_token', 'refresh_token', 'user'];
+function readAuth(key: string): string | null {
+  if (typeof window === 'undefined') return null;
+  return sessionStorage.getItem(key) || localStorage.getItem(key);
+}
+function writeAuth(key: string, value: string, persistent: boolean) {
+  // 교차 오염 방지: 반대쪽에 잔존값 있으면 제거 후 새 값 세팅
+  localStorage.removeItem(key);
+  sessionStorage.removeItem(key);
+  (persistent ? localStorage : sessionStorage).setItem(key, value);
+}
+function clearAuth() {
+  if (typeof window === 'undefined') return;
+  for (const k of AUTH_KEYS) {
+    localStorage.removeItem(k);
+    sessionStorage.removeItem(k);
+  }
+}
+
 class ApiClient {
   private accessToken: string | null = null;
   private refreshToken: string | null = null;
 
   constructor() {
     if (typeof window !== 'undefined') {
-      this.accessToken = localStorage.getItem('access_token');
-      this.refreshToken = localStorage.getItem('refresh_token');
+      this.accessToken = readAuth('access_token');
+      this.refreshToken = readAuth('refresh_token');
     }
   }
 
-  setTokens(tokens: TokenPair) {
+  /** remember=false(기본) → sessionStorage → 창 닫으면 자동 로그아웃 */
+  setTokens(tokens: TokenPair, remember: boolean = false) {
     this.accessToken = tokens.access_token;
     this.refreshToken = tokens.refresh_token;
-    localStorage.setItem('access_token', tokens.access_token);
-    localStorage.setItem('refresh_token', tokens.refresh_token);
+    writeAuth('access_token', tokens.access_token, remember);
+    writeAuth('refresh_token', tokens.refresh_token, remember);
     if ((tokens as any).user) {
-      localStorage.setItem('user', JSON.stringify((tokens as any).user));
+      writeAuth('user', JSON.stringify((tokens as any).user), remember);
     }
   }
 
   clearTokens() {
     this.accessToken = null;
     this.refreshToken = null;
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    localStorage.removeItem('user');
+    clearAuth();
   }
 
   isAuthenticated(): boolean {
@@ -92,7 +112,9 @@ class ApiClient {
       });
       if (!res.ok) return false;
       const data = await res.json();
-      this.setTokens(data);
+      // refresh 시 기존 저장 위치(local vs session) 유지
+      const wasPersistent = typeof window !== 'undefined' && !!(sessionStorage.getItem('access_token') || localStorage.getItem('access_token'));
+      this.setTokens(data, wasPersistent);
       return true;
     } catch {
       return false;

@@ -22,7 +22,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   useEffect(() => {
-    const userStr = localStorage.getItem('user');
+    const userStr = (sessionStorage.getItem('user') || localStorage.getItem('user'));
     if (userStr) {
       try {
         const user = JSON.parse(userStr);

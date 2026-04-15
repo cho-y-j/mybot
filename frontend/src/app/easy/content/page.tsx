@@ -68,7 +68,7 @@ function ContentWizardInner() {
     setLoadingSuggestions(true);
     try {
       const r = await fetch(`/api/content/content-situations/${election?.id}`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` },
+        headers: { Authorization: `Bearer ${(sessionStorage.getItem('access_token') || localStorage.getItem('access_token'))}` },
       });
       if (r.ok) {
         const data = await r.json();
@@ -97,7 +97,7 @@ function ContentWizardInner() {
       setProgressMsg(steps[si]);
     }, 8000);
     try {
-      const t = localStorage.getItem('access_token');
+      const t = (sessionStorage.getItem('access_token') || localStorage.getItem('access_token'));
       const p = new URLSearchParams({
         content_type: contentType,
         topic: topic.trim(),

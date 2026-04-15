@@ -13,7 +13,7 @@ export default function UsersPage() {
   const [pw2, setPw2] = useState('');
 
   const headers = (): Record<string, string> => ({
-    Authorization: `Bearer ${localStorage.getItem('access_token')}`,
+    Authorization: `Bearer ${(sessionStorage.getItem('access_token') || localStorage.getItem('access_token'))}`,
     'Content-Type': 'application/json',
   });
 
