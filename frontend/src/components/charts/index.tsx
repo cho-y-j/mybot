@@ -39,19 +39,50 @@ const CustomLegend = ({ payload }: any) => (
 
 // ──── 후보별 뉴스 감성 Bar Chart ────
 export function CandidateNewsBar({ data }: { data: { name: string; count: number; positive: number; negative: number; neutral?: number }[] }) {
+  // 후보별 긍정 / 부정 / 중립 **비율(%)**을 가로 100% 누적 막대로
+  const rows = data.map(d => {
+    const total = d.count || (d.positive + d.negative + (d.neutral || 0)) || 1;
+    return {
+      name: d.name,
+      total,
+      posPct: Math.round((d.positive / total) * 100),
+      negPct: Math.round((d.negative / total) * 100),
+      neuPct: Math.round(((d.neutral || 0) / total) * 100),
+    };
+  });
   return (
-    <ResponsiveContainer width="100%" height={300}>
-      <BarChart data={data} barGap={2} barCategoryGap="25%">
-        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-        <XAxis dataKey="name" tick={{ fontSize: 13, fill: '#64748b', fontWeight: 600 }} axisLine={false} tickLine={false} />
-        <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={35} />
-        <Tooltip content={<CustomTooltip />} cursor={{ fill: '#f8fafc' }} />
-        <Legend content={<CustomLegend />} />
-        <Bar dataKey="positive" name="긍정" fill="#22c55e" radius={[6, 6, 0, 0]} maxBarSize={40} />
-        <Bar dataKey="negative" name="부정" fill="#ef4444" radius={[6, 6, 0, 0]} maxBarSize={40} />
-        <Bar dataKey="neutral" name="중립" fill="#cbd5e1" radius={[6, 6, 0, 0]} maxBarSize={40} />
-      </BarChart>
-    </ResponsiveContainer>
+    <div className="space-y-3">
+      {rows.map(r => (
+        <div key={r.name}>
+          <div className="flex items-center justify-between text-xs mb-1">
+            <span className="font-semibold">{r.name}</span>
+            <span className="text-[var(--muted)]">총 {r.total}건 · 긍정 {r.posPct}%</span>
+          </div>
+          <div className="flex h-5 rounded-md overflow-hidden bg-gray-100">
+            {r.posPct > 0 && (
+              <div className="bg-green-500 flex items-center justify-center text-[10px] text-white font-semibold" style={{ width: `${r.posPct}%` }}>
+                {r.posPct >= 8 ? `${r.posPct}%` : ''}
+              </div>
+            )}
+            {r.neuPct > 0 && (
+              <div className="bg-gray-300 flex items-center justify-center text-[10px] text-gray-700 font-semibold" style={{ width: `${r.neuPct}%` }}>
+                {r.neuPct >= 8 ? `${r.neuPct}%` : ''}
+              </div>
+            )}
+            {r.negPct > 0 && (
+              <div className="bg-red-500 flex items-center justify-center text-[10px] text-white font-semibold" style={{ width: `${r.negPct}%` }}>
+                {r.negPct >= 8 ? `${r.negPct}%` : ''}
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+      <div className="flex items-center gap-3 text-[10px] text-[var(--muted)] pt-2">
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-green-500" />긍정</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-gray-300" />중립</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-red-500" />부정</span>
+      </div>
+    </div>
   );
 }
 
