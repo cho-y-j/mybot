@@ -373,12 +373,22 @@ export default function CandidateComparisonPage() {
       )}
 
       {/* Survey Trend */}
-      {trendData.length >= 2 && (
-        <div className="card">
-          <h3 className="font-semibold mb-4">여론조사 지지율 추이</h3>
+      <div className="card">
+        <h3 className="font-semibold mb-4">여론조사 지지율 추이</h3>
+        {trendData.length >= 2 ? (
           <SurveyTrendChart data={trendData} candidates={orderedNames} />
-        </div>
-      )}
+        ) : trendData.length === 1 ? (
+          <div className="text-center py-8 text-sm text-[var(--muted)]">
+            <p>여론조사 1건만 수집됨 — 추이 그래프는 **2건 이상** 필요합니다.</p>
+            <p className="text-xs mt-2">여론조사 메뉴에서 추가 입력 가능.</p>
+          </div>
+        ) : (
+          <div className="text-center py-8 text-sm text-[var(--muted)]">
+            <p>아직 여론조사 자료가 없습니다.</p>
+            <p className="text-xs mt-2">📋 여론조사 메뉴에서 공표된 결과를 입력하면 자동으로 추이 그래프가 표시됩니다.</p>
+          </div>
+        )}
+      </div>
 
       {/* Detailed Comparison Table */}
       {newsByCand.length > 0 && (

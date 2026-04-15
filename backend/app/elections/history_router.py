@@ -26,12 +26,29 @@ async def history_by_region(
     if not election:
         return {"election": None, "results": [], "turnouts": [], "party_stats": {}}
 
-    # 역대 결과 (최근 4회, 지역+유형 일치)
+    # 역대 결과 — 시군구별 저장이라 후보별 합산 후 최다득표자 순위
     results_rows = (await db.execute(text("""
-        SELECT election_year, election_number, candidate_name, party, vote_rate, is_winner
-        FROM election_results
-        WHERE region_sido = :sido AND election_type = :etype
-        ORDER BY election_year DESC, vote_rate DESC NULLS LAST
+        WITH totals AS (
+            SELECT election_year, candidate_name,
+                   MAX(party) AS party,
+                   SUM(COALESCE(votes, 0)) AS total_votes
+            FROM election_results
+            WHERE region_sido = :sido AND election_type = :etype
+            GROUP BY election_year, candidate_name
+        ),
+        year_sums AS (
+            SELECT election_year, SUM(total_votes) AS year_total
+            FROM totals GROUP BY election_year
+        ),
+        ranked AS (
+            SELECT t.election_year, t.candidate_name, t.party, t.total_votes,
+                   (t.total_votes * 100.0 / NULLIF(ys.year_total, 0)) AS vote_rate,
+                   RANK() OVER (PARTITION BY t.election_year ORDER BY t.total_votes DESC) AS rk
+            FROM totals t JOIN year_sums ys USING (election_year)
+        )
+        SELECT election_year, candidate_name, party, vote_rate, (rk = 1) AS is_winner
+        FROM ranked
+        ORDER BY election_year DESC, vote_rate DESC
     """), {"sido": election.region_sido, "etype": election.election_type})).fetchall()
 
     # 연도별 그룹핑 (상위 5명씩)
