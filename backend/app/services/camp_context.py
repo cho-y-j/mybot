@@ -61,6 +61,8 @@ async def build_camp_memory(
             sections.append("\n".join(lines))
     except Exception as e:
         logger.warning("camp_memory_report_error", error=str(e)[:100])
+        try: await db.rollback()
+        except Exception: pass
 
     # 2. 최근 브리핑 (오전/오후 — 전문 포함)
     try:
@@ -87,6 +89,8 @@ async def build_camp_memory(
             sections.append("\n".join(lines))
     except Exception as e:
         logger.warning("camp_memory_briefing_error", error=str(e)[:100])
+        try: await db.rollback()
+        except Exception: pass
 
     # 3. 최근 생성 콘텐츠 (요약만)
     try:
@@ -109,6 +113,8 @@ async def build_camp_memory(
             sections.append("\n".join(lines))
     except Exception as e:
         logger.warning("camp_memory_content_error", error=str(e)[:100])
+        try: await db.rollback()
+        except Exception: pass
 
     # 4. 최근 대화 이력 (선택적)
     if max_chat > 0:
@@ -129,6 +135,8 @@ async def build_camp_memory(
                 sections.append("\n".join(lines))
         except Exception as e:
             logger.warning("camp_memory_chat_error", error=str(e)[:100])
+            try: await db.rollback()
+            except Exception: pass
 
     if not sections:
         return ""

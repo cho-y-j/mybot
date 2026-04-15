@@ -453,6 +453,9 @@ async def generate_content(
     try:
         from app.elections.models import Report
         from datetime import date as _date
+        # context 수집 중 트랜잭션 abort 가능성 → 먼저 rollback 보장
+        try: await db.rollback()
+        except Exception: pass
         report = Report(
             tenant_id=user["tenant_id"],
             election_id=election_id,

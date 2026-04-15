@@ -155,7 +155,9 @@ async def chat_send(
         if line.startswith("===")
     ]
 
-    # 대화 저장
+    # 대화 저장 — context 수집 중 트랜잭션 abort 가능성 → 먼저 rollback 보장
+    try: await db.rollback()
+    except Exception: pass
     try:
         db.add(ChatMessage(
             tenant_id=tid, election_id=election_id, user_id=user["id"],
@@ -170,6 +172,8 @@ async def chat_send(
         await db.commit()
     except Exception as e:
         logger.warning("chat_save_failed", error=str(e)[:200])
+        try: await db.rollback()
+        except Exception: pass
 
     return ChatResponse(
         reply=reply,
