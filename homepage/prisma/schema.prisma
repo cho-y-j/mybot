@@ -53,8 +53,8 @@ model User {
   tenantId        String?   @unique @map("tenant_id") @db.Uuid
   electionId      String?   @map("election_id") @db.Uuid
 
-  // 후보 본인 YouTube 채널 ID — homepage 영상 섹션에 이 채널만 자동 피드
-  youtubeChannelId String?  @map("youtube_channel_id") @db.VarChar(30)
+  // 자동 피드 개별 숨김/순서 조정
+  feedOverrides    FeedOverride[]
 
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at")
@@ -401,4 +401,23 @@ model SystemSetting {
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
 
   @@map("system_settings")
+}
+
+// ============================================================
+// 7. 자동 피드 제어 (AI 뉴스 / YouTube 채널 / 외부 블로그 공통)
+// 캠프가 노출 원치 않는 아이템을 숨기거나 순서 조정
+// ============================================================
+model FeedOverride {
+  id          Int      @id @default(autoincrement())
+  userId      Int      @map("user_id")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  feedType    String   @map("feed_type") @db.VarChar(20)  // ai_news | youtube | blog
+  sourceKey   String   @map("source_key") @db.VarChar(500) // URL 또는 videoId
+  hidden      Boolean  @default(false)
+  pinOrder    Int?     @map("pin_order")                  // 위로 올리고 싶을 때 (NULL=기본 정렬)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, feedType, sourceKey], name: "uq_feed_override")
+  @@index([userId, feedType])
+  @@map("feed_overrides")
 }

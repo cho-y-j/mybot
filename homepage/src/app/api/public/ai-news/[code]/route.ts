@@ -1,15 +1,12 @@
 /**
  * 후보자 공개 홈페이지용 "우리에게 긍정적인 뉴스" 피드.
  *
- * mybot(분석 플랫폼)이 수집·검증한 뉴스 중 아래 조건만 노출:
- *   - is_relevant = true (동명이인/무관 걸러짐)
- *   - is_about_our_candidate = true
- *   - sentiment = 'positive'
- *   - sentiment_verified = true (Opus 재검증 완료)
+ * 노출 조건:
+ *   - mybot 수집/검증 뉴스 중 is_relevant + is_about_our_candidate + sentiment=positive + sentiment_verified
+ *   - feed_overrides에 hidden=true인 항목은 제외
+ *   - pin_order 있는 항목은 위로
  *
- * 같은 DB(schema=public)의 news_articles를 raw SQL로 조회.
- * tenant_id 없이 election_id로 얻음 — 같은 선거 모든 캠프가 공유하는 뉴스지만
- * "우리 후보 중심"은 election_id가 캠프마다 다르므로 충분히 캠프별로 걸러짐.
+ * 채널이 없거나 뉴스 0건이면 items:[] 반환 (UI에서 빈 공간 유지).
  */
 import { NextRequest } from "next/server";
 import { successResponse, errorResponse } from "@/lib/api-response";
@@ -25,36 +22,46 @@ export async function GET(
       where: { code },
       select: { id: true, isActive: true, electionId: true },
     });
-    if (!user || !user.isActive) {
-      return errorResponse("사이트를 찾을 수 없습니다", 404);
-    }
-    if (!user.electionId) {
-      return successResponse({ items: [] });
-    }
+    if (!user || !user.isActive) return errorResponse("사이트를 찾을 수 없습니다", 404);
+    if (!user.electionId) return successResponse({ items: [] });
 
-    const rows: any[] = await prisma.$queryRawUnsafe(
-      `SELECT title, url, source, summary,
-              published_at, collected_at
-       FROM public.news_articles
-       WHERE election_id = $1::uuid
-         AND is_relevant = true
-         AND is_about_our_candidate = true
-         AND sentiment = 'positive'
-         AND sentiment_verified = true
-       ORDER BY published_at DESC NULLS LAST, collected_at DESC
-       LIMIT 30`,
-      user.electionId
-    );
+    const [rows, overrides]: [any[], any[]] = await Promise.all([
+      prisma.$queryRawUnsafe(
+        `SELECT title, url, source, summary, published_at, collected_at
+         FROM public.news_articles
+         WHERE election_id = $1::uuid
+           AND is_relevant = true AND is_about_our_candidate = true
+           AND sentiment = 'positive' AND sentiment_verified = true
+         ORDER BY published_at DESC NULLS LAST, collected_at DESC
+         LIMIT 60`,
+        user.electionId
+      ),
+      prisma.feedOverride.findMany({
+        where: { userId: user.id, feedType: "ai_news" },
+        select: { sourceKey: true, hidden: true, pinOrder: true },
+      }),
+    ]);
 
-    return successResponse({
-      items: rows.map((r) => ({
-        title: r.title,
+    const overMap = new Map(overrides.map((o) => [o.sourceKey, o]));
+    const filtered = rows
+      .filter((r) => !overMap.get(r.url)?.hidden)
+      .map((r) => ({
         url: r.url,
+        title: r.title,
         source: r.source,
         summary: r.summary,
         published_at: r.published_at,
-      })),
-    });
+        pin_order: overMap.get(r.url)?.pinOrder ?? null,
+      }))
+      .sort((a, b) => {
+        if (a.pin_order != null && b.pin_order == null) return -1;
+        if (a.pin_order == null && b.pin_order != null) return 1;
+        if (a.pin_order != null && b.pin_order != null) return a.pin_order - b.pin_order;
+        return 0;
+      })
+      .slice(0, 30);
+
+    return successResponse({ items: filtered });
   } catch (e: any) {
     return errorResponse("서버 오류: " + (e?.message || ""), 500);
   }
