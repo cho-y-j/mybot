@@ -217,7 +217,8 @@ async def _get_ai_response(
         "6. 수치나 인물 정보는 반드시 출처와 함께 제시한다.\n"
     )
 
-    full_prompt = f"{SYSTEM_PROMPT}{verification_prompt}\n\n[수집된 선거 데이터]\n{context}\n\n[질문]\n{question}"
+    from app.services.factual_prompt import FACTUAL_SYSTEM_RULES
+    full_prompt = f"{FACTUAL_SYSTEM_RULES}\n\n{SYSTEM_PROMPT}{verification_prompt}\n\n[수집된 선거 데이터]\n{context}\n\n[질문]\n{question}"
 
     chat_context_name = f"chat_{model_tier}" if model_tier else "chat"
 

@@ -46,11 +46,23 @@ async def generate_debate_script(
     our_cand_id = await get_our_candidate_id(db, tenant_id, election_id)
 
     # 데이터 수집
-    election = (await db.execute(
+    _elec_orm = (await db.execute(
         select(Election).where(Election.id == election_id)
     )).scalar_one_or_none()
-    if not election:
+    if not _elec_orm:
         return {"error": "선거 정보 없음"}
+
+    # ORM 객체 대신 SimpleNamespace로 scalar 고정 — lazy-load 원천 차단
+    from types import SimpleNamespace
+    election = SimpleNamespace(
+        id=_elec_orm.id,
+        name=_elec_orm.name,
+        election_type=_elec_orm.election_type,
+        region_sido=_elec_orm.region_sido,
+        region_sigungu=_elec_orm.region_sigungu,
+        election_date=_elec_orm.election_date,
+    )
+    e_date_iso = election.election_date.isoformat() if election.election_date else None
 
     from app.common.election_access import list_election_candidates
     candidates = await list_election_candidates(db, election_id, tenant_id=tenant_id)
@@ -81,6 +93,10 @@ async def generate_debate_script(
 
     if not opponent:
         return {"error": "경쟁 후보가 없습니다"}
+
+    # 후보도 scalar 고정 (lazy-load 방지)
+    our = SimpleNamespace(id=our.id, name=our.name, party=our.party or "무소속", role=getattr(our, "role", "") or "")
+    opponent = SimpleNamespace(id=opponent.id, name=opponent.name, party=opponent.party or "무소속", role=getattr(opponent, "role", "") or "")
 
     # 상대 후보 공격 포인트 (strategic_quadrant=opportunity — AI가 '경쟁자 약점'으로 분류한 것 우선)
     # Fallback: sentiment=negative (AI 분류 없는 오래된 데이터)
@@ -185,7 +201,9 @@ async def generate_debate_script(
             "2. 도시 개발, 교통, 복지, 일자리 등 구체적 실행 계획 중심.\n"
         )
 
+    from app.services.factual_prompt import FACTUAL_SYSTEM_RULES
     prompt = (
+        f"{FACTUAL_SYSTEM_RULES}\n\n"
         f"{factsheet}"
         f"{election_rules}\n\n"
         f"위 데이터와 규칙을 바탕으로 {our.name} 후보가 {opponent.name} 후보와의 토론/면접에서 사용할 대본을 작성하세요.\n"
@@ -234,7 +252,7 @@ async def generate_debate_script(
         full_text = result.get("opening", "") + " " + result.get("closing", "")
         for kp in result.get("key_points", []):
             full_text += " " + kp.get("attack_question", "") + " " + kp.get("our_position", "")
-        compliance = _compliance.check_content(full_text, election_date=election.election_date.isoformat() if election.election_date else None)
+        compliance = _compliance.check_content(full_text, election_date=e_date_iso)
 
         ai_result = {
             "opening": result.get("opening", ""),

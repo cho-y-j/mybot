@@ -342,15 +342,23 @@ async def generate_content(
     """AI 콘텐츠 생성 — 실제 수집 데이터 기반 + 목적/대상별 최적화."""
     from app.services.ai_service import call_claude_text
 
-    election, our, _ = await _load_election_data(db, user["tenant_id"], election_id)
-    # election 속성을 scalar로 추출 — rich_context 중 세션 abort되더라도 lazy load 방지
-    e_type = election.election_type or ''
-    e_name = election.name or ''
-    e_sido = election.region_sido or ''
-    e_sigungu = election.region_sigungu or ''
-    e_date_iso = election.election_date.isoformat() if election.election_date else None
-    our_name = our.name if our else '후보'
-    our_party = our.party if our else '무소속'
+    # context_v2: 독립 세션 + ORM 객체 없이 scalar만 — 500 근본 차단
+    from app.services.context_v2 import build_context, classify_intent
+    # 콘텐츠 생성은 항상 뉴스+프로필+여론조사+선거법 필요 (복합 컨텍스트)
+    intents = {"news", "profile", "survey", "compare", "memory", "law"}
+    rich_ctx, citations, facts = await build_context(
+        user["tenant_id"], str(election_id),
+        query=f"{topic}",
+        intents=intents, max_rag=10, include_law=True,
+    )
+    e_type = facts.get("type", "")
+    e_name = facts.get("name", "")
+    e_sido = facts.get("sido", "")
+    e_sigungu = facts.get("sigungu", "")
+    e_date_iso = facts.get("date_iso")
+    our = facts.get("our") or {}
+    our_name = our.get("name") or "후보"
+    our_party = our.get("party") or "무소속"
     region_short = _get_short(e_sido)
 
     # 콘텐츠 유형별 스펙 — length별 4단계
@@ -403,17 +411,11 @@ async def generate_content(
         "technical": "전문적·정책 중심",
     }
 
-    # 풍부한 컨텍스트 (RAG + NEC + 프로필 + 보고서 + 선거법)
-    from app.services.rich_context import build_rich_context
-    rich_ctx, citations = await build_rich_context(
-        db, user["tenant_id"], str(election_id),
-        topic=f"{topic} {spec['label']}",
-        max_rag=10, max_reports=2, max_briefings=3,
-        include_law=True,
-    )
+    # ── 통합 프롬프트 (사실성 규칙 + 콘텐츠 요청) ──
+    from app.services.factual_prompt import FACTUAL_SYSTEM_RULES
+    prompt = f"""{FACTUAL_SYSTEM_RULES}
 
-    # ── 통합 프롬프트 (하나의 명확한 구조) ──
-    prompt = f"""당신은 {region_short} {e_type} 선거 캠프의 10년 경력 프로 콘텐츠 라이터입니다.
+당신은 {region_short} {e_type} 선거 캠프의 10년 경력 프로 콘텐츠 라이터입니다.
 
 [후보 정보]
 - 우리 후보: {our_name} ({our_party})
