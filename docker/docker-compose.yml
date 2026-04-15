@@ -116,11 +116,15 @@ services:
       dockerfile: Dockerfile
     container_name: ep_homepage
     restart: always
+    env_file: .env.server
     environment:
       - DATABASE_URL=postgresql://electionpulse:ep_dev_password_2026@ep_postgres:5432/electionpulse?schema=homepage
       - DB_HOST=ep_postgres
       - DB_PORT=5432
       - NODE_ENV=production
+      # SSO: mybot의 APP_SECRET_KEY를 공유 (.env.server에 APP_SECRET_KEY 정의됨)
+      # Next.js 서버는 런타임에 process.env.SSO_SECRET 참조
+      - SSO_SECRET=${APP_SECRET_KEY:-}
     volumes:
       - ep_homepage_uploads:/app/public/uploads
     ports:

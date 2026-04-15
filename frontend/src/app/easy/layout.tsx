@@ -23,6 +23,35 @@ const MENU_ADVANCED = [
   { href: '/easy/schedules', label: '⏰ 스케줄' },
 ];
 
+function HomepageLink() {
+  const [info, setInfo] = useState<{ exists: boolean; code?: string; url?: string; public_url?: string } | null>(null);
+
+  useEffect(() => {
+    const token = localStorage.getItem('access_token');
+    if (!token) return;
+    fetch('/api/sso/homepage', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => data && setInfo(data))
+      .catch(() => {});
+  }, []);
+
+  if (!info?.exists) return null;
+
+  return (
+    <div className="mb-2 px-4 py-3 border-b border-[var(--card-border)] bg-gradient-to-br from-emerald-500/10 to-blue-500/10">
+      <div className="text-[10px] text-[var(--muted)] mb-1">📢 내 홈페이지</div>
+      <a href={info.url} target="_blank" rel="noopener noreferrer"
+        className="block text-sm font-bold text-emerald-500 hover:text-emerald-400">
+        🏠 홈페이지 편집 →
+      </a>
+      <a href={info.public_url} target="_blank" rel="noopener noreferrer"
+        className="block text-[10px] text-[var(--muted)] hover:text-blue-500 mt-1 truncate">
+        공개 URL: ai.on1.kr{info.public_url}
+      </a>
+    </div>
+  );
+}
+
 export default function EasyLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -73,6 +102,7 @@ export default function EasyLayout({ children }: { children: React.ReactNode }) 
         </div>
 
         <nav className="flex-1 py-2 overflow-y-auto">
+          <HomepageLink />
           {MENU_BASIC.map(item => {
             const active = pathname === item.href || pathname.startsWith(item.href + '/');
             return (
