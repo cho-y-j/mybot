@@ -55,12 +55,19 @@ export default function DistrictDrilldownPanel({
 
   const timeline = (selected && drilldown[selected]) || [];
 
-  function campBadge(camp?: string) {
-    if (camp === '진보') return 'bg-blue-600 text-white';
-    if (camp === '보수') return 'bg-red-600 text-white';
+  // raw 정당명 → 진영 매핑 (party_camp 누락 시 fallback)
+  function partyToCamp(p?: string): string {
+    if (!p) return '';
+    if (/(더불어민주당|민주당|새정치민주연합|열린우리당|통합민주당|민주노동당|진보당|정의당|녹색당|조국혁신당|개혁|민중)/.test(p)) return '진보';
+    if (/(국민의힘|한나라당|새누리당|미래통합당|자유한국당|새천년민주당|민주자유당|신한국당|한국당)/.test(p)) return '보수';
+    return '';
+  }
+  function campBadge(camp?: string, party?: string) {
+    const c = camp || partyToCamp(party);
+    if (c === '진보') return 'bg-blue-600 text-white';
+    if (c === '보수') return 'bg-red-600 text-white';
     return 'bg-gray-400 text-white';
   }
-
   function dominantBadge(d: string) {
     if (d === '진보') return 'bg-blue-600 text-white';
     if (d === '보수') return 'bg-red-600 text-white';
@@ -114,7 +121,7 @@ export default function DistrictDrilldownPanel({
                       <div className="text-sm font-bold">제{y.election_number}회 ({y.year})</div>
                       <div className="text-[11px] text-gray-500">후보 {y.candidates_count}명 · 격차 {y.margin}%p</div>
                     </div>
-                    <span className={`text-xs px-2 py-1 rounded font-bold ${campBadge(y.winner_camp)}`}>
+                    <span className={`text-xs px-2 py-1 rounded font-bold ${campBadge(y.winner_camp, y.winner_party)}`}>
                       {y.winner_party || y.top3[0]?.name} 당선
                     </span>
                   </div>
@@ -123,7 +130,7 @@ export default function DistrictDrilldownPanel({
                       <div key={i} className="flex items-center gap-3">
                         <div className="text-xs w-6 text-center font-bold text-gray-500">{i + 1}위</div>
                         {c.party && (
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${campBadge(c.party_camp)}`}>{c.party}</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${campBadge(c.party_camp, c.party)}`}>{c.party}</span>
                         )}
                         <div className="flex-1 truncate text-sm font-medium">{c.name}</div>
                         <div className="text-sm font-bold tabular-nums">{c.vote_rate.toFixed(1)}%</div>
@@ -135,7 +142,8 @@ export default function DistrictDrilldownPanel({
                       {y.top3.map((c, i) => {
                         const total = y.top3.reduce((s, x) => s + x.vote_rate, 0) || 1;
                         const w = (c.vote_rate / total) * 100;
-                        const color = c.party_camp === '진보' ? '#2563eb' : c.party_camp === '보수' ? '#dc2626' : '#9ca3af';
+                        const camp = c.party_camp || partyToCamp(c.party);
+                        const color = camp === '진보' ? '#2563eb' : camp === '보수' ? '#dc2626' : '#9ca3af';
                         return <div key={i} style={{ width: `${w}%`, background: color }} />;
                       })}
                     </div>

@@ -36,12 +36,19 @@ export default function DongDrilldown({
     let cancelled = false;
     setLoading(true);
     setError('');
+    // year=null(누적)이면 undefined → 서버가 최신 연도 자동 선택하도록
     api.getDongResults(electionId, undefined, year ?? undefined)
-      .then((d) => {
+      .then(async (d) => {
         if (cancelled) return;
+        // 누적 모드인데 데이터 비어있으면 각 연도 순차 시도 (최신부터)
+        if ((!d?.data?.length || !d?.available) && !year) {
+          for (const tryYear of [2022, 2018, 2014, 2010]) {
+            const d2 = await api.getDongResults(electionId, undefined, tryYear).catch(() => null);
+            if (d2?.data?.length) { d = d2; break; }
+          }
+        }
         setData(d);
         if (d?.data?.length) {
-          // initialSigungu가 있고 데이터에 존재하면 그걸 선택, 아니면 첫 번째
           const match = initialSigungu && d.data.find((s: any) => s.sigungu === initialSigungu);
           setSelectedSigungu(match ? initialSigungu : d.data[0].sigungu);
         }

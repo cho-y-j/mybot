@@ -94,7 +94,9 @@ export default function SuperintendentView({ data, electionId, onRefresh }: { da
 
   function handleSelectDistrict(d: string) {
     setSelectedDistrict(d);
-    setTab('dong');
+    // 시·군·구 드릴다운 탭으로 (진영 색상 + 회차별 결과 보임).
+    // 읍·면·동 레벨(dong)은 원시 데이터 부족 시 대부분 빈 화면이라 UX 나쁨.
+    setTab('drilldown');
   }
 
   return (
