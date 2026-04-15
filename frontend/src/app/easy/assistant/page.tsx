@@ -125,11 +125,10 @@ export default function AssistantPage() {
 
   return (
     <div className="flex flex-col lg:flex-row gap-4 h-[calc(100vh-9rem)]">
-      {/* 세션 사이드바 */}
-      <aside className={`
-        ${showSessions ? 'fixed inset-0 z-30 bg-black/40 lg:static lg:bg-transparent' : 'hidden lg:block'}
-        lg:w-64 lg:flex-shrink-0
-      `} onClick={(e) => e.target === e.currentTarget && setShowSessions(false)}>
+      {/* 세션 사이드바 — 기본 접힘, 토글로 열고 닫기 */}
+      {showSessions && (
+      <aside className={`fixed inset-0 z-30 bg-black/40 lg:static lg:bg-transparent lg:w-64 lg:flex-shrink-0`}
+        onClick={(e) => e.target === e.currentTarget && setShowSessions(false)}>
         <div className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl flex flex-col h-full max-h-full lg:max-h-[calc(100vh-9rem)] overflow-hidden
           fixed lg:relative top-0 right-0 bottom-0 w-72 lg:w-full">
           <div className="p-3 border-b border-[var(--card-border)] flex items-center justify-between">
@@ -137,7 +136,7 @@ export default function AssistantPage() {
             <div className="flex gap-1">
               <button onClick={newSession} title="새 대화"
                 className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700">+ 새 대화</button>
-              <button onClick={() => setShowSessions(false)} className="lg:hidden text-[var(--muted)] hover:text-white px-2">✕</button>
+              <button onClick={() => setShowSessions(false)} className="text-[var(--muted)] hover:text-white px-2">✕</button>
             </div>
           </div>
           <div className="flex-1 overflow-y-auto">
@@ -164,6 +163,7 @@ export default function AssistantPage() {
           </div>
         </div>
       </aside>
+      )}
 
       {/* 메인 챗 영역 */}
       <div className="flex-1 flex flex-col min-w-0">
@@ -178,8 +178,8 @@ export default function AssistantPage() {
               + 새 대화
             </button>
             <button onClick={() => setShowSessions(!showSessions)}
-              className="lg:hidden text-xs px-3 py-1.5 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg hover:border-blue-500">
-              📋 목록 ({sessions.length})
+              className="text-xs px-3 py-1.5 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg hover:border-blue-500">
+              {showSessions ? '◀ 접기' : `📋 대화 목록 (${sessions.length})`}
             </button>
           </div>
         </div>
