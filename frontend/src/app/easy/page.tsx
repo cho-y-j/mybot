@@ -75,25 +75,25 @@ export default function EasyHome() {
   return (
     <div className="space-y-6">
       {/* 헤더 */}
-      <div className="bg-gradient-to-br from-blue-600 to-blue-800 text-white rounded-2xl p-6">
+      <div className="bg-gradient-to-br from-blue-600 to-blue-800 text-white rounded-2xl p-4 lg:p-6">
         <div className="flex items-center justify-between flex-wrap gap-2">
-          <div>
-            <h1 className="text-2xl font-bold">안녕하세요, {user?.name || '캠프'}님 👋</h1>
-            <p className="text-sm text-blue-100 mt-1">{today}</p>
+          <div className="min-w-0">
+            <h1 className="text-lg lg:text-2xl font-bold truncate">안녕하세요, {user?.name || '캠프'}님 👋</h1>
+            <p className="text-xs lg:text-sm text-blue-100 mt-1">{today}</p>
           </div>
           {election?.election_date && (
             <div className="text-right">
-              <div className="text-sm text-blue-100">선거까지</div>
-              <div className="text-3xl font-black">
+              <div className="text-[10px] lg:text-sm text-blue-100">선거까지</div>
+              <div className="text-2xl lg:text-3xl font-black">
                 D-{Math.max(0, Math.ceil((new Date(election.election_date).getTime() - Date.now()) / 86400000))}
               </div>
             </div>
           )}
         </div>
         {election && (
-          <div className="mt-3 text-sm text-blue-100">
+          <div className="mt-3 text-xs lg:text-sm text-blue-100">
             📍 {election.region_sido} {election.region_sigungu || ''} · {election.name}
-            {ourCandidate && ` · 우리 후보: ${ourCandidate.name}`}
+            {ourCandidate && <span className="block lg:inline lg:ml-1">우리 후보: {ourCandidate.name}</span>}
           </div>
         )}
       </div>

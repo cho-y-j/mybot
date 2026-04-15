@@ -56,7 +56,7 @@ export default function FloatingAssistant() {
   }
 
   return (
-    <div className="fixed bottom-6 right-6 w-96 max-w-[calc(100vw-2rem)] h-[600px] max-h-[calc(100vh-3rem)] bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-2xl flex flex-col z-40">
+    <div className="fixed bottom-2 right-2 lg:bottom-6 lg:right-6 w-[calc(100vw-1rem)] lg:w-96 max-w-[calc(100vw-1rem)] h-[80vh] lg:h-[600px] max-h-[calc(100vh-1rem)] bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-2xl flex flex-col z-40">
       {/* 헤더 */}
       <div className="flex items-center justify-between p-4 border-b border-[var(--card-border)]">
         <div>

@@ -27,15 +27,18 @@ export default function EasyLayout({ children }: { children: React.ReactNode }) 
   const pathname = usePathname();
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [user, setUser] = useState<any>(null);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
     const u = localStorage.getItem('user');
     if (u) {
       try { setUser(JSON.parse(u)); } catch {}
     }
-    // 쉬운 모드 기본 저장
     localStorage.setItem('preferred_mode', 'easy');
   }, []);
+
+  // 페이지 이동 시 모바일 사이드바 닫기
+  useEffect(() => { setMobileOpen(false); }, [pathname]);
 
   const switchToExpert = () => {
     localStorage.setItem('preferred_mode', 'expert');
@@ -49,11 +52,23 @@ export default function EasyLayout({ children }: { children: React.ReactNode }) 
 
   return (
     <div className="min-h-screen bg-[var(--background)] flex">
-      {/* 좌측 사이드바 */}
-      <aside className="w-56 bg-[var(--card-bg)] border-r border-[var(--card-border)] flex flex-col">
-        <div className="p-4 border-b border-[var(--card-border)]">
-          <div className="font-bold text-lg">🗳️ 캠프 AI</div>
-          <div className="text-xs text-[var(--muted)] mt-0.5">{user?.name || '로그인됨'}</div>
+      {/* 모바일 오버레이 */}
+      {mobileOpen && (
+        <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setMobileOpen(false)} />
+      )}
+
+      {/* 좌측 사이드바 — 데스크톱 항상 표시, 모바일 토글 */}
+      <aside className={`
+        fixed lg:static inset-y-0 left-0 z-50 w-56 bg-[var(--card-bg)] border-r border-[var(--card-border)]
+        flex flex-col transform transition-transform lg:transform-none
+        ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+      `}>
+        <div className="p-4 border-b border-[var(--card-border)] flex items-center justify-between">
+          <div>
+            <div className="font-bold text-lg">🗳️ 캠프 AI</div>
+            <div className="text-xs text-[var(--muted)] mt-0.5">{user?.name || '로그인됨'}</div>
+          </div>
+          <button onClick={() => setMobileOpen(false)} className="lg:hidden text-[var(--muted)] hover:text-white text-lg">✕</button>
         </div>
 
         <nav className="flex-1 py-2 overflow-y-auto">
@@ -102,19 +117,27 @@ export default function EasyLayout({ children }: { children: React.ReactNode }) 
       </aside>
 
       {/* 메인 콘텐츠 */}
-      <main className="flex-1 overflow-auto">
-        {/* 상단 모드 토글 헤더 */}
-        <div className="h-12 border-b border-[var(--card-border)] bg-[var(--card-bg)] flex items-center justify-between px-6 sticky top-0 z-10">
-          <div className="text-sm font-semibold text-blue-500 flex items-center gap-2">
-            <span>😊 쉬운 모드</span>
-            <span className="text-[10px] text-[var(--muted)]">비전문가용 간편 화면</span>
+      <main className="flex-1 overflow-auto min-w-0">
+        {/* 상단 모드 토글 헤더 — 모바일 햄버거 포함 */}
+        <div className="h-12 border-b border-[var(--card-border)] bg-[var(--card-bg)] flex items-center justify-between px-3 lg:px-6 sticky top-0 z-30">
+          <div className="flex items-center gap-3 min-w-0">
+            <button onClick={() => setMobileOpen(true)} className="lg:hidden p-2 -ml-2 rounded hover:bg-[var(--muted-bg)]">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5M3.75 17.25h16.5" />
+              </svg>
+            </button>
+            <div className="text-sm font-semibold text-blue-500 flex items-center gap-2 truncate">
+              <span>😊 쉬운 모드</span>
+              <span className="text-[10px] text-[var(--muted)] hidden sm:inline">비전문가용 간편 화면</span>
+            </div>
           </div>
           <button onClick={switchToExpert}
-            className="text-xs px-3 py-1.5 bg-gray-700/30 hover:bg-gray-700/50 text-[var(--foreground)] rounded-lg transition font-medium">
-            🔬 전문가 모드로 전환
+            className="text-xs px-2 lg:px-3 py-1.5 bg-gray-700/30 hover:bg-gray-700/50 text-[var(--foreground)] rounded-lg transition font-medium whitespace-nowrap">
+            🔬 <span className="hidden sm:inline">전문가 모드로 전환</span>
+            <span className="sm:hidden">전문가</span>
           </button>
         </div>
-        <div className="max-w-5xl mx-auto p-6">
+        <div className="max-w-5xl mx-auto p-3 lg:p-6">
           {children}
         </div>
       </main>
