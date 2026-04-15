@@ -21,6 +21,7 @@ async def bootstrap_campaign(
     db: AsyncSession,
     tenant_id: str,
     election_id: str,
+    plan: str = "full",
 ) -> dict:
     """
     캠프 자동 부트스트랩.
@@ -123,9 +124,15 @@ async def bootstrap_campaign(
         result["embeddings"] = {"status": "failed"}
 
     # 5. 홈페이지(myhome) 사용자 자동 프로비저닝
+    # - plan=analysis_only면 스킵
     # - 같은 DB의 homepage 스키마에 User row 생성
     # - code는 tenant_id 앞 8자리 (사용자가 나중에 설정 페이지에서 변경 가능)
     # - 로그인은 mybot SSO만 허용 (password_hash는 placeholder)
+    if plan == "analysis_only":
+        result["homepage"] = {"status": "skipped", "reason": "plan=analysis_only"}
+        logger.info("bootstrap_campaign_complete", election_id=election_id, plan=plan,
+                    error_count=len(result["errors"]))
+        return result
     try:
         from sqlalchemy import text as sql_text
         # tenant name/email 가져오기

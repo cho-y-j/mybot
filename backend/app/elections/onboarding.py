@@ -38,6 +38,9 @@ class SmartSetupRequest(BaseModel):
     # 경쟁 후보 (선택 — 나중에 추가 가능)
     competitors: list[dict] = []  # [{"name": "윤건영", "party": "보수"}, ...]
 
+    # 플랜 — full(분석+홈), analysis_only(분석만), homepage_only(홈만)
+    plan: str = "full"
+
 
 def _get_default_schedule_templates() -> list[dict]:
     """
@@ -330,7 +333,7 @@ async def apply_setup(
                 )
                 # 2단계: 분석/리포트 자동 부트스트랩
                 async with async_session_factory() as bg_db2:
-                    boot = await bootstrap_campaign(bg_db2, tenant_id_str, election_id_str)
+                    boot = await bootstrap_campaign(bg_db2, tenant_id_str, election_id_str, plan=req.plan)
                     await bg_db2.commit()
                     log.info("onboarding_bootstrap_done", election_id=election_id_str, result=boot)
 

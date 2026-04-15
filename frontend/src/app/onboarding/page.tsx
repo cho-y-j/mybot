@@ -25,6 +25,7 @@ export default function OnboardingPage() {
     election_date: '',
     our_name: '',
     our_party: '',
+    plan: 'full' as 'full' | 'analysis_only' | 'homepage_only',
   });
   const [competitors, setCompetitors] = useState<{ name: string; party: string }[]>([]);
 
@@ -336,6 +337,32 @@ export default function OnboardingPage() {
                 <h3 className="font-semibold mb-2">지역 언론</h3>
                 {preview.local_media.map((m: string, i: number) => (
                   <div key={i} className="text-sm py-1 text-gray-600">📰 {m}</div>
+                ))}
+              </div>
+            </div>
+
+            {/* 플랜 선택 */}
+            <div className="card">
+              <h3 className="font-semibold mb-3">📦 플랜 선택</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {[
+                  { value: 'full', label: '🎯 분석 + 홈페이지', desc: 'AI 분석 + 후보 홈페이지 자동 생성 (ai.on1.kr/{내코드})', recommended: true },
+                  { value: 'homepage_only', label: '🏠 홈페이지만', desc: '홍보용 후보 홈페이지만 필요한 경우' },
+                  { value: 'analysis_only', label: '📊 분석만', desc: '이미 자체 사이트가 있어 분석만 필요한 경우' },
+                ].map(p => (
+                  <button key={p.value} type="button"
+                    onClick={() => setForm(f => ({ ...f, plan: p.value as any }))}
+                    className={`text-left p-3 rounded-lg border-2 transition ${
+                      form.plan === p.value
+                        ? 'border-primary-500 bg-primary-50'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-semibold text-sm">{p.label}</span>
+                      {p.recommended && <span className="text-[10px] bg-emerald-500 text-white px-1.5 py-0.5 rounded">추천</span>}
+                    </div>
+                    <p className="text-xs text-gray-500">{p.desc}</p>
+                  </button>
                 ))}
               </div>
             </div>

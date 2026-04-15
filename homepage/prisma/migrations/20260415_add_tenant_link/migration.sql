@@ -4,5 +4,6 @@
 
 ALTER TABLE "users" ADD COLUMN "tenant_id" UUID;
 ALTER TABLE "users" ADD COLUMN "election_id" UUID;
+ALTER TABLE "users" ADD COLUMN "youtube_channel_id" VARCHAR(30);
 
 CREATE UNIQUE INDEX "users_tenant_id_key" ON "users"("tenant_id");

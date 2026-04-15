@@ -479,6 +479,9 @@ async def generate_content(
         except Exception as emb_err:
             import structlog
             structlog.get_logger().warning("content_embed_failed", error=str(emb_err)[:200])
+
+        # NOTE: 생성 콘텐츠를 homepage에 자동 발행하지 않음 (사용자 요구).
+        # AI 결과는 한 번 더 검토 후 수동 게시해야 함. 임베딩만 저장.
     except Exception as save_err:
         import structlog
         structlog.get_logger().warning("content_save_failed", error=str(save_err)[:200])
