@@ -72,7 +72,9 @@ async def issue_homepage_sso(
         "tenant_id": str(tenant_id),
         "code": code,
         "type": "homepage_sso",
-        "exp": now + timedelta(seconds=60),
+        # 5분 — 페이지 로드 후 사용자가 늦게 클릭해도 여유.
+        # 프론트는 "클릭 순간 발급" 방식이라 실질 만료 영향 없음 (이중 안전장치).
+        "exp": now + timedelta(minutes=5),
         "iat": now,
     }, settings.APP_SECRET_KEY, algorithm="HS256")
 

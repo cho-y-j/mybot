@@ -32,10 +32,12 @@ export async function GET(req: NextRequest) {
     const result = await jwtVerify(token, secret, { algorithms: ["HS256"] });
     payload = result.payload;
   } catch (e: any) {
-    return NextResponse.json(
-      { success: false, error: "토큰 검증 실패: " + (e?.message || "invalid") },
-      { status: 401 }
-    );
+    const msg = String(e?.message || "invalid");
+    const human =
+      msg.includes("exp") ? "토큰이 만료되었습니다 (5분 초과) — 다시 '홈페이지 편집' 버튼을 눌러주세요"
+      : msg.includes("signature") ? "토큰 서명 불일치 — 관리자에게 문의하세요"
+      : `토큰 검증 실패: ${msg}`;
+    return NextResponse.json({ success: false, error: human }, { status: 401 });
   }
 
   if (payload.type !== "homepage_sso") {
