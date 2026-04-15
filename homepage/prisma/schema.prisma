@@ -1,0 +1,401 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// 1. 사용자/인증
+// ============================================================
+
+model SuperAdmin {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique @db.VarChar(50)
+  passwordHash String   @map("password_hash") @db.VarChar(255)
+  name         String?  @db.VarChar(100)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("super_admins")
+}
+
+model User {
+  id              Int       @id @default(autoincrement())
+  code            String    @unique @db.VarChar(30)
+  name            String    @db.VarChar(100)
+  email           String?   @db.VarChar(255)
+  phone           String?   @db.VarChar(20)
+  passwordHash    String    @map("password_hash") @db.VarChar(255)
+
+  // 등급 관리
+  plan            String    @default("basic") @db.VarChar(20)
+  planStartedAt   DateTime? @map("plan_started_at")
+  planExpiresAt   DateTime? @map("plan_expires_at")
+
+  // 템플릿 설정
+  templateType    String    @default("election") @map("template_type") @db.VarChar(30)
+  templateTheme   String    @default("default") @map("template_theme") @db.VarChar(30)
+
+  // 상태
+  isActive        Boolean   @default(true) @map("is_active")
+  memo            String?   @db.Text
+
+  // GA4 연동
+  gaMeasurementId String?   @map("ga_measurement_id") @db.VarChar(30)
+
+  // 커스텀 도메인
+  customDomain    String?   @map("custom_domain") @db.VarChar(255)
+
+  // mybot(분석 SaaS) 연동 — SSO + RAG 데이터 공유
+  // NULL이면 homepage 단독 사용자, 값이 있으면 분석+홈페이지 통합 고객
+  tenantId        String?   @unique @map("tenant_id") @db.Uuid
+  electionId      String?   @map("election_id") @db.Uuid
+
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  // Relations
+  siteSettings     SiteSetting?
+  profiles         Profile[]
+  pledges          Pledge[]
+  gallery          Gallery[]
+  schedules        Schedule[]
+  contacts         Contact[]
+  news             News[]
+  videos           Video[]
+  visits           Visit[]
+  visitDailyStats  VisitDailyStat[]
+  events           Event[]
+  eventDailyStats  EventDailyStat[]
+  externalChannels ExternalChannel[]
+  reports          Report[]
+  files            File[]
+  blocks           Block[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @db.VarChar(64)
+  userId    Int      @map("user_id")
+  userType  String   @map("user_type") @db.VarChar(20)
+  ipAddress String?  @map("ip_address") @db.VarChar(45)
+  userAgent String?  @map("user_agent") @db.Text
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+// ============================================================
+// 2. 콘텐츠 (고객 사이트 데이터)
+// ============================================================
+
+model SiteSetting {
+  id             Int      @id @default(autoincrement())
+  userId         Int      @unique @map("user_id")
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // OG 태그
+  ogTitle        String?  @map("og_title") @db.VarChar(200)
+  ogDescription  String?  @map("og_description") @db.Text
+  ogImageUrl     String?  @map("og_image_url") @db.Text
+
+  // 히어로 섹션
+  heroImageUrl   String?  @map("hero_image_url") @db.Text
+  profileImageUrl String? @map("profile_image_url") @db.Text
+  heroSlogan     String?  @map("hero_slogan") @db.VarChar(200)
+  heroSubSlogan  String?  @map("hero_sub_slogan") @db.VarChar(300)
+
+  // 기본 정보
+  partyName      String?  @map("party_name") @db.VarChar(50)
+  positionTitle  String?  @map("position_title") @db.VarChar(100)
+  subtitle       String?  @db.VarChar(200)
+  introText      String?  @map("intro_text") @db.Text
+
+  // 색상 테마
+  primaryColor   String   @default("#C9151E") @map("primary_color") @db.VarChar(7)
+  accentColor    String   @default("#1A56DB") @map("accent_color") @db.VarChar(7)
+
+  // D-Day (선거용)
+  electionDate   DateTime? @map("election_date") @db.Date
+  electionName   String?   @map("election_name") @db.VarChar(100)
+
+  // 카카오 공유 설정
+  kakaoAppKey    String?  @map("kakao_app_key") @db.VarChar(100)
+
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("site_settings")
+}
+
+model Profile {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String   @db.VarChar(20) // education, career
+  title     String   @db.VarChar(200)
+  isCurrent Boolean  @default(false) @map("is_current")
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("profiles")
+}
+
+model Pledge {
+  id          Int      @id @default(autoincrement())
+  userId      Int      @map("user_id")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  icon        String   @default("fas fa-bullhorn") @db.VarChar(50)
+  title       String   @db.VarChar(200)
+  description String?  @db.Text
+  details     Json     @default("[]")
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("pledges")
+}
+
+model Gallery {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  url       String   @db.Text
+  altText   String?  @map("alt_text") @db.VarChar(200)
+  category  String   @default("activity") @db.VarChar(30)
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("gallery")
+}
+
+model Schedule {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String   @db.VarChar(200)
+  date      DateTime @db.Date
+  time      String?  @db.VarChar(10)
+  location  String?  @db.VarChar(200)
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("schedules")
+}
+
+model Contact {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String   @db.VarChar(20) // phone, email, instagram, facebook, youtube, blog, threads
+  label     String?  @db.VarChar(50)
+  value     String   @db.VarChar(200)
+  url       String?  @db.Text
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("contacts")
+}
+
+model News {
+  id            Int       @id @default(autoincrement())
+  userId        Int       @map("user_id")
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title         String    @db.VarChar(300)
+  source        String?   @db.VarChar(100)
+  url           String?   @db.Text
+  imageUrl      String?   @map("image_url") @db.Text
+  publishedDate DateTime? @map("published_date") @db.Date
+  sortOrder     Int       @default(0) @map("sort_order")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("news")
+}
+
+model Video {
+  id          Int      @id @default(autoincrement())
+  userId      Int      @map("user_id")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  videoId     String   @map("video_id") @db.VarChar(20)
+  title       String?  @db.VarChar(300)
+  description String?  @db.Text
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("videos")
+}
+
+model Block {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String   @db.VarChar(30) // hero, intro, career, goals, gallery, schedule, news, videos, contacts, links
+  title     String?  @db.VarChar(200) // custom section title override
+  content   Json?    // block-type-specific content
+  visible   Boolean  @default(true)
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@map("blocks")
+}
+
+// ============================================================
+// 3. 분석/통계
+// ============================================================
+
+model Visit {
+  id         Int      @id @default(autoincrement())
+  userId     Int      @map("user_id")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  visitorIp  String?  @map("visitor_ip") @db.VarChar(45)
+  userAgent  String?  @map("user_agent") @db.Text
+  referrer   String?  @db.Text
+  pagePath   String?  @map("page_path") @db.VarChar(200)
+  country    String?  @db.VarChar(5)
+  deviceType String?  @map("device_type") @db.VarChar(20)
+  visitedAt  DateTime @default(now()) @map("visited_at")
+
+  @@index([userId, visitedAt])
+  @@map("visits")
+}
+
+model VisitDailyStat {
+  id             Int      @id @default(autoincrement())
+  userId         Int      @map("user_id")
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date           DateTime @db.Date
+  totalVisits    Int      @default(0) @map("total_visits")
+  uniqueVisitors Int      @default(0) @map("unique_visitors")
+  mobileVisits   Int      @default(0) @map("mobile_visits")
+  desktopVisits  Int      @default(0) @map("desktop_visits")
+
+  @@unique([userId, date])
+  @@map("visit_daily_stats")
+}
+
+model Event {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  eventType String   @map("event_type") @db.VarChar(50)
+  eventData Json?    @map("event_data")
+  visitorIp String?  @map("visitor_ip") @db.VarChar(45)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@map("events")
+}
+
+model EventDailyStat {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date      DateTime @db.Date
+  eventType String   @map("event_type") @db.VarChar(50)
+  count     Int      @default(0)
+
+  @@unique([userId, date, eventType])
+  @@map("event_daily_stats")
+}
+
+model ExternalChannel {
+  id           Int       @id @default(autoincrement())
+  userId       Int       @map("user_id")
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform     String    @db.VarChar(20) // naver_blog, youtube, instagram
+  channelId    String?   @map("channel_id") @db.VarChar(200)
+  channelUrl   String?   @map("channel_url") @db.Text
+  isActive     Boolean   @default(true) @map("is_active")
+  lastSyncedAt DateTime? @map("last_synced_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  snapshots ChannelSnapshot[]
+
+  @@index([userId])
+  @@map("external_channels")
+}
+
+model ChannelSnapshot {
+  id          Int      @id @default(autoincrement())
+  channelId   Int      @map("channel_id")
+  channel     ExternalChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  date        DateTime @db.Date
+  subscribers Int?
+  totalViews  Int?     @map("total_views")
+  totalPosts  Int?     @map("total_posts")
+  extraData   Json?    @map("extra_data")
+
+  @@unique([channelId, date])
+  @@map("channel_snapshots")
+}
+
+model Report {
+  id          Int      @id @default(autoincrement())
+  userId      Int      @map("user_id")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reportType  String   @default("weekly") @map("report_type") @db.VarChar(20)
+  periodStart DateTime @map("period_start") @db.Date
+  periodEnd   DateTime @map("period_end") @db.Date
+  contentHtml String?  @map("content_html") @db.Text
+  pdfPath     String?  @map("pdf_path") @db.Text
+  keyMetrics  Json?    @map("key_metrics")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("reports")
+}
+
+// ============================================================
+// 4. 시스템
+// ============================================================
+
+model File {
+  id           Int      @id @default(autoincrement())
+  userId       Int      @map("user_id")
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  originalName String?  @map("original_name") @db.VarChar(300)
+  storedPath   String   @map("stored_path") @db.Text
+  fileType     String?  @map("file_type") @db.VarChar(20)
+  mimeType     String?  @map("mime_type") @db.VarChar(100)
+  fileSize     Int?     @map("file_size")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("files")
+}
+
+model ActivityLog {
+  id         Int      @id @default(autoincrement())
+  userId     Int?     @map("user_id")
+  userType   String?  @map("user_type") @db.VarChar(20)
+  action     String   @db.VarChar(50)
+  targetType String?  @map("target_type") @db.VarChar(50)
+  targetId   Int?     @map("target_id")
+  details    Json?
+  ipAddress  String?  @map("ip_address") @db.VarChar(45)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("activity_logs")
+}
+
+model SystemSetting {
+  key       String   @id @db.VarChar(100)
+  value     Json
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("system_settings")
+}

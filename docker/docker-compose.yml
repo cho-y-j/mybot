@@ -107,6 +107,30 @@ services:
     networks:
       - ep_network
 
+  # ──────────────── Homepage (Next.js + Prisma) ────────
+  # 후보자 전용 홈페이지 빌더 — 선거 AI와 SSO 연동, DB 공유(schema=homepage)
+  homepage:
+    image: ghcr.io/cho-y-j/mybot-homepage:latest
+    build:
+      context: ../homepage
+      dockerfile: Dockerfile
+    container_name: ep_homepage
+    restart: always
+    environment:
+      - DATABASE_URL=postgresql://electionpulse:ep_dev_password_2026@ep_postgres:5432/electionpulse?schema=homepage
+      - DB_HOST=ep_postgres
+      - DB_PORT=5432
+      - NODE_ENV=production
+    volumes:
+      - ep_homepage_uploads:/app/public/uploads
+    ports:
+      - "127.0.0.1:3200:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - ep_network
+
   # ──────────────── Frontend (Next.js) ──────────────
   frontend:
     image: ghcr.io/cho-y-j/mybot-frontend:latest
@@ -128,6 +152,7 @@ volumes:
   ep_postgres_data:
   ep_redis_data:
   ep_reports_data:
+  ep_homepage_uploads:
 
 networks:
   ep_network:
