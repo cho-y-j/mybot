@@ -271,13 +271,13 @@ async def auto_fill_homepage(
         for i, ev in enumerate(election_schedule_items(election_date, election_type)):
             await db.execute(text("""
                 INSERT INTO homepage.schedules
-                    (user_id, title, event_date, end_date, location, description, sort_order, created_at)
-                VALUES (:uid, :title, :ed, :endd, :loc, :desc, :so, NOW())
+                    (user_id, title, date, time, location, sort_order, created_at)
+                VALUES (:uid, :title, :dt, :tm, :loc, :so, NOW())
             """), {
                 "uid": homepage_user_id, "title": ev["title"],
-                "ed": ev["event_date"], "endd": ev.get("end_date"),
-                "loc": ev.get("location"), "desc": ev.get("description"),
-                "so": i,
+                "dt": ev["event_date"],
+                "tm": (ev.get("description") or "")[:10] or None,
+                "loc": ev.get("location"), "so": i,
             })
             result["schedules"] += 1
 
@@ -329,7 +329,7 @@ async def _generate_intro(
 - 존댓말 서술체 (~입니다)
 - 공직선거법 준수 — 비방/허위 금지
 """
-        res = await call_claude_text(prompt, timeout=60, tier="standard",
+        res = await call_claude_text(prompt, timeout=60, model_tier="standard",
                                      context="homepage_intro", tenant_id=tenant_id, db=db)
         if res and len(res.strip()) > 50:
             return res.strip()[:1500]

@@ -135,9 +135,10 @@ async def bootstrap_campaign(
         return result
     try:
         from sqlalchemy import text as sql_text
-        # tenant name/email 가져오기
+        # tenant 기본 정보 + 오너 이메일(users에서 owner role 1명)
         t_row = (await db.execute(sql_text(
-            "SELECT name, owner_email FROM tenants WHERE id = cast(:tid as uuid)"
+            "SELECT t.name, (SELECT u.email FROM users u WHERE u.tenant_id = t.id AND u.role='owner' LIMIT 1) "
+            "FROM tenants t WHERE t.id = cast(:tid as uuid)"
         ), {"tid": tenant_id})).first()
         tenant_name = t_row[0] if t_row else "캠프"
         tenant_email = t_row[1] if t_row else None

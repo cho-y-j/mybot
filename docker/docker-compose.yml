@@ -128,7 +128,7 @@ services:
     volumes:
       - ep_homepage_uploads:/app/public/uploads
     ports:
-      - "127.0.0.1:3200:3000"
+      - "127.0.0.1:3201:3000"
     depends_on:
       postgres:
         condition: service_healthy
