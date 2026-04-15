@@ -149,10 +149,20 @@ async def _run_full_ai_pipeline(tenant_id: str, election_id: str, limit_per_type
 
     async with async_session_factory() as adb:
         try:
-            result = await analyze_all_media(
-                adb, tenant_id, election_id, limit_per_type=limit_per_type,
-            )
-            await adb.commit()
+            # 미분석 데이터가 남지 않을 때까지 루프 (최대 10회 = 1000건)
+            # LIMIT 100에 밀려 영영 분석되지 않던 문제 해결
+            result = {"iterations": 0, "total_analyzed": 0}
+            for _ in range(10):
+                iter_result = await analyze_all_media(
+                    adb, tenant_id, election_id, limit_per_type=limit_per_type,
+                )
+                await adb.commit()
+                this_analyzed = iter_result.get("total_analyzed", 0)
+                result["iterations"] += 1
+                result["total_analyzed"] += this_analyzed
+                result.update({k: v for k, v in iter_result.items() if k != "total_analyzed"})
+                if this_analyzed == 0:
+                    break  # 미분석 없음 → 종료
         except Exception as e:
             try:
                 await adb.rollback()
