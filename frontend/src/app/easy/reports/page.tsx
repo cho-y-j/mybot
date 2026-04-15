@@ -221,30 +221,49 @@ function ReportsInner() {
                       {selected.ai_generated && <span className="text-purple-500 ml-2">AI 생성</span>}
                     </div>
                   </div>
-                  {pdfUrl && (
-                    <div className="flex gap-2">
-                      <button onClick={() => showPdf ? setShowPdf(false) : loadPdfPreview()}
-                        disabled={loadingPdf}
-                        className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700 disabled:opacity-50">
-                        {loadingPdf ? '로딩...' : showPdf ? '📄 텍스트 보기' : '📄 PDF 미리보기'}
-                      </button>
-                      <a href={pdfUrl} download
-                        onClick={async (e) => {
-                          e.preventDefault();
-                          const res = await fetch(pdfUrl, { headers: { Authorization: `Bearer ${(sessionStorage.getItem('access_token') || localStorage.getItem('access_token'))}` } });
-                          if (res.ok) {
-                            const blob = await res.blob();
-                            const a = document.createElement('a');
-                            a.href = URL.createObjectURL(blob);
-                            a.download = `${selected.title || 'report'}.pdf`;
-                            a.click();
-                          }
-                        }}
-                        className="px-3 py-1.5 bg-violet-600 text-white rounded-lg text-xs hover:bg-violet-700">
-                        ⬇ 다운로드
-                      </a>
-                    </div>
-                  )}
+                  <div className="flex gap-2 flex-wrap">
+                    {pdfUrl && (
+                      <>
+                        <button onClick={() => showPdf ? setShowPdf(false) : loadPdfPreview()}
+                          disabled={loadingPdf}
+                          className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700 disabled:opacity-50">
+                          {loadingPdf ? '로딩...' : showPdf ? '📄 텍스트 보기' : '📄 PDF 미리보기'}
+                        </button>
+                        <a href={pdfUrl} download
+                          onClick={async (e) => {
+                            e.preventDefault();
+                            const res = await fetch(pdfUrl, { headers: { Authorization: `Bearer ${(sessionStorage.getItem('access_token') || localStorage.getItem('access_token'))}` } });
+                            if (res.ok) {
+                              const blob = await res.blob();
+                              const a = document.createElement('a');
+                              a.href = URL.createObjectURL(blob);
+                              a.download = `${selected.title || 'report'}.pdf`;
+                              a.click();
+                            }
+                          }}
+                          className="px-3 py-1.5 bg-violet-600 text-white rounded-lg text-xs hover:bg-violet-700">
+                          ⬇ 다운로드
+                        </a>
+                      </>
+                    )}
+                    <button onClick={async () => {
+                      if (!confirm(`이 보고서를 삭제하시겠습니까?\n\n"${selected.title}"\n\n복구할 수 없습니다.`)) return;
+                      const t = (sessionStorage.getItem('access_token') || localStorage.getItem('access_token'));
+                      const r = await fetch(`/api/reports/${election?.id}/${selected.id}`, {
+                        method: 'DELETE',
+                        headers: { Authorization: `Bearer ${t}` },
+                      });
+                      if (r.ok) {
+                        setReports(reports.filter((x: any) => x.id !== selected.id));
+                        setSelected(null);
+                      } else {
+                        alert('삭제 실패');
+                      }
+                    }}
+                      className="px-3 py-1.5 bg-red-500/10 border border-red-500/30 text-red-500 rounded-lg text-xs hover:bg-red-500/20">
+                      🗑 삭제
+                    </button>
+                  </div>
                 </div>
 
                 {/* PDF 뷰어 or 텍스트 */}
