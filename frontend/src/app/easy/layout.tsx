@@ -5,21 +5,31 @@ import { useState, useEffect } from 'react';
 import { api } from '@/services/api';
 import FloatingAssistant from '@/components/easy/FloatingAssistant';
 
-const MENU_BASIC = [
+// 매일 여러 번 보는 핵심
+const MENU_DAILY = [
   { href: '/easy', label: '🏠 홈', icon: '🏠' },
-  { href: '/easy/assistant', label: '💬 AI 비서', icon: '💬' },
-  { href: '/easy/content', label: '📝 콘텐츠 만들기', icon: '📝' },
   { href: '/easy/reports', label: '📊 보고서', icon: '📊' },
+  { href: '/easy/assistant', label: '💬 AI 비서', icon: '💬' },
 ];
 
-const MENU_ADVANCED = [
-  { href: '/easy/news', label: '📰 뉴스' },
-  { href: '/easy/candidates', label: '👥 후보자' },
-  { href: '/easy/surveys', label: '📋 여론조사' },
-  { href: '/easy/history', label: '🏛️ 과거 선거' },
-  { href: '/easy/trends', label: '🔍 트렌드' },
-  { href: '/easy/youtube', label: '📺 유튜브' },
+// 생성 (콘텐츠 제작)
+const MENU_CREATE = [
+  { href: '/easy/content', label: '📝 콘텐츠 만들기' },
   { href: '/easy/debate', label: '🎤 토론 대본' },
+];
+
+// 분석 (중요도 순 — 내 위치 → 여론 → 원인)
+const MENU_ANALYSIS = [
+  { href: '/easy/candidates', label: '👥 후보 비교' },
+  { href: '/easy/surveys', label: '📋 여론조사' },
+  { href: '/easy/news', label: '📰 뉴스 분석' },
+  { href: '/easy/youtube', label: '📺 미디어 분석' },
+  { href: '/easy/trends', label: '🔍 키워드 트렌드' },
+];
+
+// 참고 (가끔)
+const MENU_REFERENCE = [
+  { href: '/easy/history', label: '🏛️ 과거 선거' },
   { href: '/easy/schedules', label: '⏰ 스케줄' },
 ];
 
@@ -103,7 +113,9 @@ export default function EasyLayout({ children }: { children: React.ReactNode }) 
 
         <nav className="flex-1 py-2 overflow-y-auto">
           <HomepageLink />
-          {MENU_BASIC.map(item => {
+
+          {/* 일상 업무 */}
+          {MENU_DAILY.map(item => {
             const active = pathname === item.href || pathname.startsWith(item.href + '/');
             return (
               <Link key={item.href} href={item.href}
@@ -115,24 +127,57 @@ export default function EasyLayout({ children }: { children: React.ReactNode }) 
             );
           })}
 
-          <div className="mt-4 px-4 py-1 text-xs text-[var(--muted)] font-semibold">
-            전문가 메뉴
+          {/* 생성 */}
+          <div className="mt-3 px-4 py-1 text-[10px] text-[var(--muted)] font-semibold uppercase tracking-wider">✍️ 생성</div>
+          {MENU_CREATE.map(item => {
+            const active = pathname === item.href || pathname.startsWith(item.href + '/');
+            return (
+              <Link key={item.href} href={item.href}
+                className={`flex items-center gap-3 px-4 py-2.5 text-sm transition
+                  ${active ? 'bg-blue-500/20 text-blue-500 border-r-4 border-blue-500 font-semibold'
+                           : 'text-[var(--foreground)] hover:bg-[var(--muted-bg)]'}`}>
+                {item.label}
+              </Link>
+            );
+          })}
+
+          {/* 분석 */}
+          <div className="mt-3 px-4 py-1 text-[10px] text-[var(--muted)] font-semibold uppercase tracking-wider">📊 분석</div>
+          {MENU_ANALYSIS.map(item => {
+            const active = pathname === item.href || pathname.startsWith(item.href + '/');
+            return (
+              <Link key={item.href} href={item.href}
+                className={`flex items-center gap-3 px-4 py-2.5 text-sm transition
+                  ${active ? 'bg-blue-500/20 text-blue-500 border-r-4 border-blue-500 font-semibold'
+                           : 'text-[var(--foreground)] hover:bg-[var(--muted-bg)]'}`}>
+                {item.label}
+              </Link>
+            );
+          })}
+
+          {/* 참고 (접힘) */}
+          <div className="mt-3">
+            <button onClick={() => setAdvancedOpen(!advancedOpen)}
+              className="w-full flex items-center justify-between px-4 py-2 text-[10px] text-[var(--muted)] hover:bg-[var(--muted-bg)] font-semibold uppercase tracking-wider">
+              <span>📚 참고 {advancedOpen ? '▼' : '▶'}</span>
+              <span className="lowercase">({MENU_REFERENCE.length})</span>
+            </button>
+            {advancedOpen && (
+              <div>
+                {MENU_REFERENCE.map(item => {
+                  const active = pathname === item.href || pathname.startsWith(item.href + '/');
+                  return (
+                    <Link key={item.href} href={item.href}
+                      className={`block px-4 py-2 text-xs transition
+                        ${active ? 'bg-blue-500/20 text-blue-500 font-semibold'
+                                 : 'text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--muted-bg)]'}`}>
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
           </div>
-          <button onClick={() => setAdvancedOpen(!advancedOpen)}
-            className="w-full flex items-center justify-between px-4 py-2 text-xs text-[var(--muted)] hover:bg-[var(--muted-bg)]">
-            <span>{advancedOpen ? '▼' : '▶'} 더보기</span>
-            <span>({MENU_ADVANCED.length})</span>
-          </button>
-          {advancedOpen && (
-            <div className="border-l-2 border-[var(--card-border)] ml-4">
-              {MENU_ADVANCED.map(item => (
-                <Link key={item.href} href={item.href}
-                  className="block px-3 py-2 text-xs text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--muted-bg)]">
-                  {item.label}
-                </Link>
-              ))}
-            </div>
-          )}
         </nav>
 
         <div className="border-t border-[var(--card-border)] p-3 space-y-2">
