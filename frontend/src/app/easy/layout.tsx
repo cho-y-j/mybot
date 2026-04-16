@@ -27,15 +27,15 @@ const MENU_ANALYSIS = [
   { href: '/easy/history', label: '🏛️ 과거 선거' },
 ];
 
-// 기타
+// 설정
 const MENU_MISC = [
-  { href: '/easy/schedules', label: '⏰ 스케줄' },
+  { href: '/easy/settings', label: '⚙️ 설정' },
 ];
 
 function HomepageLink() {
-  // 공개 URL(code)만 페이지 로드 시 받아둠. SSO 토큰은 "클릭 순간 발급" — 만료(60초) 방지
+  // 페이지 로드 시 code/public_url만 조회. 비번은 가입 시 mybot 비번과 동기화되어
+  // 있으므로 편집 버튼은 그냥 admin/login으로 새 탭 열기 — 같은 비번 1회 입력하면 끝.
   const [info, setInfo] = useState<{ exists: boolean; code?: string; public_url?: string } | null>(null);
-  const [opening, setOpening] = useState(false);
 
   useEffect(() => {
     const token = (sessionStorage.getItem('access_token') || localStorage.getItem('access_token'));
@@ -46,33 +46,15 @@ function HomepageLink() {
       .catch(() => {});
   }, []);
 
-  const openEditor = async () => {
-    if (opening) return;
-    setOpening(true);
-    try {
-      const token = (sessionStorage.getItem('access_token') || localStorage.getItem('access_token'));
-      // 클릭 순간 fresh 토큰 발급 → 만료 무관
-      const r = await fetch('/api/sso/homepage', { headers: { Authorization: `Bearer ${token}` } });
-      if (!r.ok) throw new Error('SSO 발급 실패');
-      const data = await r.json();
-      if (!data?.url) throw new Error('URL 없음');
-      window.open(data.url, '_blank', 'noopener,noreferrer');
-    } catch (e: any) {
-      alert('홈페이지 편집 열기 실패: ' + (e?.message || ''));
-    } finally {
-      setOpening(false);
-    }
-  };
-
-  if (!info?.exists) return null;
+  if (!info?.exists || !info.code) return null;
 
   return (
     <div className="mb-2 px-4 py-3 border-b border-[var(--card-border)] bg-gradient-to-br from-emerald-500/10 to-blue-500/10">
       <div className="text-[10px] text-[var(--muted)] mb-1">📢 내 홈페이지</div>
-      <button onClick={openEditor} disabled={opening}
-        className="block w-full text-left text-sm font-bold text-emerald-500 hover:text-emerald-400 disabled:opacity-60">
-        {opening ? '여는 중...' : '🏠 홈페이지 편집 →'}
-      </button>
+      <a href={`/${info.code}/admin/login`} target="_blank" rel="noopener noreferrer"
+        className="block w-full text-left text-sm font-bold text-emerald-500 hover:text-emerald-400">
+        🏠 홈페이지 편집 →
+      </a>
       <a href={info.public_url} target="_blank" rel="noopener noreferrer"
         className="block text-[10px] text-[var(--muted)] hover:text-blue-500 mt-1 truncate">
         공개 URL: ai.on1.kr{info.public_url}

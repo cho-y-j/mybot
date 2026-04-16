@@ -136,13 +136,21 @@ async def bootstrap_campaign(
         return result
     try:
         from sqlalchemy import text as sql_text
-        # tenant 기본 정보 + 오너 이메일(users에서 owner role 1명)
+        # tenant 기본 정보 + 오너 이메일·비번해시(users에서 owner role 1명)
+        # 홈페이지 비번을 mybot 비번과 동일하게 동기화하기 위해 password_hash 함께 조회
+        # owner 우선, 없으면 admin, 그 다음 아무 user — 비번해시 함께 조회
         t_row = (await db.execute(sql_text(
-            "SELECT t.name, (SELECT u.email FROM users u WHERE u.tenant_id = t.id AND u.role='owner' LIMIT 1) "
+            "SELECT t.name, "
+            "  (SELECT u.email FROM users u WHERE u.tenant_id = t.id "
+            "    ORDER BY CASE u.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, u.created_at LIMIT 1), "
+            "  (SELECT u.password_hash FROM users u WHERE u.tenant_id = t.id "
+            "    ORDER BY CASE u.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, u.created_at LIMIT 1) "
             "FROM tenants t WHERE t.id = cast(:tid as uuid)"
         ), {"tid": tenant_id})).first()
         tenant_name = t_row[0] if t_row else "캠프"
         tenant_email = t_row[1] if t_row else None
+        # bcrypt 해시 그대로 복사 (mybot/homepage 모두 bcrypt rounds=12)
+        tenant_pwd_hash = t_row[2] if t_row and t_row[2] else "SSO_ONLY"
 
         # 사용자 지정 code가 있고 유효/미사용이면 그것, 아니면 tenant_id 앞 8자
         default_code = str(tenant_id).replace("-", "")[:8]
@@ -173,7 +181,7 @@ async def bootstrap_campaign(
                 "code": default_code,
                 "name": tenant_name,
                 "email": tenant_email,
-                "pwd": "SSO_ONLY",  # homepage 직접 로그인 차단, mybot 토큰으로만 접근
+                "pwd": tenant_pwd_hash,  # mybot owner의 비번 해시 동기화 (둘 다 bcrypt rounds=12)
                 "tid": tenant_id,
                 "eid": election_id,
             })).first()

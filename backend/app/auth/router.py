@@ -303,7 +303,18 @@ async def change_password(
     if not valid:
         raise HTTPException(400, msg)
 
-    u.password_hash = hash_password(req.new_password)
+    new_hash = hash_password(req.new_password)
+    u.password_hash = new_hash
     u.password_plain = req.new_password
+
+    # 홈페이지(myhome) 측 비번도 동기화 — 같은 DB의 homepage 스키마.
+    # tenant_id 기준으로 homepage.users 가 1:1 매칭됨.
+    if u.tenant_id:
+        from sqlalchemy import text as sql_text
+        await db.execute(sql_text(
+            "UPDATE homepage.users SET password_hash = :pwd, updated_at = NOW() "
+            "WHERE tenant_id = cast(:tid as uuid)"
+        ), {"pwd": new_hash, "tid": str(u.tenant_id)})
+
     await db.commit()
     return MessageResponse(message="비밀번호가 변경되었습니다")

@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
+import secrets
 import bcrypt
 import jwt
 import pyotp
@@ -93,11 +94,17 @@ def create_access_token(
 
 
 def create_refresh_token(user_id: str) -> str:
-    """Refresh Token 생성 (기본 7일)."""
+    """Refresh Token 생성 (기본 7일).
+
+    jti(JWT ID, 랜덤 16바이트)로 같은 user+초에 발급된 토큰도 항상 고유.
+    Why: refresh_tokens.token_hash UNIQUE 위반 방지 — 사용자가 1초 내 2회 로그인하면
+    이전 코드는 동일 payload → 동일 hash 충돌로 500 에러.
+    """
     now = datetime.now(timezone.utc)
     payload = {
         "sub": user_id,
         "type": "refresh",
+        "jti": secrets.token_hex(16),
         "exp": now + timedelta(days=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS),
         "iat": now,
     }

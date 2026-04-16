@@ -355,8 +355,12 @@ async def _naver_autofetch(
     pl_cnt = (await db.execute(text(
         "SELECT COUNT(*) FROM homepage.pledges WHERE user_id = :uid"
     ), {"uid": homepage_user_id})).scalar() or 0
+    pf_cnt = (await db.execute(text(
+        "SELECT COUNT(*) FROM homepage.profiles WHERE user_id = :uid"
+    ), {"uid": homepage_user_id})).scalar() or 0
+    result["profiles"] = 0
 
-    if ch_cnt > 0 and pl_cnt > 0:
+    if ch_cnt > 0 and pl_cnt > 0 and pf_cnt > 0:
         return result  # 이미 수동 입력됐으면 건드리지 않음
 
     try:
@@ -370,11 +374,13 @@ async def _naver_autofetch(
 1. 후보 공식 YouTube 채널 URL (채널 ID 또는 /channel/UCxxx, /@handle 형식)
 2. 후보 공식 네이버 블로그 URL (blog.naver.com/xxx)
 3. 대표 공약 5~7개 (선관위 공약 우선, 보도자료에서 추출, 제목 + 1줄 설명)
+4. **학력 5개 이내** (대학교/대학원/특이 학위, 시기 순)
+5. **주요 경력 8개 이내** (현직 → 과거, 시기 순서대로, "현 ~", "전 ~" 형식)
 
 **원칙**:
-- 🟢 사실 소스에서만 (공식 홈페이지, 언론 보도, 선관위)
+- 🟢 사실 소스에서만 (공식 홈페이지, 언론 보도, 선관위, info.nec.go.kr)
 - 🟡 커뮤니티·댓글은 참고 금지
-- 확인 안 되면 null로 반환 (추측 금지)
+- 확인 안 되면 null/빈 배열로 반환 (추측 금지)
 - 동명이인 주의 ({region} {type_label} 후보가 맞는지 지역·선거 유형 재확인)
 
 반드시 아래 JSON만 반환:
@@ -383,8 +389,15 @@ async def _naver_autofetch(
   "youtube_channel_id": "UCxxx" or null,
   "blog_url": "https://blog.naver.com/xxx" or null,
   "pledges": [
-    {{"title": "공약 제목", "description": "1~2줄 설명"}},
-    ...
+    {{"title": "공약 제목", "description": "1~2줄 설명"}}
+  ],
+  "education": [
+    "서울대학교 OO학과 졸업",
+    "고려대학교 대학원 OO학 박사"
+  ],
+  "career": [
+    "현 OO재단 이사장",
+    "전 OO부 차관 (2015~2017)"
   ]
 }}"""
 
@@ -436,6 +449,32 @@ async def _naver_autofetch(
                 """), {"uid": homepage_user_id, "icon": icon, "title": title,
                        "desc": desc[:1000] if desc else None, "so": i})
                 result["pledges"] += 1
+
+        # 학력/경력 추가 (기존 0개일 때만) — homepage.profiles에 INSERT
+        if pf_cnt == 0:
+            edu_list = data.get("education") or []
+            car_list = data.get("career") or []
+            if isinstance(edu_list, list):
+                for i, e in enumerate(edu_list[:5]):
+                    title = (str(e) or "").strip()[:200]
+                    if not title:
+                        continue
+                    await db.execute(text("""
+                        INSERT INTO homepage.profiles (user_id, type, title, is_current, sort_order, created_at)
+                        VALUES (:uid, 'education', :title, false, :so, NOW())
+                    """), {"uid": homepage_user_id, "title": title, "so": i})
+                    result["profiles"] = result.get("profiles", 0) + 1
+            if isinstance(car_list, list):
+                for i, c in enumerate(car_list[:8]):
+                    title = (str(c) or "").strip()[:200]
+                    if not title:
+                        continue
+                    is_current = title.startswith("현 ") or title.startswith("현재 ")
+                    await db.execute(text("""
+                        INSERT INTO homepage.profiles (user_id, type, title, is_current, sort_order, created_at)
+                        VALUES (:uid, 'career', :title, :curr, :so, NOW())
+                    """), {"uid": homepage_user_id, "title": title, "curr": is_current, "so": i})
+                    result["profiles"] = result.get("profiles", 0) + 1
 
         logger.info("homepage_autofetch_done",
                     candidate=candidate_name, result=result)

@@ -63,14 +63,22 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     프로덕션에서는 Redis 기반으로 교체 권장.
     """
 
-    def __init__(self, app, default_limit: int = 100, window_seconds: int = 60):
+    def __init__(self, app, default_limit: int = 300, window_seconds: int = 60):
         super().__init__(app)
         self.default_limit = default_limit
         self.window_seconds = window_seconds
         self._requests: dict[str, list[float]] = defaultdict(list)
 
     async def dispatch(self, request: Request, call_next):
-        if not request.url.path.startswith("/api/"):
+        path = request.url.path
+        if not path.startswith("/api/"):
+            return await call_next(request)
+
+        # 인증 경로는 IP 단위 rate limit에서 완전 제외.
+        # Why: NAT/공유기 뒤 다수 사용자가 동일 공인 IP로 묶여 정상 로그인이 차단됨.
+        # Brute-force는 DB 레벨 `failed_login_attempts` + `ACCOUNT_LOCKOUT_ATTEMPTS`가
+        # 계정 단위로 방어하므로 IP 단위 중복 방어 불필요.
+        if path.startswith("/api/auth/"):
             return await call_next(request)
 
         # NPM(reverse proxy) 뒤에서는 request.client.host가 항상 프록시 IP(172.18.0.x)라
@@ -86,13 +94,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         now = time.time()
         window_start = now - self.window_seconds
 
-        # Determine rate limit based on endpoint
+        # 일반 API 한도: 공유 IP(사무실·공유기) 뒤 여러 사용자의 정상 트래픽을
+        # 허용하는 수준. 플러드/DDoS 방어는 NPM 레이어에서 담당.
         limit = self.default_limit
-        path = request.url.path
-        if "/auth/login" in path:
-            limit = 15  # 개발 중 여유 (배포 시 5로 축소)
-        elif "/auth/register" in path:
-            limit = 10
 
         # Clean old entries and count
         self._requests[client_ip] = [

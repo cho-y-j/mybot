@@ -19,14 +19,12 @@ export default function CustomerLoginPage() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/auth/login", {
+      // /api/* 는 NPM이 mybot으로 라우팅하므로, /{code}/api/auth/login 으로 호출.
+      // mybot 가입 시 사용한 비밀번호와 동일 (가입/변경 시 자동 동기화).
+      const res = await fetch(`/${code}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: code,
-          password,
-          userType: "user",
-        }),
+        body: JSON.stringify({ password }),
       });
       const data = await res.json();
 
