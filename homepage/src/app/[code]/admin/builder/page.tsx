@@ -74,6 +74,24 @@ interface VideoItem {
   sortOrder?: number;
 }
 
+/** 등록된 외부 채널 (YouTube / 네이버 블로그 / 티스토리 / 브런치 / 인스타) — 2026-04-18 */
+interface Channel {
+  id: number;
+  platform: string;
+  channelId: string | null;
+  channelUrl: string | null;
+  isActive: boolean;
+}
+
+/** YouTube Data API → /api/public/youtube-feed 응답의 개별 영상 */
+interface YoutubeFeedItem {
+  video_id: string;
+  title: string;
+  thumbnail?: string | null;
+  channel?: string | null;
+  published_at?: string | null;
+}
+
 interface ContactItem {
   id?: number;
   type: string;
@@ -4639,17 +4657,87 @@ function VideosEditor({
   onSaved,
   onCancel,
 }: EditorBaseProps & { items: VideoItem[] }) {
-  const [items, setItems] = useState<VideoItem[]>(
+  const params = useParams();
+  const code = params.code as string;
+
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [feed, setFeed] = useState<YoutubeFeedItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newUrl, setNewUrl] = useState("");
+  const [adding, setAdding] = useState(false);
+
+  // 개별 영상 수동 등록 (본인 채널 외 — 뉴스 영상 등)
+  const [manualItems, setManualItems] = useState<VideoItem[]>(
     [...initialItems].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
   );
+  const [newVideoUrl, setNewVideoUrl] = useState("");
+  const [newVideoTitle, setNewVideoTitle] = useState("");
+
+  function extractVideoId(input: string): string {
+    const patterns = [
+      /(?:youtube\.com\/watch\?v=)([a-zA-Z0-9_-]{11})/,
+      /(?:youtu\.be\/)([a-zA-Z0-9_-]{11})/,
+      /(?:youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
+      /(?:youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/,
+    ];
+    for (const p of patterns) {
+      const m = input.match(p);
+      if (m) return m[1];
+    }
+    const trimmed = input.trim();
+    return /^[a-zA-Z0-9_-]{11}$/.test(trimmed) ? trimmed : "";
+  }
+
+  async function addManualVideo() {
+    const vid = extractVideoId(newVideoUrl);
+    if (!vid) return;
+    onSaving();
+    const res = await apiFetch<VideoItem>("/api/site/videos", {
+      method: "POST",
+      body: JSON.stringify({
+        videoId: vid,
+        title: newVideoTitle.trim() || null,
+        sortOrder: 0,
+      }),
+    });
+    if (res.success && res.data) {
+      setManualItems((prev) => [res.data!, ...prev.map((it) => ({ ...it, sortOrder: (it.sortOrder ?? 0) + 1 }))]);
+      setNewVideoUrl("");
+      setNewVideoTitle("");
+    }
+    onSaved();
+  }
+
+  async function removeManualVideo(id: number) {
+    if (!confirm("이 영상을 삭제하시겠습니까?")) return;
+    onSaving();
+    await apiFetch(`/api/site/videos/${id}`, { method: "DELETE" });
+    setManualItems((prev) => prev.filter((i) => i.id !== id));
+    onSaved();
+  }
+
   const vidBlockContent = (block.content || {}) as Record<string, unknown>;
   const [vidShowCount, setVidShowCount] = useState<number>((vidBlockContent.showCount as number) || 4);
-  const [newVideoId, setNewVideoId] = useState("");
-  const [newTitle, setNewTitle] = useState("");
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [editTitle, setEditTitle] = useState("");
-  const [vidDragIdx, setVidDragIdx] = useState<number | null>(null);
-  const [vidDragOverIdx, setVidDragOverIdx] = useState<number | null>(null);
+
+  const loadAll = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [chRes, feedRes] = await Promise.all([
+        apiFetch<{ items: Channel[] }>("/api/site/channels"),
+        fetch(`/api/public/youtube-feed/${code}`)
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
+      ]);
+      if (chRes.success && chRes.data) {
+        setChannels((chRes.data.items || []).filter((c) => c.platform === "youtube"));
+      }
+      setFeed(feedRes?.data?.items || []);
+    } finally {
+      setLoading(false);
+    }
+  }, [code]);
+
+  useEffect(() => { loadAll(); }, [loadAll]);
 
   async function saveVidShowCount(val: number) {
     setVidShowCount(val);
@@ -4660,97 +4748,57 @@ function VideosEditor({
     onSaved();
   }
 
-  function extractVideoId(input: string): string {
-    // Handle full YouTube URLs
-    const patterns = [
-      /(?:youtube\.com\/watch\?v=)([a-zA-Z0-9_-]{11})/,
-      /(?:youtu\.be\/)([a-zA-Z0-9_-]{11})/,
-      /(?:youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
-    ];
-    for (const p of patterns) {
-      const m = input.match(p);
-      if (m) return m[1];
-    }
-    return input.trim();
-  }
-
-  async function addItem() {
-    const videoId = extractVideoId(newVideoId);
-    if (!videoId) return;
+  async function addChannel() {
+    const u = newUrl.trim();
+    if (!u) return;
+    setAdding(true);
     onSaving();
-    // New videos get sortOrder 0 (latest first), shift others up
-    const shifted = items.map((it, i) => ({ ...it, sortOrder: i + 1 }));
-    const res = await apiFetch<VideoItem>("/api/site/videos", {
+    const res = await apiFetch("/api/site/channels", {
       method: "POST",
-      body: JSON.stringify({
-        videoId,
-        title: newTitle || null,
-        sortOrder: 0,
-      }),
+      body: JSON.stringify({ platform: "youtube", channelUrl: u }),
     });
-    if (res.success && res.data) {
-      for (const it of shifted) {
-        if (it.id) {
-          await apiFetch(`/api/site/videos/${it.id}`, {
-            method: "PUT",
-            body: JSON.stringify({ sortOrder: it.sortOrder }),
-          });
-        }
-      }
-      setItems([res.data!, ...shifted]);
-      setNewVideoId("");
-      setNewTitle("");
+    if (res.success) {
+      setNewUrl("");
+      await loadAll();
     }
+    setAdding(false);
     onSaved();
   }
 
-  async function removeItem(id: number) {
+  async function toggleActive(c: Channel) {
     onSaving();
-    await apiFetch(`/api/site/videos/${id}`, { method: "DELETE" });
-    setItems((prev) => prev.filter((i) => i.id !== id));
-    onSaved();
-  }
-
-  async function swapOrder(idx: number, direction: "up" | "down") {
-    const targetIdx = direction === "up" ? idx - 1 : idx + 1;
-    if (targetIdx < 0 || targetIdx >= items.length) return;
-    onSaving();
-    const newItems = [...items];
-    [newItems[idx], newItems[targetIdx]] = [newItems[targetIdx], newItems[idx]];
-    setItems(newItems);
-    const ids = newItems.map((i) => i.id!);
-    await apiFetch("/api/site/videos/reorder", { method: "PUT", body: JSON.stringify({ ids }) });
-    onSaved();
-  }
-
-  function startEdit(item: VideoItem) {
-    setEditingId(item.id!);
-    setEditTitle(item.title || "");
-  }
-
-  async function saveEdit() {
-    if (!editingId) return;
-    onSaving();
-    const res = await apiFetch<VideoItem>(`/api/site/videos/${editingId}`, {
-      method: "PUT",
-      body: JSON.stringify({ title: editTitle || null }),
+    await apiFetch(`/api/site/channels/${c.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ isActive: !c.isActive }),
     });
-    if (res.success && res.data) {
-      setItems((prev) => prev.map((i) => (i.id === editingId ? { ...i, title: res.data!.title } : i)));
-    }
-    setEditingId(null);
+    await loadAll();
+    onSaved();
+  }
+
+  async function deleteChannel(id: number) {
+    if (!confirm("이 YouTube 채널 등록을 삭제하시겠습니까?")) return;
+    onSaving();
+    await apiFetch(`/api/site/channels/${id}`, { method: "DELETE" });
+    await loadAll();
     onSaved();
   }
 
   return (
     <div className="space-y-3">
-      {/* Show count config */}
+      {/* 자동 연동 안내 */}
+      <div className="rounded-lg border border-red-500/20 bg-red-900/10 px-3 py-2.5 text-[11px] leading-relaxed text-red-200/80">
+        <span className="inline-block text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-500/30 text-red-100 mr-1.5 align-middle">YouTube</span>
+        등록한 채널의 <strong className="text-red-100">최신 영상</strong>이 자동으로 공개 사이트에 표시됩니다.
+        모든 채널이 있는 것은 아니니 해당하는 경우만 추가하세요.
+      </div>
+
+      {/* 공개 사이트 표시 갯수 */}
       <div className="flex items-center gap-3 rounded-lg border border-white/10 bg-zinc-800/30 px-3 py-2">
         <label className={labelClass}>공개 사이트 노출 갯수</label>
         <input
           type="number"
           min={1}
-          max={99}
+          max={30}
           className={`${inputClass} w-20 text-center`}
           value={vidShowCount}
           onChange={(e) => {
@@ -4760,132 +4808,162 @@ function VideosEditor({
         />
       </div>
 
-      {items.length > 0 && (
-        <div className="space-y-2 max-h-60 overflow-y-auto">
-          {items.map((item, idx) => (
-            <div
-              key={item.id}
-              draggable
-              onDragStart={() => setVidDragIdx(idx)}
-              onDragOver={(e) => { e.preventDefault(); setVidDragOverIdx(idx); }}
-              onDragLeave={() => setVidDragOverIdx(null)}
-              onDrop={async () => {
-                if (vidDragIdx === null || vidDragIdx === idx) return;
-                const newItems = [...items];
-                const [moved] = newItems.splice(vidDragIdx, 1);
-                newItems.splice(idx, 0, moved);
-                setItems(newItems);
-                setVidDragIdx(null);
-                setVidDragOverIdx(null);
-                const ids = newItems.map((i) => i.id!);
-                await apiFetch("/api/site/videos/reorder", { method: "PUT", body: JSON.stringify({ ids }) });
-                onSaved();
-              }}
-              onDragEnd={() => { setVidDragIdx(null); setVidDragOverIdx(null); }}
-              className={`flex items-center gap-2 rounded-lg border px-2 py-2 cursor-grab transition-all ${
-                vidDragIdx === idx ? "opacity-40 border-blue-500/30 bg-zinc-800/30" :
-                vidDragOverIdx === idx ? "border-blue-400/50 bg-blue-900/20" :
-                "border-white/5 bg-zinc-800/50"
-              }`}
-            >
-              {/* Reorder buttons */}
-              <div className="flex flex-col gap-0.5">
-                <button
-                  onClick={() => swapOrder(idx, "up")}
-                  disabled={idx === 0}
-                  className="text-zinc-600 hover:text-white disabled:opacity-30 transition-colors"
-                  title="위로"
+      {/* 등록된 채널 목록 */}
+      <div>
+        <label className={`${labelClass} block mb-1.5`}>등록된 YouTube 채널</label>
+        {loading ? (
+          <p className="text-xs text-zinc-500 py-3 text-center">불러오는 중...</p>
+        ) : channels.length === 0 ? (
+          <p className="text-xs text-zinc-500 py-3 text-center">등록된 채널이 없습니다</p>
+        ) : (
+          <div className="space-y-1.5">
+            {channels.map((c) => (
+              <div
+                key={c.id}
+                className={`flex items-center gap-2 rounded-lg border border-white/5 px-3 py-2 ${
+                  c.isActive ? "bg-zinc-800/50" : "bg-zinc-900/30 opacity-50"
+                }`}
+              >
+                <a
+                  href={c.channelUrl || "#"}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex-1 text-sm text-zinc-200 truncate hover:text-blue-400"
+                  title={c.channelUrl || c.channelId || ""}
                 >
-                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
-                  </svg>
+                  {c.channelUrl || c.channelId || "(URL 없음)"}
+                </a>
+                <button
+                  onClick={() => toggleActive(c)}
+                  className={c.isActive ? "text-zinc-400 hover:text-amber-400" : "text-zinc-500 hover:text-green-400"}
+                  title={c.isActive ? "공개 사이트에서 숨기기" : "공개 사이트에 다시 표시"}
+                >
+                  {c.isActive ? (
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  ) : (
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                    </svg>
+                  )}
                 </button>
                 <button
-                  onClick={() => swapOrder(idx, "down")}
-                  disabled={idx === items.length - 1}
-                  className="text-zinc-600 hover:text-white disabled:opacity-30 transition-colors"
-                  title="아래로"
+                  onClick={() => deleteChannel(c.id)}
+                  className="text-zinc-600 hover:text-red-400"
+                  title="삭제"
                 >
-                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
               </div>
-              {/* Thumbnail */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={`https://img.youtube.com/vi/${item.videoId}/hqdefault.jpg`}
-                alt={item.title || ""}
-                className="h-12 w-20 rounded object-cover flex-shrink-0"
-              />
-              <span className="flex-1 text-xs text-zinc-300 truncate">
-                {item.title || item.videoId}
-              </span>
-              {/* Edit button */}
-              <button
-                onClick={() => startEdit(item)}
-                className="text-zinc-600 hover:text-blue-400 transition-colors"
-                title="제목 수정"
-              >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
-              </button>
-              {/* Delete button */}
-              <button
-                onClick={() => item.id && removeItem(item.id)}
-                className="text-zinc-600 hover:text-red-400 transition-colors"
-              >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Edit title form */}
-      {editingId && (
-        <div className="rounded-lg border border-blue-500/30 bg-zinc-800/80 p-3 space-y-2">
-          <p className="text-xs font-medium text-blue-400">영상 제목 수정</p>
-          <input
-            className={inputClass}
-            value={editTitle}
-            onChange={(e) => setEditTitle(e.target.value)}
-            placeholder="영상 제목"
-          />
-          <div className="flex justify-end gap-2">
-            <button onClick={() => setEditingId(null)} className={btnSecondary}>
-              취소
-            </button>
-            <button onClick={saveEdit} className={btnPrimary}>
-              저장
-            </button>
+            ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
+      {/* 채널 수동 추가 */}
       <div className="rounded-lg border border-white/10 bg-zinc-800/30 p-3 space-y-2">
-        <p className="text-xs font-medium text-zinc-500">새 영상 추가</p>
+        <p className="text-xs font-medium text-zinc-400">채널 추가</p>
         <input
           className={inputClass}
-          value={newVideoId}
-          onChange={(e) => setNewVideoId(e.target.value)}
-          placeholder="YouTube URL 또는 동영상 ID"
+          value={newUrl}
+          onChange={(e) => setNewUrl(e.target.value)}
+          placeholder="https://www.youtube.com/@핸들 또는 /channel/UCxxx"
+          onKeyDown={(e) => e.key === "Enter" && !adding && addChannel()}
         />
-        <input
-          className={inputClass}
-          value={newTitle}
-          onChange={(e) => setNewTitle(e.target.value)}
-          placeholder="영상 제목 (선택)"
-        />
-        <div className="flex justify-end">
-          <button onClick={addItem} className={btnPrimary}>
-            추가
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[10px] text-zinc-500 flex-1">
+            채널 URL 또는 핸들(@) 지원. YouTube Data API로 자동 조회됩니다.
+          </p>
+          <button onClick={addChannel} disabled={adding || !newUrl.trim()} className={btnPrimary}>
+            {adding ? "추가 중..." : "채널 추가"}
           </button>
         </div>
       </div>
+
+      {/* 개별 영상 수동 추가 (본인 채널 외 — 뉴스 영상 등 직접 핀) */}
+      <div className="rounded-lg border border-blue-500/20 bg-blue-900/10 p-3 space-y-2">
+        <p className="text-xs font-medium text-blue-200">개별 영상 추가 <span className="text-zinc-500 font-normal">(본인 채널 외 뉴스·인터뷰 영상 등)</span></p>
+        {manualItems.length > 0 && (
+          <div className="space-y-1 max-h-40 overflow-y-auto">
+            {manualItems.map((v) => (
+              <div key={v.id} className="flex items-center gap-2 rounded border border-white/5 bg-zinc-800/40 px-2 py-1.5">
+                <a
+                  href={`https://www.youtube.com/watch?v=${v.videoId}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex-1 text-xs text-zinc-200 truncate hover:text-blue-400"
+                  title={v.title || v.videoId}
+                >
+                  {v.title || v.videoId}
+                </a>
+                <button
+                  onClick={() => v.id && removeManualVideo(v.id)}
+                  className="text-zinc-600 hover:text-red-400"
+                  title="삭제"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <input
+          className={inputClass}
+          value={newVideoUrl}
+          onChange={(e) => setNewVideoUrl(e.target.value)}
+          placeholder="YouTube URL 또는 영상 ID (예: https://youtu.be/xxxxx)"
+        />
+        <input
+          className={inputClass}
+          value={newVideoTitle}
+          onChange={(e) => setNewVideoTitle(e.target.value)}
+          placeholder="영상 제목 (선택 — 비어있으면 YouTube 자동 표시)"
+          onKeyDown={(e) => e.key === "Enter" && addManualVideo()}
+        />
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[10px] text-zinc-500 flex-1">
+            뉴스 유튜브 같은 외부 영상을 직접 고정. 채널 목록과 별도로 공개 사이트에 상단 노출됩니다.
+          </p>
+          <button onClick={addManualVideo} disabled={!newVideoUrl.trim()} className={btnPrimary}>
+            영상 추가
+          </button>
+        </div>
+      </div>
+
+      {/* 최신 영상 미리보기 */}
+      {feed.length > 0 && (
+        <div>
+          <label className={`${labelClass} block mb-1.5`}>
+            공개 사이트 최신 영상 ({feed.length}건)
+          </label>
+          <div className="space-y-1.5 max-h-60 overflow-y-auto">
+            {feed.slice(0, 10).map((v, i) => (
+              <a
+                key={i}
+                href={`https://www.youtube.com/watch?v=${v.video_id}`}
+                target="_blank"
+                rel="noreferrer"
+                className="flex gap-2 rounded-lg border border-white/5 bg-zinc-800/30 p-2 hover:border-red-500/30 transition-colors"
+              >
+                {v.thumbnail && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={v.thumbnail} alt="" className="w-16 h-10 object-cover rounded flex-shrink-0" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs text-zinc-200 line-clamp-2 leading-tight">{v.title}</div>
+                  <div className="text-[10px] text-zinc-500 mt-0.5">{v.channel || ""}</div>
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
 
       <EditorActions onSave={onCancel} onCancel={onCancel} />
     </div>
