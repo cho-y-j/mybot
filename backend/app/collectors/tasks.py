@@ -3,6 +3,7 @@ ElectionPulse - Celery Collection Tasks
 기존 프로토타입의 검증된 수집 로직을 비동기 태스크로 통합
 """
 import asyncio
+import os
 from datetime import datetime, timezone, timedelta, date
 from uuid import UUID
 
@@ -1851,12 +1852,50 @@ def _run_briefing(tenant_id: str, election_id: str, briefing_type: str) -> dict:
         except Exception as e:
             logger.error("briefing_telegram_error", error=str(e))
 
+        # 5. 메일 발송 (tenant owner — SMTP 미설정 시 자동 skip)
+        mail_result = {"status": "skipped"}
+        try:
+            from app.services.mail_service import (
+                send_mail_sync, get_tenant_email_sync, render_briefing_html, is_configured,
+            )
+            if is_configured():
+                to_email = get_tenant_email_sync(session, tenant_id)
+                if to_email:
+                    type_label = {"morning":"오전 브리핑","afternoon":"오후 브리핑","daily":"일일 보고서"}.get(briefing_type, briefing_type)
+                    subject = f"[ElectionPulse] {type_label} — {date.today().strftime('%Y-%m-%d')}"
+                    # election/후보 이름 재조회 (daily 블록 밖에서도 안전)
+                    _mail_e_name = ""
+                    _mail_our_name = ""
+                    try:
+                        _el = session.execute(select(Election).where(Election.id == election_id)).scalar_one_or_none()
+                        _mail_e_name = _el.name if _el else ""
+                        _cand_row = session.execute(text(
+                            "SELECT name FROM public.candidates WHERE tenant_id = cast(:tid as uuid) AND is_our_candidate = true LIMIT 1"
+                        ), {"tid": tenant_id}).first()
+                        _mail_our_name = _cand_row.name if _cand_row else ""
+                    except Exception:
+                        pass
+                    html = render_briefing_html(
+                        briefing_type, report_text,
+                        election_name=_mail_e_name, candidate_name=_mail_our_name,
+                        report_date=date.today().strftime('%Y-%m-%d'),
+                    )
+                    attachments = []
+                    if pdf_path and os.path.exists(pdf_path):
+                        with open(pdf_path, "rb") as f:
+                            attachments.append((os.path.basename(pdf_path), f.read()))
+                    mail_result = send_mail_sync(to_email, subject, html, text_body=report_text, attachments=attachments)
+        except Exception as e:
+            logger.error("briefing_mail_error", error=str(e)[:300])
+            mail_result = {"status": "error", "error": str(e)[:200]}
+
         logger.info(
             "briefing_complete",
             type=briefing_type,
             tenant_id=tenant_id,
             ai=ai_generated,
             telegram_sent=sent,
+            mail_status=mail_result.get("status"),
         )
 
         return {
@@ -1864,6 +1903,7 @@ def _run_briefing(tenant_id: str, election_id: str, briefing_type: str) -> dict:
             "briefing_type": briefing_type,
             "ai_generated": ai_generated,
             "telegram_sent": sent,
+            "mail": mail_result,
             "report_id": str(report.id),
         }
 
@@ -1948,8 +1988,34 @@ def _run_weekly_report(tenant_id: str, election_id: str) -> dict:
         except Exception as e:
             logger.error("weekly_telegram_error", error=str(e)[:200])
 
-        logger.info("weekly_report_complete", tenant_id=tenant_id, ai=ai_generated, pdf=bool(pdf_path))
-        return {"status": "success", "report_id": str(report.id), "ai_generated": ai_generated}
+        # 6. 메일 발송 (주간 보고서 PDF 첨부)
+        mail_result = {"status": "skipped"}
+        try:
+            from app.services.mail_service import (
+                send_mail_sync, get_tenant_email_sync, render_briefing_html, is_configured,
+            )
+            if is_configured():
+                to_email = get_tenant_email_sync(session, tenant_id)
+                if to_email:
+                    subject = f"[ElectionPulse] 주간 전략 보고서 — {date.today().strftime('%Y-%m-%d')}"
+                    html = render_briefing_html(
+                        "weekly", report_text,
+                        election_name=e_name, candidate_name=our_name,
+                        report_date=date.today().strftime('%Y-%m-%d'),
+                    )
+                    attachments = []
+                    if pdf_path and os.path.exists(pdf_path):
+                        with open(pdf_path, "rb") as f:
+                            attachments.append((os.path.basename(pdf_path), f.read()))
+                    mail_result = send_mail_sync(to_email, subject, html, text_body=report_text, attachments=attachments)
+        except Exception as e:
+            logger.error("weekly_mail_error", error=str(e)[:300])
+            mail_result = {"status": "error", "error": str(e)[:200]}
+
+        logger.info("weekly_report_complete", tenant_id=tenant_id, ai=ai_generated,
+                    pdf=bool(pdf_path), mail_status=mail_result.get("status"))
+        return {"status": "success", "report_id": str(report.id),
+                "ai_generated": ai_generated, "mail": mail_result}
 
     except Exception as e:
         logger.error("weekly_report_error", error=str(e)[:500])

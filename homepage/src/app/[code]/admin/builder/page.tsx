@@ -136,6 +136,7 @@ const BLOCK_TYPES: Record<string, { label: string; icon: string; defaultTitle: s
   schedule: { label: "선거 일정", icon: "📅", defaultTitle: "선거 일정" },
   news: { label: "보도자료", icon: "📰", defaultTitle: "보도자료" },
   videos: { label: "홍보 영상", icon: "🎬", defaultTitle: "홍보 영상" },
+  blog: { label: "블로그", icon: "📓", defaultTitle: "블로그" },
   donation: { label: "후원 안내", icon: "💝", defaultTitle: "후원 안내" },
   contacts: { label: "후원/연락", icon: "📞", defaultTitle: "후원·연락처" },
   links: { label: "관련 링크", icon: "🔗", defaultTitle: "관련 링크" },
@@ -988,6 +989,8 @@ function SectionPreview({
       return <NewsPreview block={block} news={news} />;
     case "videos":
       return <VideosPreview block={block} videos={videos} />;
+    case "blog":
+      return <BlogPreview block={block} />;
     case "donation":
       return <DonationPreview block={block} />;
     case "contacts":
@@ -1689,6 +1692,66 @@ function VideosPreview({ block, videos }: { block: Block; videos: VideoItem[] })
 }
 
 /* ═══════════════════════════════════════════════
+   BLOG Preview — 등록한 블로그의 최신 글 자동 표시 (RSS)
+   ═══════════════════════════════════════════════ */
+function BlogPreview({ block }: { block: Block }) {
+  const params = useParams();
+  const code = params.code as string;
+  const [items, setItems] = useState<Array<{ url: string; title: string; platform?: string; published_at?: string }>>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(`/api/public/blog-feed/${code}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setItems(d?.data?.items || []))
+      .catch(() => setItems([]))
+      .finally(() => setLoading(false));
+  }, [code]);
+
+  return (
+    <section className="py-16 px-6 bg-gray-50 dark:bg-gray-900">
+      <div className="max-w-5xl mx-auto">
+        <h2 className="text-3xl font-bold text-center mb-10 text-gray-900 dark:text-white">
+          {block.title || "블로그"}
+        </h2>
+        {loading ? (
+          <p className="text-center text-gray-500">불러오는 중...</p>
+        ) : items.length === 0 ? (
+          <div className="text-center py-12 text-gray-500">
+            <p>등록된 블로그가 없거나 최신 글을 가져올 수 없습니다.</p>
+            <p className="text-sm mt-2">빌더에서 네이버 블로그/티스토리/브런치 URL을 등록하세요.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {items.slice(0, 9).map((p, i) => (
+              <a
+                key={i}
+                href={p.url}
+                target="_blank"
+                rel="noreferrer"
+                className="block rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 hover:shadow-lg transition-shadow"
+              >
+                {p.platform && (
+                  <span className="inline-block text-[10px] font-bold px-2 py-0.5 rounded bg-green-500/10 text-green-600 mb-2">
+                    {p.platform === "naver_blog" ? "네이버 블로그" : p.platform === "tistory" ? "티스토리" : p.platform === "brunch" ? "브런치" : p.platform}
+                  </span>
+                )}
+                <h3 className="font-semibold text-sm line-clamp-3 text-gray-900 dark:text-white">{p.title}</h3>
+                {p.published_at && (
+                  <div className="text-xs text-gray-500 mt-2">
+                    {new Date(p.published_at).toLocaleDateString("ko")}
+                  </div>
+                )}
+              </a>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* ═══════════════════════════════════════════════
    DONATION Preview
    ═══════════════════════════════════════════════ */
 function DonationPreview({ block }: { block: Block }) {
@@ -2114,6 +2177,16 @@ function SectionEditor({
         <VideosEditor
           block={block}
           items={videos}
+          onSaving={onSaving}
+          onSaved={onSaved}
+          onCancel={onCancel}
+        />
+      );
+      break;
+    case "blog":
+      editor = (
+        <BlogEditor
+          block={block}
           onSaving={onSaving}
           onSaved={onSaved}
           onCancel={onCancel}
@@ -4958,6 +5031,245 @@ function VideosEditor({
                 <div className="flex-1 min-w-0">
                   <div className="text-xs text-zinc-200 line-clamp-2 leading-tight">{v.title}</div>
                   <div className="text-[10px] text-zinc-500 mt-0.5">{v.channel || ""}</div>
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <EditorActions onSave={onCancel} onCancel={onCancel} />
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   Blog Editor — 네이버 블로그 / 티스토리 / 브런치 채널 등록 + RSS 자동 fetch
+   ═══════════════════════════════════════════════ */
+function BlogEditor({
+  block,
+  onSaving,
+  onSaved,
+  onCancel,
+}: EditorBaseProps) {
+  const params = useParams();
+  const code = params.code as string;
+
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [feed, setFeed] = useState<Array<{ url: string; title: string; platform?: string; published_at?: string }>>([]);
+  const [loading, setLoading] = useState(true);
+  const [newPlatform, setNewPlatform] = useState<"naver_blog" | "tistory" | "brunch">("naver_blog");
+  const [newUrl, setNewUrl] = useState("");
+  const [adding, setAdding] = useState(false);
+
+  const blogContent = (block.content || {}) as Record<string, unknown>;
+  const [blogShowCount, setBlogShowCount] = useState<number>((blogContent.showCount as number) || 6);
+
+  const loadAll = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [chRes, feedRes] = await Promise.all([
+        apiFetch<{ items: Channel[] }>("/api/site/channels"),
+        fetch(`/api/public/blog-feed/${code}`)
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
+      ]);
+      if (chRes.success && chRes.data) {
+        setChannels((chRes.data.items || []).filter((c) =>
+          ["naver_blog", "tistory", "brunch"].includes(c.platform)
+        ));
+      }
+      setFeed(feedRes?.data?.items || []);
+    } finally {
+      setLoading(false);
+    }
+  }, [code]);
+
+  useEffect(() => { loadAll(); }, [loadAll]);
+
+  async function saveBlogShowCount(val: number) {
+    setBlogShowCount(val);
+    await apiFetch(`/api/site/blocks/${block.id}`, {
+      method: "PUT",
+      body: JSON.stringify({ content: { ...blogContent, showCount: val } }),
+    });
+    onSaved();
+  }
+
+  async function addChannel() {
+    const u = newUrl.trim();
+    if (!u) return;
+    setAdding(true);
+    onSaving();
+    const res = await apiFetch("/api/site/channels", {
+      method: "POST",
+      body: JSON.stringify({ platform: newPlatform, channelUrl: u }),
+    });
+    if (res.success) {
+      setNewUrl("");
+      await loadAll();
+    }
+    setAdding(false);
+    onSaved();
+  }
+
+  async function toggleActive(c: Channel) {
+    onSaving();
+    await apiFetch(`/api/site/channels/${c.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ isActive: !c.isActive }),
+    });
+    await loadAll();
+    onSaved();
+  }
+
+  async function deleteChannel(id: number) {
+    if (!confirm("이 블로그 등록을 삭제하시겠습니까?")) return;
+    onSaving();
+    await apiFetch(`/api/site/channels/${id}`, { method: "DELETE" });
+    await loadAll();
+    onSaved();
+  }
+
+  const platformLabel = (p: string) =>
+    p === "naver_blog" ? "네이버 블로그" : p === "tistory" ? "티스토리" : p === "brunch" ? "브런치" : p;
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-lg border border-green-500/20 bg-green-900/10 px-3 py-2.5 text-[11px] leading-relaxed text-green-200/80">
+        <span className="inline-block text-[9px] font-bold px-1.5 py-0.5 rounded bg-green-500/30 text-green-100 mr-1.5 align-middle">BLOG</span>
+        등록한 블로그의 <strong className="text-green-100">최신 글</strong>이 RSS로 자동 표시됩니다.
+        네이버 블로그·티스토리·브런치 지원. 해당하는 플랫폼만 추가하세요.
+      </div>
+
+      <div className="flex items-center gap-3 rounded-lg border border-white/10 bg-zinc-800/30 px-3 py-2">
+        <label className={labelClass}>공개 사이트 노출 갯수</label>
+        <input
+          type="number" min={1} max={30}
+          className={`${inputClass} w-20 text-center`}
+          value={blogShowCount}
+          onChange={(e) => {
+            const v = parseInt(e.target.value, 10);
+            if (!isNaN(v) && v > 0) saveBlogShowCount(v);
+          }}
+        />
+      </div>
+
+      <div>
+        <label className={`${labelClass} block mb-1.5`}>등록된 블로그</label>
+        {loading ? (
+          <p className="text-xs text-zinc-500 py-3 text-center">불러오는 중...</p>
+        ) : channels.length === 0 ? (
+          <p className="text-xs text-zinc-500 py-3 text-center">등록된 블로그가 없습니다</p>
+        ) : (
+          <div className="space-y-1.5">
+            {channels.map((c) => (
+              <div
+                key={c.id}
+                className={`flex items-center gap-2 rounded-lg border border-white/5 px-3 py-2 ${
+                  c.isActive ? "bg-zinc-800/50" : "bg-zinc-900/30 opacity-50"
+                }`}
+              >
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-green-500/20 text-green-300 whitespace-nowrap">
+                  {platformLabel(c.platform)}
+                </span>
+                <a
+                  href={c.channelUrl || "#"} target="_blank" rel="noreferrer"
+                  className="flex-1 text-sm text-zinc-200 truncate hover:text-green-400"
+                  title={c.channelUrl || ""}
+                >
+                  {c.channelUrl}
+                </a>
+                <button
+                  onClick={() => toggleActive(c)}
+                  className={c.isActive ? "text-zinc-400 hover:text-amber-400" : "text-zinc-500 hover:text-green-400"}
+                  title={c.isActive ? "숨기기" : "보이기"}
+                >
+                  {c.isActive ? (
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  ) : (
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                    </svg>
+                  )}
+                </button>
+                <button
+                  onClick={() => deleteChannel(c.id)}
+                  className="text-zinc-600 hover:text-red-400"
+                  title="삭제"
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-lg border border-white/10 bg-zinc-800/30 p-3 space-y-2">
+        <p className="text-xs font-medium text-zinc-400">블로그 추가</p>
+        <div className="flex gap-2">
+          <select
+            className={`${inputClass} w-32`}
+            value={newPlatform}
+            onChange={(e) => setNewPlatform(e.target.value as typeof newPlatform)}
+          >
+            <option value="naver_blog">네이버 블로그</option>
+            <option value="tistory">티스토리</option>
+            <option value="brunch">브런치</option>
+          </select>
+          <input
+            className={`${inputClass} flex-1`}
+            value={newUrl}
+            onChange={(e) => setNewUrl(e.target.value)}
+            placeholder={
+              newPlatform === "naver_blog" ? "https://blog.naver.com/아이디" :
+              newPlatform === "tistory" ? "https://xxx.tistory.com" :
+              "https://brunch.co.kr/@핸들"
+            }
+            onKeyDown={(e) => e.key === "Enter" && !adding && addChannel()}
+          />
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[10px] text-zinc-500 flex-1">
+            플랫폼 선택 + 블로그 URL 붙여넣기. RSS로 최신 글 자동 수집됩니다.
+          </p>
+          <button onClick={addChannel} disabled={adding || !newUrl.trim()} className={btnPrimary}>
+            {adding ? "추가 중..." : "블로그 추가"}
+          </button>
+        </div>
+      </div>
+
+      {feed.length > 0 && (
+        <div>
+          <label className={`${labelClass} block mb-1.5`}>
+            공개 사이트 최신 글 ({feed.length}건)
+          </label>
+          <div className="space-y-1.5 max-h-60 overflow-y-auto">
+            {feed.slice(0, 10).map((p, i) => (
+              <a
+                key={i} href={p.url} target="_blank" rel="noreferrer"
+                className="flex gap-2 rounded-lg border border-white/5 bg-zinc-800/30 p-2 hover:border-green-500/30 transition-colors"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    {p.platform && (
+                      <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-green-500/20 text-green-300">
+                        {platformLabel(p.platform)}
+                      </span>
+                    )}
+                    {p.published_at && (
+                      <span className="text-[10px] text-zinc-500">
+                        {new Date(p.published_at).toLocaleDateString("ko")}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-zinc-200 line-clamp-2 leading-tight">{p.title}</div>
                 </div>
               </a>
             ))}

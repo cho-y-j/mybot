@@ -365,45 +365,62 @@ async def _naver_autofetch(
 
     try:
         from app.services.ai_service import call_claude
-        prompt = f"""당신은 선거 후보 공식 정보 수집 담당자입니다. 네이버·구글을 WebSearch로 검색해서
-아래 후보의 **공개된 공식 정보**만 찾아 JSON으로 반환하세요.
+        # 2026-04-18: prompt 개선 — 검색 쿼리 힌트 + confidence 필드 + 더 구체적 지시
+        prompt = f"""당신은 선거 후보 공식 정보 수집 담당자입니다.
+아래 후보를 **WebSearch 여러 번 사용해** 공개 정보를 찾아 JSON으로 반환하세요.
 
-후보: {candidate_name} ({region} {type_label} 예비후보)
+후보: **{candidate_name}** ({region} {type_label})
 
-검색할 것:
-1. 후보 공식 YouTube 채널 URL (채널 ID 또는 /channel/UCxxx, /@handle 형식)
-2. 후보 공식 네이버 블로그 URL (blog.naver.com/xxx)
-3. 대표 공약 5~7개 (선관위 공약 우선, 보도자료에서 추출, 제목 + 1줄 설명)
-4. **학력 5개 이내** (대학교/대학원/특이 학위, 시기 순)
-5. **주요 경력 8개 이내** (현직 → 과거, 시기 순서대로, "현 ~", "전 ~" 형식)
+## 검색 전략 (반드시 여러 쿼리 시도)
+1. `"{candidate_name}" {type_label} 유튜브` — YouTube 채널 찾기
+2. `"{candidate_name}" {region} 블로그` — 네이버 블로그 찾기
+3. `"{candidate_name}" {type_label} 예비후보 공약` — 공약 찾기
+4. `"{candidate_name}" 프로필 학력 경력 {region}` — 학력·경력
+5. 동명이인 주의 → 반드시 "{region}"/"{type_label}" 키워드 포함해 교차 검증
 
-**원칙**:
-- 🟢 사실 소스에서만 (공식 홈페이지, 언론 보도, 선관위, info.nec.go.kr)
-- 🟡 커뮤니티·댓글은 참고 금지
-- 확인 안 되면 null/빈 배열로 반환 (추측 금지)
-- 동명이인 주의 ({region} {type_label} 후보가 맞는지 지역·선거 유형 재확인)
+## 수집 항목
+1. **YouTube 채널 URL**: `/channel/UCxxx`, `/@handle`, `/user/xxx` 형식 중 하나. URL 직접 본 경우만.
+2. **네이버 블로그 URL**: `blog.naver.com/{{id}}` 형식. 다른 블로그(티스토리/브런치)도 찾으면 별도 반환.
+3. **대표 공약 5~7개** (선관위 등록 공약 우선)
+4. **학력 5개 이내** (대학/대학원)
+5. **경력 8개 이내** (현직 → 과거, "현 ~" / "전 ~" 형식)
 
-반드시 아래 JSON만 반환:
+## 원칙
+- 확신도 `high`: 공식 홈페이지, 본인 인증된 SNS, 언론 보도 2군데 이상 확인된 경우
+- 확신도 `medium`: 검색 결과 1~2건에서 발견, 동명이인 가능성 일부 있음
+- 확신도 `low`: 추측 수준 → **null로 반환** (제공 금지)
+- 커뮤니티·댓글·개인블로그 정보는 신뢰 금지
+- 동명이인 주의: "{region}"/"{type_label}" 과 매칭되는지 재확인
+
+**반드시 순수 JSON만 반환** (설명/마크다운 X):
 {{
-  "youtube_url": "https://www.youtube.com/@xxx" or null,
-  "youtube_channel_id": "UCxxx" or null,
-  "blog_url": "https://blog.naver.com/xxx" or null,
-  "pledges": [
-    {{"title": "공약 제목", "description": "1~2줄 설명"}}
-  ],
-  "education": [
-    "서울대학교 OO학과 졸업",
-    "고려대학교 대학원 OO학 박사"
-  ],
-  "career": [
-    "현 OO재단 이사장",
-    "전 OO부 차관 (2015~2017)"
-  ]
+  "youtube_url": "...",
+  "youtube_channel_id": "UCxxx 형식 (있으면)",
+  "youtube_confidence": "high|medium|low|none",
+  "blog_url": "blog.naver.com/xxx",
+  "tistory_url": "xxx.tistory.com",
+  "brunch_url": "brunch.co.kr/@xxx",
+  "blog_confidence": "high|medium|low|none",
+  "pledges": [{{"title": "...", "description": "..."}}],
+  "education": ["..."],
+  "career": ["..."]
 }}"""
 
         data = await call_claude(
-            prompt, timeout=180, context="homepage_autofetch",
+            prompt, timeout=240, context="homepage_autofetch",
             tenant_id=tenant_id, db=db, web_search=True,
+        )
+        # 디버그용: 실제 AI 응답 로그 (품질 개선에 필수)
+        logger.info(
+            "homepage_autofetch_ai_response",
+            candidate=candidate_name,
+            region=region,
+            has_youtube=bool(data and data.get("youtube_url")),
+            has_blog=bool(data and data.get("blog_url")),
+            pledges_count=len(data.get("pledges") or []) if isinstance(data, dict) else 0,
+            yt_conf=data.get("youtube_confidence") if isinstance(data, dict) else None,
+            blog_conf=data.get("blog_confidence") if isinstance(data, dict) else None,
+            data_keys=list(data.keys()) if isinstance(data, dict) else None,
         )
         if not data or not isinstance(data, dict):
             return result
@@ -418,17 +435,32 @@ async def _naver_autofetch(
             """), {"uid": homepage_user_id, "cid": yt_id, "curl": yt_url})
             result["channels"] += 1
 
-        # 블로그 추가
+        # 블로그 추가 — 네이버/티스토리/브런치 각각
+        import re as _re
         blog_url = data.get("blog_url")
         if blog_url and ch_cnt == 0:
-            # blog.naver.com/{id} 에서 id 추출
-            import re
-            m = re.search(r"blog\.naver\.com/([^/?]+)", blog_url)
+            m = _re.search(r"blog\.naver\.com/([^/?]+)", blog_url)
             blog_id = m.group(1) if m else None
             await db.execute(text("""
                 INSERT INTO homepage.external_channels (user_id, platform, channel_id, channel_url, is_active, created_at)
                 VALUES (:uid, 'naver_blog', :cid, :curl, true, NOW())
             """), {"uid": homepage_user_id, "cid": blog_id, "curl": blog_url})
+            result["channels"] += 1
+        tistory_url = data.get("tistory_url")
+        if tistory_url and ch_cnt == 0:
+            await db.execute(text("""
+                INSERT INTO homepage.external_channels (user_id, platform, channel_id, channel_url, is_active, created_at)
+                VALUES (:uid, 'tistory', NULL, :curl, true, NOW())
+            """), {"uid": homepage_user_id, "curl": tistory_url})
+            result["channels"] += 1
+        brunch_url = data.get("brunch_url")
+        if brunch_url and ch_cnt == 0:
+            m = _re.search(r"brunch\.co\.kr/@([^/?]+)", brunch_url)
+            brunch_id = m.group(1) if m else None
+            await db.execute(text("""
+                INSERT INTO homepage.external_channels (user_id, platform, channel_id, channel_url, is_active, created_at)
+                VALUES (:uid, 'brunch', :cid, :curl, true, NOW())
+            """), {"uid": homepage_user_id, "cid": brunch_id, "curl": brunch_url})
             result["channels"] += 1
 
         # 공약 추가 (기존 0개일 때만)

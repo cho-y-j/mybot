@@ -7,6 +7,7 @@ import ElectionGallery from "./election-gallery";
 import ElectionSchedule from "./election-schedule";
 import ElectionNews from "./election-news";
 import ElectionVideos from "./election-videos";
+import ElectionBlog from "./election-blog";
 import ElectionContacts from "./election-contacts";
 import ElectionFooter from "./election-footer";
 import ElectionNav from "./election-nav";
@@ -185,6 +186,14 @@ export default function ElectionTemplate({ data }: Props) {
         />
       );
     },
+    blog: () => (
+      <ElectionBlog
+        key="blog"
+        code={user.code}
+        sectionTitle={blockTitle("blog")}
+        showCount={(blockContent("blog")?.showCount as number) || 6}
+      />
+    ),
     donation: () => {
       const donationContent = blockContent("donation");
       const imageUrl = donationContent?.imageUrl as string | undefined;
