@@ -153,12 +153,13 @@ export default function EasyHome() {
         )}
       </div>
 
-      {/* 숫자 요약 */}
+      {/* 오늘 체크 포인트 — 진짜 후보자가 매일 열어봐야 할 3곳 */}
       <div>
-        <h2 className="text-lg font-bold mb-3">오늘 수집 현황</h2>
+        <h2 className="text-lg font-bold mb-3">오늘 체크</h2>
         <div className="grid grid-cols-3 gap-3">
+          {/* 1. 오늘 뉴스 */}
           <Link href="/easy/news"
-            className="group bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 hover:border-blue-500/50 hover:bg-blue-500/5 hover:-translate-y-0.5 transition-all">
+            className="group bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 hover:border-blue-500/60 hover:bg-blue-500/5 hover:-translate-y-0.5 transition-all">
             <div className="flex items-center justify-between mb-2">
               <svg className="w-5 h-5 text-[var(--muted)] group-hover:text-blue-500 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8M15 18h-5M10 6h8v4h-8V6Z"/>
@@ -167,20 +168,24 @@ export default function EasyHome() {
             </div>
             <div className="text-2xl font-black text-[var(--foreground)]">{summary.news_today}</div>
             <div className="text-xs text-[var(--muted)] mt-0.5">뉴스</div>
+            <div className="text-[10px] text-[var(--muted)] mt-1">본인·경쟁자 언급 기사</div>
           </Link>
-          <Link href="/easy/youtube"
-            className="group bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 hover:border-emerald-500/50 hover:bg-emerald-500/5 hover:-translate-y-0.5 transition-all">
+          {/* 2. 여론·트렌드 (커뮤니티+트렌드 — 이전 커뮤니티 카드와 미디어 중복 해소) */}
+          <Link href="/easy/trends"
+            className="group bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 hover:border-amber-500/60 hover:bg-amber-500/5 hover:-translate-y-0.5 transition-all">
             <div className="flex items-center justify-between mb-2">
-              <svg className="w-5 h-5 text-[var(--muted)] group-hover:text-emerald-500 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M17 8h1a4 4 0 1 1 0 8h-1M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V8ZM7 1v3M11 1v3M15 1v3"/>
+              <svg className="w-5 h-5 text-[var(--muted)] group-hover:text-amber-500 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m3 17 6-6 4 4 8-8M14 7h7v7"/>
               </svg>
-              <span className="text-[10px] text-[var(--muted)] group-hover:text-emerald-500">보기 →</span>
+              <span className="text-[10px] text-[var(--muted)] group-hover:text-amber-500">보기 →</span>
             </div>
             <div className="text-2xl font-black text-[var(--foreground)]">{summary.comm_today}</div>
-            <div className="text-xs text-[var(--muted)] mt-0.5">커뮤니티</div>
+            <div className="text-xs text-[var(--muted)] mt-0.5">여론·트렌드</div>
+            <div className="text-[10px] text-[var(--muted)] mt-1">커뮤니티·검색 키워드</div>
           </Link>
+          {/* 3. 미디어 (유튜브) */}
           <Link href="/easy/youtube"
-            className="group bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 hover:border-rose-500/50 hover:bg-rose-500/5 hover:-translate-y-0.5 transition-all">
+            className="group bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 hover:border-rose-500/60 hover:bg-rose-500/5 hover:-translate-y-0.5 transition-all">
             <div className="flex items-center justify-between mb-2">
               <svg className="w-5 h-5 text-[var(--muted)] group-hover:text-rose-500 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <path d="m10 15 5-3-5-3zM2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
@@ -188,7 +193,8 @@ export default function EasyHome() {
               <span className="text-[10px] text-[var(--muted)] group-hover:text-rose-500">보기 →</span>
             </div>
             <div className="text-2xl font-black text-[var(--foreground)]">{summary.yt_today}</div>
-            <div className="text-xs text-[var(--muted)] mt-0.5">미디어</div>
+            <div className="text-xs text-[var(--muted)] mt-0.5">유튜브</div>
+            <div className="text-[10px] text-[var(--muted)] mt-1">본인·경쟁자 영상</div>
           </Link>
         </div>
       </div>
