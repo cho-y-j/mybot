@@ -40,12 +40,13 @@ services:
   backend:
     image: ghcr.io/cho-y-j/mybot-backend:latest
     build:
-      context: .
-      dockerfile: Dockerfile.api
+      context: ..
+      dockerfile: docker/Dockerfile.api
     container_name: ep_backend
     restart: always
     env_file: .env.server
     environment:
+      - TZ=Asia/Seoul
       - DATABASE_URL=postgresql+asyncpg://electionpulse:ep_dev_password_2026@ep_postgres:5432/electionpulse
       - SYNC_DATABASE_URL=postgresql://electionpulse:ep_dev_password_2026@ep_postgres:5432/electionpulse
       - REDIS_URL=redis://ep_redis:6379
@@ -70,6 +71,7 @@ services:
     restart: always
     env_file: .env.server
     environment:
+      - TZ=Asia/Seoul
       - DATABASE_URL=postgresql+asyncpg://electionpulse:ep_dev_password_2026@ep_postgres:5432/electionpulse
       - SYNC_DATABASE_URL=postgresql://electionpulse:ep_dev_password_2026@ep_postgres:5432/electionpulse
       - REDIS_URL=redis://ep_redis:6379
@@ -92,6 +94,7 @@ services:
     restart: always
     env_file: .env.server
     environment:
+      - TZ=Asia/Seoul
       - DATABASE_URL=postgresql+asyncpg://electionpulse:ep_dev_password_2026@ep_postgres:5432/electionpulse
       - SYNC_DATABASE_URL=postgresql://electionpulse:ep_dev_password_2026@ep_postgres:5432/electionpulse
       - REDIS_URL=redis://ep_redis:6379

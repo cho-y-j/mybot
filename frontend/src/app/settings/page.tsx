@@ -277,22 +277,22 @@ export default function SettingsPage() {
               {tgData.recipients.map((r: any) => (
                 <div key={r.id} className={`flex items-center justify-between p-3 rounded-lg border ${r.is_active ? 'bg-white' : 'bg-gray-50 opacity-60'}`}>
                   <div className="flex items-center gap-3">
-                    <span className="text-xl">{r.chat_type === 'group' ? '👥' : '👤'}</span>
+                    <span className="text-xl">{r.chat_type === 'group' ? '' : ''}</span>
                     <div>
                       <span className="font-medium">{r.name}</span>
                       <span className="text-xs text-gray-400 ml-2">ID: {r.chat_id}</span>
                       <div className="flex gap-2 mt-1">
                         <button onClick={() => handleToggleRecipient(r.id, 'receive_news', r.receive_news)}
                           className={`text-xs px-2 py-0.5 rounded-full ${r.receive_news ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-400'}`}>
-                          📰 뉴스
+                           뉴스
                         </button>
                         <button onClick={() => handleToggleRecipient(r.id, 'receive_briefing', r.receive_briefing)}
                           className={`text-xs px-2 py-0.5 rounded-full ${r.receive_briefing ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'}`}>
-                          📋 브리핑
+                           브리핑
                         </button>
                         <button onClick={() => handleToggleRecipient(r.id, 'receive_alert', r.receive_alert)}
                           className={`text-xs px-2 py-0.5 rounded-full ${r.receive_alert ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-400'}`}>
-                          🚨 알림
+                           알림
                         </button>
                       </div>
                     </div>
@@ -334,8 +334,8 @@ export default function SettingsPage() {
               <label className="block text-xs text-gray-500 mb-1">유형</label>
               <select className="input-field" value={recipientForm.chat_type}
                 onChange={(e) => setRecipientForm({ ...recipientForm, chat_type: e.target.value })}>
-                <option value="private">👤 개인</option>
-                <option value="group">👥 그룹 채팅</option>
+                <option value="private"> 개인</option>
+                <option value="group"> 그룹 채팅</option>
               </select>
             </div>
             <button type="submit" className="btn-primary w-full">수신자 추가</button>
@@ -353,13 +353,13 @@ export default function SettingsPage() {
           <div className="flex gap-2">
             <button onClick={async () => {
               try { const r = await api.sendBriefing('morning'); setMessage(r.message); } catch (e: any) { setError(e.message); }
-            }} className="btn-secondary text-sm">☀️ 오전 브리핑</button>
+            }} className="btn-secondary text-sm"> 오전 브리핑</button>
             <button onClick={async () => {
               try { const r = await api.sendBriefing('afternoon'); setMessage(r.message); } catch (e: any) { setError(e.message); }
-            }} className="btn-secondary text-sm">🌤 오후 브리핑</button>
+            }} className="btn-secondary text-sm"> 오후 브리핑</button>
             <button onClick={async () => {
               try { const r = await api.sendBriefing('daily'); setMessage(r.message); } catch (e: any) { setError(e.message); }
-            }} className="btn-primary text-sm">🌙 일일 보고서</button>
+            }} className="btn-primary text-sm"> 일일 보고서</button>
           </div>
         </div>
       )}

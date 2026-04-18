@@ -7,12 +7,12 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 const CONTENT_TYPES = [
-  { value: 'blog', icon: '📝', label: '블로그 글', desc: '네이버 블로그·공식 사이트용 (1000~2000자)' },
-  { value: 'sns', icon: '📱', label: 'SNS 포스팅', desc: '페이스북·인스타그램·X (500자 이내)' },
-  { value: 'card', icon: '🎨', label: '카드뉴스', desc: '이미지 카드용 짧은 메시지' },
-  { value: 'press', icon: '📰', label: '보도자료', desc: '언론사 송부용 공식 자료' },
-  { value: 'defense', icon: '🛡️', label: '해명 자료', desc: '부정 보도 대응용' },
-  { value: 'debate', icon: '🎤', label: '토론 대본', desc: '방송/합동 토론 오프닝·반박·클로징 JSON' },
+  { value: 'blog', label: '블로그 글', desc: '네이버 블로그·공식 사이트용 (1000~2000자)' },
+  { value: 'sns', label: 'SNS 포스팅', desc: '페이스북·인스타그램·X (500자 이내)' },
+  { value: 'card', label: '카드뉴스', desc: '이미지 카드용 짧은 메시지' },
+  { value: 'press', label: '보도자료', desc: '언론사 송부용 공식 자료' },
+  { value: 'defense', label: '해명 자료', desc: '부정 보도 대응용' },
+  { value: 'debate', label: '토론 대본', desc: '방송/합동 토론 오프닝·반박·클로징 JSON' },
 ];
 
 const PURPOSES = [
@@ -93,12 +93,12 @@ function ContentWizardInner() {
     setGenerating(true);
     // 진행 상태 rotate — 실제 서버 단계와 대략 맞춤
     const steps = [
-      '🔍 RAG 벡터로 관련 수집 데이터 검색 중...',
-      '📊 후보 프로필·여론조사·과거 선거 데이터 병합 중...',
-      '📝 캠프 학습 메모리(이전 보고서) 불러오는 중...',
-      '⚖️ 공직선거법 조항 적용 중...',
-      '🤖 Claude Opus로 콘텐츠 작성 중... (최대 5분)',
-      '✅ 선거법 준수 검증 + RAG 저장 중...',
+      ' RAG 벡터로 관련 수집 데이터 검색 중...',
+      ' 후보 프로필·여론조사·과거 선거 데이터 병합 중...',
+      ' 캠프 학습 메모리(이전 보고서) 불러오는 중...',
+      ' 공직선거법 조항 적용 중...',
+      ' Claude Opus로 콘텐츠 작성 중... (최대 5분)',
+      ' 선거법 준수 검증 + RAG 저장 중...',
     ];
     let si = 0;
     setProgressMsg(steps[0]);
@@ -158,7 +158,6 @@ function ContentWizardInner() {
               className={`border-2 rounded-xl p-5 text-left hover:border-blue-500 transition ${
                 contentType === c.value ? 'border-blue-500 bg-blue-500/5' : 'border-[var(--card-border)]'
               }`}>
-              <div className="text-4xl mb-2">{c.icon}</div>
               <div className="font-bold text-base">{c.label}</div>
               <div className="text-xs text-[var(--muted)] mt-1">{c.desc}</div>
             </button>
@@ -184,7 +183,7 @@ function ContentWizardInner() {
         {/* AI 추천 주제 */}
         <div>
           <div className="flex items-center justify-between mb-2">
-            <h2 className="font-semibold">💡 AI 추천 주제</h2>
+            <h2 className="font-semibold"> AI 추천 주제</h2>
             <button onClick={loadSuggestions} className="text-xs text-[var(--muted)] hover:text-blue-500">↻</button>
           </div>
           {loadingSuggestions ? (
@@ -210,7 +209,7 @@ function ContentWizardInner() {
 
         {/* 직접 입력 */}
         <div>
-          <h2 className="font-semibold mb-2">✏️ 직접 입력</h2>
+          <h2 className="font-semibold mb-2"> 직접 입력</h2>
           <input
             value={topic}
             onChange={e => setTopic(e.target.value)}
@@ -288,7 +287,7 @@ function ContentWizardInner() {
         <>
           <button onClick={generate} disabled={generating}
             className="w-full py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-bold text-lg rounded-xl hover:from-blue-700 hover:to-blue-800 disabled:opacity-40">
-            {generating ? '✨ AI 생성 중...' : '✨ 콘텐츠 생성하기'}
+            {generating ? ' AI 생성 중...' : ' 콘텐츠 생성하기'}
           </button>
           {generating && progressMsg && (
             <div className="mt-3 p-4 bg-blue-500/10 border border-blue-500/30 rounded-xl">
@@ -304,7 +303,7 @@ function ContentWizardInner() {
 
       {result?.error && (
         <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-500 text-sm">
-          ❌ {result.error}
+           {result.error}
         </div>
       )}
 
@@ -313,25 +312,25 @@ function ContentWizardInner() {
         <div className="space-y-4">
           <div className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-5">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="font-bold">🎤 토론 대본 생성 완료</h2>
+              <h2 className="font-bold"> 토론 대본 생성 완료</h2>
               <button onClick={() => { setResult(null); setStep(1); }}
                 className="text-xs px-3 py-1 bg-[var(--muted-bg)] rounded hover:bg-blue-500/10">↻ 다시</button>
             </div>
             <div className="space-y-4 text-sm">
               <section>
-                <h3 className="font-semibold text-blue-500 mb-1">🎙️ 오프닝</h3>
+                <h3 className="font-semibold text-blue-500 mb-1"> 오프닝</h3>
                 <p className="whitespace-pre-wrap">{result.opening}</p>
               </section>
               {result.key_points?.length > 0 && (
                 <section>
-                  <h3 className="font-semibold text-blue-500 mb-1">💪 핵심 포인트 ({result.key_points.length})</h3>
+                  <h3 className="font-semibold text-blue-500 mb-1"> 핵심 포인트 ({result.key_points.length})</h3>
                   <div className="space-y-2">
                     {result.key_points.map((kp: any, i: number) => (
                       <div key={i} className="p-3 bg-[var(--muted-bg)] rounded">
                         <div className="font-semibold text-xs">{kp.topic}</div>
                         <div className="text-xs mt-1"><span className="text-[var(--muted)]">입장:</span> {kp.our_position}</div>
                         <div className="text-xs mt-1"><span className="text-[var(--muted)]">근거:</span> {kp.data_point}</div>
-                        <div className="text-xs mt-1 text-red-500"><span className="text-[var(--muted)]">공격 질문:</span> {kp.attack_question}</div>
+                        <div className="text-xs mt-1 text-red-500"><span className="text-[var(--muted)]">토론 질문:</span> {kp.attack_question}</div>
                       </div>
                     ))}
                   </div>
@@ -339,7 +338,7 @@ function ContentWizardInner() {
               )}
               {result.rebuttals?.length > 0 && (
                 <section>
-                  <h3 className="font-semibold text-blue-500 mb-1">🛡️ 예상 공격·반박 ({result.rebuttals.length})</h3>
+                  <h3 className="font-semibold text-blue-500 mb-1">예상 반박 대비 ({result.rebuttals.length})</h3>
                   <div className="space-y-2">
                     {result.rebuttals.map((r: any, i: number) => (
                       <div key={i} className="p-3 bg-[var(--muted-bg)] rounded">
@@ -351,7 +350,7 @@ function ContentWizardInner() {
                 </section>
               )}
               <section>
-                <h3 className="font-semibold text-blue-500 mb-1">🏁 클로징</h3>
+                <h3 className="font-semibold text-blue-500 mb-1"> 클로징</h3>
                 <p className="whitespace-pre-wrap">{result.closing}</p>
               </section>
             </div>
@@ -363,10 +362,10 @@ function ContentWizardInner() {
         <div className="space-y-4">
           <div className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-5">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="font-bold">✨ 생성 완료</h2>
+              <h2 className="font-bold"> 생성 완료</h2>
               <div className="flex gap-2">
                 <button onClick={() => navigator.clipboard.writeText(result.content)}
-                  className="text-xs px-3 py-1 bg-[var(--muted-bg)] rounded hover:bg-blue-500/10">📋 복사</button>
+                  className="text-xs px-3 py-1 bg-[var(--muted-bg)] rounded hover:bg-blue-500/10"> 복사</button>
                 <button onClick={() => { setResult(null); setStep(1); }}
                   className="text-xs px-3 py-1 bg-[var(--muted-bg)] rounded hover:bg-blue-500/10">새로 만들기</button>
               </div>
@@ -391,13 +390,13 @@ function ContentWizardInner() {
           {/* 출처 */}
           {result.citations && result.citations.length > 0 && (
             <div className="p-3 rounded-xl border border-[var(--card-border)] bg-[var(--muted-bg)]">
-              <p className="text-xs font-semibold mb-2">📎 참고 자료 ({result.citations.length})</p>
+              <p className="text-xs font-semibold mb-2"> 참고 자료 ({result.citations.length})</p>
               <div className="flex flex-wrap gap-1.5">
                 {result.citations.map((c: any, i: number) => (
                   <a key={c.id} href={c.url || '#'} target={c.url ? '_blank' : undefined}
                     className="text-[10px] px-2 py-0.5 rounded border bg-[var(--card-bg)] hover:border-blue-400"
                     title={c.title}>
-                    {c.type === 'nec' ? '🏛️' : c.type === 'news' ? '📰' : c.type === 'community' ? '💬' : c.type === 'youtube' ? '📺' : '📋'} {i + 1}. {(c.title || '').slice(0, 30)}
+                    {c.type === 'nec' ? '' : c.type === 'news' ? '' : c.type === 'community' ? '' : c.type === 'youtube' ? '' : ''} {i + 1}. {(c.title || '').slice(0, 30)}
                   </a>
                 ))}
               </div>
@@ -412,7 +411,7 @@ function ContentWizardInner() {
                 : 'border-red-500/30 bg-red-500/5'
             }`}>
               <div className={`font-bold ${result.compliance.compliant ? 'text-green-500' : 'text-red-500'}`}>
-                ⚖️ {result.compliance.compliant ? '선거법 적합' : '선거법 위반 소지 있음'} (점수 {result.compliance.score}/100)
+                 {result.compliance.compliant ? '선거법 적합' : '선거법 위반 소지 있음'} (점수 {result.compliance.score}/100)
               </div>
               {result.compliance.violations?.map((v: any, i: number) => (
                 <div key={i} className="text-xs text-red-500 mt-1">
@@ -431,15 +430,15 @@ function ContentWizardInner() {
           <div className="flex gap-2 flex-wrap">
             <button onClick={() => router.push('/easy/assistant')}
               className="px-4 py-2 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg text-sm hover:border-blue-500">
-              💬 AI에게 더 물어보기
+               AI에게 더 물어보기
             </button>
             <button onClick={() => router.push('/easy/content?type=sns&topic=' + encodeURIComponent(topic))}
               className="px-4 py-2 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg text-sm hover:border-blue-500">
-              📱 SNS 버전도 만들기
+               SNS 버전도 만들기
             </button>
             <button onClick={() => router.push('/easy/reports')}
               className="px-4 py-2 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg text-sm hover:border-blue-500">
-              📊 보고서 보기
+               보고서 보기
             </button>
           </div>
         </div>

@@ -48,9 +48,12 @@ export default function FloatingAssistant() {
   if (!open) {
     return (
       <button onClick={() => setOpen(true)}
-        className="fixed bottom-6 right-6 w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg flex items-center justify-center text-2xl transition z-40"
+        className="group fixed bottom-6 right-6 flex items-center gap-2 pl-4 pr-5 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg hover:shadow-xl hover:scale-105 transition-all z-40"
         title="AI 비서에게 물어보기">
-        💬
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        </svg>
+        <span className="text-sm font-semibold">AI 비서</span>
       </button>
     );
   }
@@ -59,12 +62,23 @@ export default function FloatingAssistant() {
     <div className="fixed bottom-2 right-2 lg:bottom-6 lg:right-6 w-[calc(100vw-1rem)] lg:w-96 max-w-[calc(100vw-1rem)] h-[80vh] lg:h-[600px] max-h-[calc(100vh-1rem)] bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-2xl flex flex-col z-40">
       {/* 헤더 */}
       <div className="flex items-center justify-between p-4 border-b border-[var(--card-border)]">
-        <div>
-          <div className="font-bold text-sm">🤖 AI 비서</div>
-          <div className="text-[10px] text-[var(--muted)]">무엇이든 물어보세요</div>
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+          </div>
+          <div>
+            <div className="font-bold text-sm">AI 비서</div>
+            <div className="text-[10px] text-[var(--muted)]">무엇이든 물어보세요</div>
+          </div>
         </div>
-        <button onClick={() => setOpen(false)} className="text-[var(--muted)] hover:text-white text-xl">
-          ✕
+        <button onClick={() => setOpen(false)}
+          aria-label="닫기"
+          className="w-8 h-8 rounded-full flex items-center justify-center text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--muted-bg)] transition">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
         </button>
       </div>
 
@@ -73,7 +87,7 @@ export default function FloatingAssistant() {
         {messages.length === 0 && (
           <div className="space-y-3">
             <div className="p-3 bg-blue-500/10 rounded-lg text-sm">
-              <p className="font-semibold mb-1">안녕하세요! 👋</p>
+              <p className="font-semibold mb-1">안녕하세요</p>
               <p className="text-xs text-[var(--muted)]">
                 선거 관련 어떤 질문이든 도와드립니다. 아래 예시를 눌러보세요.
               </p>

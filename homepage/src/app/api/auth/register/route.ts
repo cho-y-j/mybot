@@ -1,7 +1,7 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { hashPassword, createSession, setSessionCookie } from "@/lib/auth";
-import { successResponse, errorResponse } from "@/lib/api-response";
+import { hashPassword, createSession, applySessionCookies } from "@/lib/auth";
+import { errorResponse } from "@/lib/api-response";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
@@ -64,7 +64,6 @@ export async function POST(request: NextRequest) {
     // 자동 로그인
     const userAgent = request.headers.get("user-agent") || "";
     const sessionId = await createSession(user.id, "user", false, ip, userAgent);
-    setSessionCookie(sessionId, false);
 
     await prisma.activityLog.create({
       data: {
@@ -75,10 +74,15 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    return successResponse({
-      user: { id: user.id, code: user.code, name: user.name },
-      redirectUrl: `/${code}/admin`,
-    }, 201);
+    const res = NextResponse.json({
+      success: true,
+      data: {
+        user: { id: user.id, code: user.code, name: user.name },
+        redirectUrl: `/${code}/admin`,
+      },
+    }, { status: 201 });
+    applySessionCookies(res, sessionId, "user", user.code, false);
+    return res;
   } catch {
     return errorResponse("서버 오류가 발생했습니다", 500);
   }

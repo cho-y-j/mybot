@@ -125,7 +125,7 @@ export default function EasyLayout({ children }: { children: React.ReactNode }) 
             <div className="font-bold text-lg tracking-tight">CampAI</div>
             <div className="text-xs text-[var(--muted)] mt-0.5">{user?.name || '로그인됨'}</div>
           </div>
-          <button onClick={() => setMobileOpen(false)} className="lg:hidden text-[var(--muted)] hover:text-[var(--foreground)] text-lg">✕</button>
+          <button onClick={() => setMobileOpen(false)} className="lg:hidden text-[var(--muted)] hover:text-[var(--foreground)] text-lg"></button>
         </div>
 
         <nav className="flex-1 py-2 overflow-y-auto">

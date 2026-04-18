@@ -27,11 +27,15 @@ export async function GET(
 
     const [rows, overrides] = await Promise.all([
       prisma.$queryRawUnsafe<any[]>(
+        // AI 분석 엔진이 이미 엄격 검증(is_relevant/is_about_our_candidate/sentiment/verified)한 결과를
+        // 그대로 신뢰. 홍보 사이트라 긍정+중립만 노출, 부정·검증 미완은 제외.
         `SELECT title, url, source, summary, published_at, collected_at
          FROM public.news_articles
          WHERE election_id = $1::uuid
-           AND is_relevant = true AND is_about_our_candidate = true
-           AND sentiment = 'positive' AND sentiment_verified = true
+           AND is_relevant = true
+           AND is_about_our_candidate = true
+           AND sentiment IN ('positive', 'neutral')
+           AND sentiment_verified = true
          ORDER BY published_at DESC NULLS LAST, collected_at DESC
          LIMIT 60`,
         user.electionId

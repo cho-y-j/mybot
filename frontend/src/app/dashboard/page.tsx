@@ -213,7 +213,7 @@ export default function DashboardPage() {
                           {i + 1}
                         </span>
                         <span className={`font-bold ${s.is_ours ? 'text-blue-500' : ''}`}>
-                          {s.name} {s.is_ours && '★'}
+                          {s.name} {s.is_ours && ''}
                         </span>
                         <span className="text-[10px] text-[var(--muted)]">{s.party || ''}</span>
                       </a>

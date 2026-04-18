@@ -267,7 +267,7 @@ export default function OnboardingPage() {
                     ))}
                   </select>
                   <button onClick={() => removeComp(i)}
-                    className="text-red-400 hover:text-red-600 px-2">✕</button>
+                    className="text-red-400 hover:text-red-600 px-2"></button>
                 </div>
               ))}
             </div>
@@ -334,13 +334,13 @@ export default function OnboardingPage() {
               <div className="card">
                 <h3 className="font-semibold mb-2">커뮤니티 타겟</h3>
                 {preview.community_targets.map((c: string, i: number) => (
-                  <div key={i} className="text-sm py-1 text-gray-600">💬 {c}</div>
+                  <div key={i} className="text-sm py-1 text-gray-600"> {c}</div>
                 ))}
               </div>
               <div className="card">
                 <h3 className="font-semibold mb-2">지역 언론</h3>
                 {preview.local_media.map((m: string, i: number) => (
-                  <div key={i} className="text-sm py-1 text-gray-600">📰 {m}</div>
+                  <div key={i} className="text-sm py-1 text-gray-600"> {m}</div>
                 ))}
               </div>
             </div>
@@ -348,7 +348,7 @@ export default function OnboardingPage() {
             {/* 홈페이지 주소 직접 지정 */}
             {form.plan !== 'analysis_only' && (
               <div className="card">
-                <h3 className="font-semibold mb-2">🌐 내 홈페이지 주소</h3>
+                <h3 className="font-semibold mb-2"> 내 홈페이지 주소</h3>
                 <p className="text-xs text-gray-500 mb-3">후보 홍보 시 이 링크를 공유합니다. 나중에 변경 가능.</p>
                 <div className="flex items-center gap-1">
                   <span className="text-sm text-gray-500">ai.on1.kr/</span>
@@ -370,7 +370,7 @@ export default function OnboardingPage() {
                 </div>
                 {form.homepage_code.length >= 3 && codeCheck.available !== null && (
                   <p className={`text-xs mt-2 ${codeCheck.available ? 'text-emerald-600' : 'text-red-500'}`}>
-                    {codeCheck.available ? '✅' : '❌'} {codeCheck.reason}
+                    {codeCheck.available ? '' : ''} {codeCheck.reason}
                   </p>
                 )}
                 {!form.homepage_code && (
@@ -381,12 +381,12 @@ export default function OnboardingPage() {
 
             {/* 플랜 선택 */}
             <div className="card">
-              <h3 className="font-semibold mb-3">📦 플랜 선택</h3>
+              <h3 className="font-semibold mb-3"> 플랜 선택</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 {[
-                  { value: 'full', label: '🎯 분석 + 홈페이지', desc: 'AI 분석 + 후보 홈페이지 자동 생성 (ai.on1.kr/{내코드})', recommended: true },
-                  { value: 'homepage_only', label: '🏠 홈페이지만', desc: '홍보용 후보 홈페이지만 필요한 경우' },
-                  { value: 'analysis_only', label: '📊 분석만', desc: '이미 자체 사이트가 있어 분석만 필요한 경우' },
+                  { value: 'full', label: ' 분석 + 홈페이지', desc: 'AI 분석 + 후보 홈페이지 자동 생성 (ai.on1.kr/{내코드})', recommended: true },
+                  { value: 'homepage_only', label: ' 홈페이지만', desc: '홍보용 후보 홈페이지만 필요한 경우' },
+                  { value: 'analysis_only', label: ' 분석만', desc: '이미 자체 사이트가 있어 분석만 필요한 경우' },
                 ].map(p => (
                   <button key={p.value} type="button"
                     onClick={() => setForm(f => ({ ...f, plan: p.value as any }))}
@@ -421,7 +421,7 @@ export default function OnboardingPage() {
               <button onClick={() => setStep('candidate')} className="btn-secondary flex-1">이전</button>
               <button onClick={handleApply} disabled={loading}
                 className="btn-primary flex-1 py-3 text-lg">
-                {loading ? '설정 적용 중...' : '🚀 분석 시작하기'}
+                {loading ? '설정 적용 중...' : ' 분석 시작하기'}
               </button>
             </div>
           </div>
@@ -430,7 +430,7 @@ export default function OnboardingPage() {
         {/* ───── Step 4: 완료 + 부트스트랩 진행률 ───── */}
         {step === 'done' && result && (
           <div className="card text-center py-12">
-            <div className="text-6xl mb-4">🎉</div>
+            <div className="text-6xl mb-4"></div>
             <h2 className="text-2xl font-bold mb-2">설정 완료!</h2>
             <p className="text-gray-500 mb-6">{result.message}</p>
 
@@ -507,12 +507,12 @@ function BootstrapProgress({ electionId, onDone }: { electionId: string; onDone:
   const isFailed = phase === 'failed';
 
   const phaseLabel: Record<string, string> = {
-    starting: '🟡 준비 중',
-    collecting: '🔵 데이터 수집 중',
-    analyzing: '🟣 AI 분석 중',
-    done: '🟢 완료',
-    failed: '🔴 실패',
-    unknown: '⚪ 상태 확인 중',
+    starting: ' 준비 중',
+    collecting: ' 데이터 수집 중',
+    analyzing: ' AI 분석 중',
+    done: ' 완료',
+    failed: ' 실패',
+    unknown: ' 상태 확인 중',
   };
 
   const barColor = isDone ? 'bg-green-500' : isFailed ? 'bg-red-500' : 'bg-blue-500';
@@ -565,7 +565,7 @@ function BootstrapProgress({ electionId, onDone }: { electionId: string; onDone:
       ) : (
         <div className="text-center mt-4">
           <p className="text-xs text-gray-500">
-            ⏱ 보통 1~3분 소요. 탭을 닫아도 백그라운드에서 계속 수집됩니다.
+             보통 1~3분 소요. 탭을 닫아도 백그라운드에서 계속 수집됩니다.
           </p>
           <button onClick={onDone} className="text-xs text-blue-500 hover:underline mt-2">
             지금 대시보드로 건너뛰기 →

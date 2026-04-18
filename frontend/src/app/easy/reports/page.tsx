@@ -127,7 +127,7 @@ function ReportsInner() {
                 }`}>
                 <div className="font-medium">{rt.label}</div>
                 <div className="text-[10px] text-[var(--muted)] mt-1">{rt.desc}</div>
-                {rt.hasPdf && <div className="text-[10px] text-blue-500 mt-1">📄 PDF 포함</div>}
+                {rt.hasPdf && <div className="text-[10px] text-blue-500 mt-1"> PDF 포함</div>}
               </button>
             ))}
           </div>
@@ -144,7 +144,7 @@ function ReportsInner() {
           <div className="flex gap-2">
             <button onClick={handleGenerate} disabled={generating}
               className="px-5 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50">
-              {generating ? 'AI 분석 중... (최대 10분)' : '✨ 생성하기'}
+              {generating ? 'AI 분석 중... (최대 10분)' : ' 생성하기'}
             </button>
             <button onClick={() => setShowGenerate(false)}
               className="px-4 py-2 text-sm text-[var(--muted)] hover:text-[var(--foreground)]">
@@ -160,7 +160,7 @@ function ReportsInner() {
         </div>
       ) : reports.length === 0 ? (
         <div className="text-center py-16 bg-[var(--muted-bg)] rounded-xl">
-          <div className="text-4xl mb-2">📝</div>
+          <div className="text-4xl mb-2"></div>
           <p className="text-sm text-[var(--muted)]">아직 보고서가 없어요.</p>
           <button onClick={() => setShowGenerate(true)}
             className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm">첫 보고서 만들기</button>
@@ -248,7 +248,7 @@ function ReportsInner() {
                       }
                     }}
                       className="px-3 py-1.5 bg-red-500/10 border border-red-500/30 text-red-500 rounded-lg text-xs hover:bg-red-500/20">
-                      🗑 삭제
+                       삭제
                     </button>
                   </div>
                 </div>

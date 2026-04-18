@@ -21,15 +21,15 @@ interface Session {
 }
 
 const QUICK_QUESTIONS = [
-  { icon: '🔥', q: '오늘 뭐 해야 돼?' },
-  { icon: '⚠️', q: '현재 가장 큰 위기 요인은?' },
-  { icon: '💡', q: '경쟁 후보 공세 있어?' },
-  { icon: '📰', q: '오늘 뉴스 핵심만 정리해줘' },
-  { icon: '📊', q: '우리 후보 강점/약점 분석해줘' },
-  { icon: '🎤', q: '토론에서 공격 포인트는?' },
-  { icon: '📝', q: '블로그 주제 추천해줘' },
-  { icon: '🏛️', q: '역대 이 지역 선거 결과는?' },
-  { icon: '⚖️', q: '이 콘텐츠 선거법 위반인지 봐줘' },
+  { q: '오늘 뭐 해야 돼?' },
+  { q: '현재 가장 큰 위기 요인은?' },
+  { q: '경쟁 후보 공세 있어?' },
+  { q: '오늘 뉴스 핵심만 정리해줘' },
+  { q: '우리 후보 강점/약점 분석해줘' },
+  { q: '토론에서 핵심 포인트는?' },
+  { q: '블로그 주제 추천해줘' },
+  { q: '역대 이 지역 선거 결과는?' },
+  { q: '이 콘텐츠 선거법 위반인지 봐줘' },
 ];
 
 export default function AssistantPage() {
@@ -136,7 +136,7 @@ export default function AssistantPage() {
             <div className="flex gap-1">
               <button onClick={newSession} title="새 대화"
                 className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700">+ 새 대화</button>
-              <button onClick={() => setShowSessions(false)} className="text-[var(--muted)] hover:text-white px-2">✕</button>
+              <button onClick={() => setShowSessions(false)} className="text-[var(--muted)] hover:text-white px-2"></button>
             </div>
           </div>
           <div className="flex-1 overflow-y-auto">
@@ -156,7 +156,7 @@ export default function AssistantPage() {
                 </div>
                 <button onClick={(e) => { e.stopPropagation(); deleteSession(s.id, s.title); }}
                   className="opacity-0 group-hover:opacity-100 lg:opacity-100 text-red-400 hover:text-red-300 text-xs px-1">
-                  ✕
+                  
                 </button>
               </div>
             ))}
@@ -169,7 +169,7 @@ export default function AssistantPage() {
       <div className="flex-1 flex flex-col min-w-0">
         <div className="mb-3 flex items-start justify-between gap-2 flex-wrap">
           <div>
-            <h1 className="text-xl lg:text-2xl font-bold">💬 AI 비서</h1>
+            <h1 className="text-xl lg:text-2xl font-bold"> AI 비서</h1>
             <p className="text-xs lg:text-sm text-[var(--muted)] mt-1">선거 데이터 + 실시간 웹 검색</p>
           </div>
           <div className="flex gap-2">
@@ -179,7 +179,7 @@ export default function AssistantPage() {
             </button>
             <button onClick={() => setShowSessions(!showSessions)}
               className="text-xs px-3 py-1.5 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg hover:border-blue-500">
-              {showSessions ? '◀ 접기' : `📋 대화 목록 (${sessions.length})`}
+              {showSessions ? '◀ 접기' : ` 대화 목록 (${sessions.length})`}
             </button>
           </div>
         </div>
@@ -189,7 +189,6 @@ export default function AssistantPage() {
             {QUICK_QUESTIONS.map((q, i) => (
               <button key={i} onClick={() => send(q.q)}
                 className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-2 lg:p-3 text-left hover:border-blue-500 transition">
-                <div className="text-xl lg:text-2xl mb-0.5 lg:mb-1">{q.icon}</div>
                 <div className="text-[11px] lg:text-sm leading-tight">{q.q}</div>
               </button>
             ))}
@@ -211,7 +210,7 @@ export default function AssistantPage() {
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
                     {m.citations && m.citations.length > 0 && (
                       <div className="mt-3 pt-3 border-t border-[var(--card-border)] not-prose">
-                        <p className="text-[10px] text-[var(--muted)] mb-2 font-semibold">📎 출처 ({m.citations.length})</p>
+                        <p className="text-[10px] text-[var(--muted)] mb-2 font-semibold"> 출처 ({m.citations.length})</p>
                         <div className="flex flex-wrap gap-1.5">
                           {m.citations.map((c, j) => (
                             <CitationBadge key={c.id} citation={c} num={j + 1} />
@@ -223,7 +222,7 @@ export default function AssistantPage() {
                 )}
                 <button onClick={() => deleteMessage(m.id)}
                   className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 bg-red-500 text-white text-[10px] rounded-full w-5 h-5 flex items-center justify-center transition">
-                  ✕
+                  
                 </button>
               </div>
             </div>

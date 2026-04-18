@@ -98,7 +98,7 @@ async def generate_debate_script(
     our = SimpleNamespace(id=our.id, name=our.name, party=our.party or "무소속", role=getattr(our, "role", "") or "")
     opponent = SimpleNamespace(id=opponent.id, name=opponent.name, party=opponent.party or "무소속", role=getattr(opponent, "role", "") or "")
 
-    # 상대 후보 공격 포인트 (strategic_quadrant=opportunity — AI가 '경쟁자 약점'으로 분류한 것 우선)
+    # 상대 후보 대응 포인트 (strategic_quadrant=opportunity — AI가 '경쟁자 약점'으로 분류한 것 우선)
     # Fallback: sentiment=negative (AI 분류 없는 오래된 데이터)
     since = date.today() - timedelta(days=90)
     opponent_neg_news = (await db.execute(
@@ -162,7 +162,7 @@ async def generate_debate_script(
     )
 
     style_prompt = {
-        "aggressive": "공격적인 어조로, 상대 약점을 강하게 지적하면서도 선거법(비방 금지)을 위반하지 않도록",
+        "aggressive": "단호한 어조로, 상대 약점을 팩트 기반으로 명확히 지적하되 선거법(비방 금지)을 반드시 준수하도록",
         "defensive": "방어적인 어조로, 우리 후보의 강점과 실적을 중심으로 차분하게",
         "balanced": "균형 잡힌 어조로, 상대 약점 지적과 우리 강점 어필을 적절히 배합하여",
     }.get(style, "균형 잡힌 어조로")
@@ -182,7 +182,7 @@ async def generate_debate_script(
         election_rules = (
             "\n\n[교육감 선거 핵심 규칙 — 반드시 준수]\n"
             "1. 교육감은 법적으로 정당 표방이 금지됨. '무소속'이 아니라 '비정당' 선거임.\n"
-            "2. '어느 당 소속이냐', '정당 없이 뭘 할 수 있냐'는 공격에 대한 반박:\n"
+            "2. '어느 당 소속이냐', '정당 없이 뭘 할 수 있냐'는 질의에 대한 반박:\n"
             "   → '교육감은 정치가 아닌 교육 전문성으로 선출하는 자리' + '오히려 정당색을 드러내는 후보가 선거법 위반 소지'\n"
             "3. 상대가 정당색을 과도하게 드러내면 역공 포인트: '교육의 정치화를 우려하는 학부모/교사 민심을 대변'\n"
             "4. 절대 우리 후보의 정당/진영을 언급하지 말 것. '진보 교육감', '보수 교육감' 같은 표현 금지.\n"
@@ -224,8 +224,8 @@ async def generate_debate_script(
         f'}}\n\n'
         f"규칙:\n"
         f"- 전체 대본 합산 {char_limit}자 이내 (발언 {speech_minutes}분 기준)\n"
-        f"- key_points: 주제별 공략 포인트 (최대 5개)\n"
-        f"- rebuttals: 상대 예상 공격에 대한 반박 (최대 3개)\n"
+        f"- key_points: 주제별 핵심 토론 포인트 (최대 5개)\n"
+        f"- rebuttals: 상대 예상 주장에 대한 반박 (최대 3개)\n"
         f"- 한국어로, 구체적이고 실전 토론에서 바로 사용 가능하게\n"
         f"- 선거법 위반 소지가 있는 비방/허위사실은 절대 포함하지 않기\n"
         f"- 데이터에 근거한 팩트만 사용\n"
@@ -236,7 +236,7 @@ async def generate_debate_script(
     from app.services.rich_context import build_rich_context, LEGAL_SAFETY_PROMPT
     rich_ctx, citations = await build_rich_context(
         db, tenant_id, str(election_id),
-        topic=f"{opponent.name} 토론 공격 포인트 " + " ".join(topics),
+        topic=f"{opponent.name} 토론 핵심 포인트 " + " ".join(topics),
         max_rag=15, max_reports=3, max_briefings=4,
     )
     prompt += f"\n\n{rich_ctx}\n{LEGAL_SAFETY_PROMPT}"
@@ -351,7 +351,7 @@ def _build_debate_factsheet(our, opponent, opp_neg_news, our_pos_news, survey, t
     ]
 
     if opp_neg_news:
-        lines.append(f"[{opponent.name} 약점/공격 포인트 {len(opp_neg_news)}건]")
+        lines.append(f"[{opponent.name} 약점/대응 포인트 {len(opp_neg_news)}건]")
         for n in opp_neg_news[:7]:
             sq = f" [{n.strategic_quadrant}]" if n.strategic_quadrant else ""
             lines.append(f"-{sq} {n.title[:70]}")
@@ -360,7 +360,7 @@ def _build_debate_factsheet(our, opponent, opp_neg_news, our_pos_news, survey, t
             if n.ai_reason:
                 lines.append(f"  근거: {n.ai_reason[:120]}")
             if n.action_summary:
-                lines.append(f"  공격 방향: {n.action_summary[:120]}")
+                lines.append(f"  대응 방향: {n.action_summary[:120]}")
         lines.append("")
 
     if our_pos_news:
@@ -404,7 +404,7 @@ def _generate_fallback_script(our, opponent, opp_neg_news, topics, election) -> 
         }
         key_points.append(point)
 
-    # 부정 뉴스 기반 공략 포인트 추가
+    # 부정 뉴스 기반 대응 포인트 추가
     for n in opp_neg_news[:2]:
         key_points.append({
             "topic": "언론 보도 관련",

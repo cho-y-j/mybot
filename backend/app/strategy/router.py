@@ -4,7 +4,7 @@ ElectionPulse - Strategy API
 모든 콘텐츠는 우리 후보 관점에서 분류됨:
 - strength: 우리 후보 강점 (긍정 + 본인) → 확산
 - weakness: 우리 후보 약점 (부정 + 본인) → 방어/해명
-- opportunity: 경쟁자 리스크 (부정 + 경쟁자) → 활용/공격 콘텐츠
+- opportunity: 경쟁자 리스크 (부정 + 경쟁자) → 대응 콘텐츠 기회
 - threat: 경쟁자 위협 (긍정 + 경쟁자) → 견제
 """
 from uuid import UUID
@@ -118,7 +118,7 @@ async def _quadrant_items(db: AsyncSession, table: str, content_col: str,
     ACTION_MAP_FALLBACK = {
         "strength": ("promote", "high", "확산/홍보 활용"),
         "weakness": ("defend", "high", "즉시 방어/해명 대응 필요"),
-        "opportunity": ("attack", "medium", "공격/활용 콘텐츠 기회"),
+        "opportunity": ("attack", "medium", "대응 콘텐츠 기회"),
         "threat": ("monitor", "medium", "견제/대응 전략 필요"),
     }
     fb = ACTION_MAP_FALLBACK.get(sval, ("monitor", "low", ""))
@@ -218,7 +218,7 @@ async def get_strategic_quadrant(
         # action_summary도 관점 전환 (원본은 다른 캠프 시선)
         ACTION_FLIP = {
             "weakness": "즉시 방어/해명 대응 필요",
-            "opportunity": "공격/활용 콘텐츠 기회",
+            "opportunity": "대응 콘텐츠 기회",
             "strength": "확산/홍보 활용",
             "threat": "견제/대응 전략 필요",
             "neutral": "모니터링 지속",

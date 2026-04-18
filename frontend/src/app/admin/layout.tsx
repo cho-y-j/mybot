@@ -5,13 +5,13 @@ import { useEffect, useState } from 'react';
 import clsx from 'clsx';
 
 const adminNav = [
-  { href: '/admin', label: '대시보드', icon: '📊' },
-  { href: '/admin/tenants', label: '캠프 관리', icon: '🏢' },
-  { href: '/admin/users', label: '회원 관리', icon: '👥' },
-  { href: '/admin/monitoring', label: '모니터링', icon: '📈' },
-  { href: '/admin/schedules', label: '스케줄', icon: '⏰' },
-  { href: '/admin/system', label: '시스템', icon: '⚙️' },
-  { href: '/admin/setup', label: '초기 셋팅', icon: '🔧' },
+  { href: '/admin', label: '대시보드', },
+  { href: '/admin/tenants', label: '캠프 관리', },
+  { href: '/admin/users', label: '회원 관리', },
+  { href: '/admin/monitoring', label: '모니터링', },
+  { href: '/admin/schedules', label: '스케줄', },
+  { href: '/admin/system', label: '시스템', },
+  { href: '/admin/setup', label: '초기 셋팅', },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -86,7 +86,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   ? 'bg-blue-600/20 text-blue-400 border-r-2 border-blue-400'
                   : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
               )}>
-              <span className="text-base">{item.icon}</span>
               {sidebarOpen && <span>{item.label}</span>}
             </Link>
           ))}
@@ -96,14 +95,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <div className="border-t border-gray-700 p-3 space-y-2">
           <Link href="/dashboard"
             className="flex items-center gap-2 text-xs text-gray-400 hover:text-green-400 transition-colors">
-            <span>🌐</span>
+            <span></span>
             {sidebarOpen && <span>고객 사이트</span>}
           </Link>
           <div className="flex items-center gap-2">
             {sidebarOpen && <span className="text-xs text-gray-500 truncate">{adminName}</span>}
             <button onClick={handleLogout}
               className="text-xs text-red-400 hover:text-red-300 transition-colors ml-auto">
-              {sidebarOpen ? '로그아웃' : '🚪'}
+              {sidebarOpen ? '로그아웃' : ''}
             </button>
           </div>
         </div>

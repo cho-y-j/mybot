@@ -319,7 +319,7 @@ def _summarize_pattern(parties: list) -> str:
 
 
 def _analyze_districts(results: list) -> dict:
-    """분석 2: 구시군별 성향 분석 — 교육감+도지사 합산, 강세/공략필요 2분류."""
+    """분석 2: 구시군별 성향 분석 — 교육감+도지사 합산, 강세/대응필요 2분류."""
     by_district = defaultdict(lambda: defaultdict(list))
 
     for r in results:
@@ -388,10 +388,10 @@ def _analyze_districts(results: list) -> dict:
             "strength_rate": round(max(progressive_wins, conservative_wins) / max(total_elections, 1) * 100),
         })
 
-    # 강세 지역 vs 공략 필요 지역 (65% 기준)
+    # 강세 지역 vs 대응 필요 지역 (65% 기준)
     district_summary.sort(key=lambda x: -x["strength_rate"])
     # 강세: 진보/보수 득표율 차이가 8%p 이상인 지역
-    # 공략필요: 그 외 (접전 + 약세)
+    # 대응필요: 그 외 (접전 + 약세)
     for d in district_summary:
         d["gap"] = round(abs(d["progressive_rate"] - d["conservative_rate"]), 1)
     strong = [d for d in district_summary if d["gap"] >= 8]
@@ -565,7 +565,7 @@ def _identify_swing_districts(results: list) -> dict:
         "stable": stable_districts,
         "total_swing": len(swing_districts),
         "total_stable": len(stable_districts),
-        "strategy_note": f"스윙 지역 {len(swing_districts)}곳 — 집중 공략 필요" if swing_districts else "안정적 지역 구도",
+        "strategy_note": f"스윙 지역 {len(swing_districts)}곳 — 집중 대응 필요" if swing_districts else "안정적 지역 구도",
     }
 
 
@@ -903,7 +903,7 @@ async def generate_history_ai_strategy(
     "핵심 발견 5"
   ],
   "strength_strategy": "강세 지역에서 우리 후보가 어떻게 표를 굳힐 것인가 (3~5문장, 시군 이름 포함)",
-  "weakness_strategy": "약세 지역을 어떻게 공략할 것인가 (3~5문장, 시군 이름 포함)",
+  "weakness_strategy": "약세 지역을 어떻게 대응할 것인가 (3~5문장, 시군 이름 포함)",
   "top_actions": [
     {{"priority": "high", "action": "구체적 액션 1", "why": "근거"}},
     {{"priority": "high", "action": "구체적 액션 2", "why": "근거"}},
@@ -1389,7 +1389,7 @@ async def _generate_ai_analysis(
 2. 우리에게 유리한 지역 / 불리한 지역
 3. 투표율과 당선의 상관관계
 4. 현 정치 환경이 우리에게 미치는 영향
-5. 핵심 공략 지역 TOP 3과 이유
+5. 핵심 대응 지역 TOP 3과 이유
 6. 불편한 진실 (우리에게 불리한 데이터)
 
 객관적이고 솔직하게 — 유리한 점과 불리한 점을 모두 포함하세요."""

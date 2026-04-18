@@ -15,13 +15,13 @@ import {
 
 type Tab = 'camp' | 'candidates' | 'drilldown' | 'dong' | 'turnout' | 'ai';
 
-const TABS: { key: Tab; label: string; icon: string }[] = [
-  { key: 'camp', label: '진영 강세', icon: '🏛️' },
-  { key: 'candidates', label: '역대 후보', icon: '👤' },
-  { key: 'drilldown', label: '시·군·구 드릴다운', icon: '🔍' },
-  { key: 'dong', label: '읍·면·동 단위', icon: '📍' },
-  { key: 'turnout', label: '투표율', icon: '🗳️' },
-  { key: 'ai', label: 'AI 전략', icon: '🤖' },
+const TABS: { key: Tab; label: string }[] = [
+  { key: 'camp', label: '진영 강세', },
+  { key: 'candidates', label: '역대 후보', },
+  { key: 'drilldown', label: '시·군·구 드릴다운', },
+  { key: 'dong', label: '읍·면·동 단위', },
+  { key: 'turnout', label: '투표율', },
+  { key: 'ai', label: 'AI 전략', },
 ];
 
 export default function SuperintendentView({ data, electionId, onRefresh }: { data: any; electionId: string; onRefresh: () => void }) {
@@ -43,7 +43,7 @@ export default function SuperintendentView({ data, electionId, onRefresh }: { da
     return Array.from(ys).sort((a, b) => b - a);
   }, [drilldown]);
 
-  const [aggregate, setAggregate] = useState(true);  // 교육감은 기본 누적
+  const [aggregate, setAggregate] = useState(true); // 교육감은 기본 누적
   const [year, setYear] = useState<number | null>(yearOptions[0] ?? null);
 
   // 후보별 진영 매핑 lookup
@@ -105,7 +105,7 @@ export default function SuperintendentView({ data, electionId, onRefresh }: { da
 
       {unmapped.length > 0 && (
         <div className="rounded-xl border-2 border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700 p-3 text-xs text-amber-800 dark:text-amber-200">
-          ⚠️ 진영(진보/보수)이 미매핑된 역대 후보 {unmapped.length}명: <strong>{unmapped.join(', ')}</strong>
+           진영(진보/보수)이 미매핑된 역대 후보 {unmapped.length}명: <strong>{unmapped.join(', ')}</strong>
           <div className="mt-1 opacity-90">슈퍼관리자가 매핑하면 시·군·구 강세 분석이 더 정확해집니다.</div>
         </div>
       )}
@@ -122,7 +122,6 @@ export default function SuperintendentView({ data, electionId, onRefresh }: { da
                   : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
               }`}
             >
-              <span className="mr-1">{t.icon}</span>
               {t.label}
             </button>
           ))}
@@ -146,8 +145,8 @@ export default function SuperintendentView({ data, electionId, onRefresh }: { da
           <div className="space-y-4">
             <div className="card bg-violet-50 dark:bg-violet-950/30 border-violet-200 dark:border-violet-800 text-xs text-violet-800 dark:text-violet-200">
               {aggregate
-                ? `📊 역대 ${yearOptions.length}회 누적 진영 강세 (${yearOptions[yearOptions.length - 1]}~${yearOptions[0]}년)`
-                : `🗳️ ${year}년 단일 회차 진영 분석`}
+                ? ` 역대 ${yearOptions.length}회 누적 진영 강세 (${yearOptions[yearOptions.length - 1]}~${yearOptions[0]}년)`
+                : ` ${year}년 단일 회차 진영 분석`}
               <span className="ml-2 text-violet-600">— 카드 클릭 시 읍면동 드릴다운</span>
             </div>
             <CampHeatmap data={yearCampGrid} onSelectDistrict={handleSelectDistrict} />

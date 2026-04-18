@@ -300,7 +300,7 @@ class SentimentAnalyzer:
                 "  예: '후보 부동산 투기 의혹 제기' → weakness\n"
                 "  예: '후보 컷오프, 자격 미달 지적' → weakness\n\n"
                 "### 경쟁 후보\n"
-                "▶ 경쟁 후보가 비판/사고/논란/약점 노출 → **opportunity** (공격 기회)\n"
+                "▶ 경쟁 후보가 비판/사고/논란/약점 노출 → **opportunity** (대응 기회)\n"
                 "▶ 경쟁 후보 능동 발표/성과/동원 성공 → **threat** (경쟁 위협)\n\n"
                 "### 제3자/일반 뉴스 → neutral → null\n\n"
                 "## 규칙\n"

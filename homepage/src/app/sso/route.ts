@@ -9,7 +9,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 import { prisma } from "@/lib/db";
-import { createSession, setSessionCookie } from "@/lib/auth";
+import { createSession, applySessionCookies } from "@/lib/auth";
 
 const SSO_SECRET = process.env.SSO_SECRET || process.env.APP_SECRET_KEY || "";
 
@@ -58,11 +58,8 @@ export async function GET(req: NextRequest) {
   const ip = req.headers.get("x-forwarded-for") || req.ip || "";
   const ua = req.headers.get("user-agent") || "";
   const sessionId = await createSession(user.id, "user", false, ip, ua);
-  setSessionCookie(sessionId, false);
 
-  // mh_user_type / mh_code 쿠키도 세팅 (middleware에서 사용)
   const res = NextResponse.redirect(new URL(redirectPath, req.url));
-  res.cookies.set("mh_user_type", "user", { path: "/", httpOnly: false });
-  res.cookies.set("mh_code", code, { path: "/", httpOnly: false });
+  applySessionCookies(res, sessionId, "user", code, false);
   return res;
 }

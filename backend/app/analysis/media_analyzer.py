@@ -73,7 +73,7 @@ async def analyze_batch_strategic(
    예) "{our_candidate_name} 컷오프 — 자격 미달 지적" → weakness
 
 ▶ 경쟁 후보가 비판당하거나 사고/논란/약점이 노출된 콘텐츠
-   = opportunity (공격 기회) — 우리에겐 호재
+   = opportunity (대응 기회) — 우리에겐 호재
    예) "{(rival_candidate_names[0] if rival_candidate_names else '경쟁자')}, 공천 잡음" → opportunity
    예) "{(rival_candidate_names[0] if rival_candidate_names else '경쟁자')} 컷오프 번복 논란" → opportunity
 
@@ -104,7 +104,7 @@ sentiment는 기사의 객관적 톤이다. neutral 남발 금지! 대부분의 
 5. action_type:
    - strength → promote (확산)
    - weakness → defend (방어/해명)
-   - opportunity → attack (공격/활용)
+   - opportunity → attack (대응/활용 — 내부 식별자)
    - threat → monitor (견제)
    - neutral → ignore
 6. action_priority: high (즉시 대응) | medium (오늘 안에) | low (참고)

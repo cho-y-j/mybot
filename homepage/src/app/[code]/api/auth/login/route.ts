@@ -1,11 +1,10 @@
 // /{code}/api/auth/login — NPM이 ai.on1.kr/api/* 를 mybot으로 라우팅하므로
 // homepage admin 로그인은 /{code}/* 경로를 통해 호출되어야 한다.
 // 기존 /api/auth/login 라우트와 동일 로직, user 타입만 처리.
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { cookies } from "next/headers";
-import { verifyPassword, createSession, setSessionCookie } from "@/lib/auth";
-import { successResponse, errorResponse } from "@/lib/api-response";
+import { verifyPassword, createSession, applySessionCookies } from "@/lib/auth";
+import { errorResponse } from "@/lib/api-response";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 export async function POST(
@@ -46,25 +45,8 @@ export async function POST(
       );
     }
 
-    const sessionId = await createSession(
-      user.id,
-      "user",
-      rememberMe ?? false,
-      ip,
-      userAgent
-    );
-    setSessionCookie(sessionId, rememberMe ?? false);
-    const c = cookies();
-    c.set("mh_user_type", "user", {
-      path: "/",
-      httpOnly: false,
-      maxAge: 30 * 24 * 60 * 60,
-    });
-    c.set("mh_code", user.code, {
-      path: "/",
-      httpOnly: false,
-      maxAge: 30 * 24 * 60 * 60,
-    });
+    const remember = rememberMe ?? false;
+    const sessionId = await createSession(user.id, "user", remember, ip, userAgent);
 
     await prisma.activityLog.create({
       data: {
@@ -75,9 +57,14 @@ export async function POST(
       },
     });
 
-    return successResponse({
-      user: { id: user.id, name: user.name, code: user.code, userType: "user" },
+    const res = NextResponse.json({
+      success: true,
+      data: {
+        user: { id: user.id, name: user.name, code: user.code, userType: "user" },
+      },
     });
+    applySessionCookies(res, sessionId, "user", user.code, remember);
+    return res;
   } catch (error) {
     console.error("Login error:", error);
     return errorResponse("서버 오류가 발생했습니다", 500);

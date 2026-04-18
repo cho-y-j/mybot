@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 
 interface Top3 {
   name: string;
-  party: string;       // raw 정당명 (e.g. "더불어민주당")
+  party: string; // raw 정당명 (e.g. "더불어민주당")
   party_camp?: string; // 진보/보수/기타
   vote_rate: number;
   votes: number;
@@ -14,8 +14,8 @@ interface YearEntry {
   year: number;
   election_number: number | null;
   top3: Top3[];
-  winner_party: string;     // raw
-  winner_camp?: string;     // 진보/보수/기타
+  winner_party: string; // raw
+  winner_camp?: string; // 진보/보수/기타
   margin: number;
   candidates_count: number;
 }

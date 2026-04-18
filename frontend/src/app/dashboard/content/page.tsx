@@ -82,7 +82,7 @@ export default function ContentToolsPage() {
     setGenerating(true);
     setGenResult(null);
     // 폼 데이터를 context에 통합 전달
-    const purposeLabel: Record<string, string> = { promote: '홍보/강점 확산', attack: '공격/경쟁자 약점 활용', defend: '방어/해명', policy: '정책 소개' };
+    const purposeLabel: Record<string, string> = { promote: '홍보/강점 확산', attack: '경쟁 후보 대응 전략', defend: '방어/해명', policy: '정책 소개' };
     const targetLabel: Record<string, string> = { all: '전체 유권자', youth: '2030 청년층', senior: '5060 장년층', rural: '농촌/면 단위' };
     const lengthLabel: Record<string, string> = { short: 'SNS용 짧게 (200자 이내)', medium: '보통 (500자)', long: '블로그 길게 (1500자+)' };
     const enrichedContext = [
@@ -205,7 +205,7 @@ export default function ContentToolsPage() {
 
           {/* 생성 폼 v2 */}
           <div className="card">
-            <h3 className="font-bold mb-4">📝 콘텐츠 생성</h3>
+            <h3 className="font-bold mb-4"> 콘텐츠 생성</h3>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               {/* 유형 */}
@@ -225,7 +225,7 @@ export default function ContentToolsPage() {
               <div>
                 <label className="text-xs font-semibold text-[var(--muted)] mb-1.5 block">목적</label>
                 <div className="flex flex-wrap gap-1.5">
-                  {[['promote','✨ 홍보/강점 확산'],['attack','🔥 공격/경쟁자 약점'],['defend','🛡️ 방어/해명'],['policy','📋 정책 소개']].map(([v,l]) => (
+                  {[['promote','홍보/강점 확산'],['attack','경쟁 대응 전략'],['defend','방어/해명'],['policy','정책 소개']].map(([v,l]) => (
                     <button key={v} onClick={() => setGenPurpose(v)}
                       className={`px-3 py-1.5 text-xs rounded-lg border transition ${genPurpose === v ? 'bg-violet-600 text-white border-violet-600' : 'border-[var(--card-border)] text-[var(--muted)] hover:border-violet-500'}`}>
                       {l}
@@ -307,7 +307,7 @@ export default function ContentToolsPage() {
                 <select className="input-field w-full" value={genStyle} onChange={e => setGenStyle(e.target.value)}>
                   <option value="formal">공식적/신뢰감</option>
                   <option value="casual">친근한/편안한</option>
-                  <option value="aggressive">강한/공격적</option>
+                  <option value="aggressive">강한/단호한</option>
                   <option value="emotional">감성적/호소</option>
                 </select>
               </div>
@@ -315,28 +315,28 @@ export default function ContentToolsPage() {
 
             {genContext && (
               <div className="text-xs text-[var(--muted)] bg-[var(--muted-bg)] rounded-lg p-2 mb-3">
-                <span className="font-bold">📌 컨텍스트:</span> {genContext.substring(0, 150)}{genContext.length > 150 && '...'}
+                <span className="font-bold"> 컨텍스트:</span> {genContext.substring(0, 150)}{genContext.length > 150 && '...'}
               </div>
             )}
 
             <button onClick={handleGenerate} disabled={generating || !genTopic.trim()}
               className="w-full px-4 py-3 bg-purple-600 text-white rounded-xl text-sm font-bold hover:bg-purple-700 disabled:opacity-50 transition">
-              {generating ? '✨ AI 생성 중... (최대 90초)' : '✨ AI 콘텐츠 생성'}
+              {generating ? ' AI 생성 중... (최대 90초)' : ' AI 콘텐츠 생성'}
             </button>
           </div>
 
           {genResult && !genResult.error && (
             <div className="card">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="font-bold">📄 생성된 콘텐츠</h3>
+                <h3 className="font-bold"> 생성된 콘텐츠</h3>
                 <div className="flex gap-2">
                   <button onClick={() => handleCopy(genResult.content)}
                     className="text-xs px-3 py-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
-                    {copiedTag ? '✅ 복사됨!' : '📋 복사'}
+                    {copiedTag ? ' 복사됨!' : ' 복사'}
                   </button>
                   <button onClick={handleGenerate} disabled={generating}
                     className="text-xs px-3 py-1.5 bg-gray-500 text-white rounded-lg hover:bg-gray-600 disabled:opacity-50">
-                    🔄 다시 생성
+                     다시 생성
                   </button>
                 </div>
               </div>
@@ -349,10 +349,10 @@ export default function ContentToolsPage() {
                 <input className="input-field flex-1" value={genDirection}
                   onChange={e => setGenDirection(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && handleGenerate()}
-                  placeholder="수정 요청: 좀 더 공격적으로 / 경쟁 후보 약점 추가 / 분량 줄여줘..." />
+                  placeholder="수정 요청: 좀 더 단호하게 / 경쟁 후보 차별점 추가 / 분량 줄여줘..." />
                 <button onClick={handleGenerate} disabled={generating}
                   className="px-4 py-2 bg-violet-600 text-white rounded-xl text-sm hover:bg-violet-700 disabled:opacity-50 whitespace-nowrap">
-                  ✏️ 수정 생성
+                   수정 생성
                 </button>
               </div>
 
@@ -372,13 +372,13 @@ export default function ContentToolsPage() {
               {/* 출처 각주 */}
               {genResult.citations && genResult.citations.length > 0 && (
                 <div className="mt-4 p-3 rounded-xl border border-[var(--card-border)] bg-[var(--muted-bg)]">
-                  <p className="text-xs text-[var(--muted)] mb-2 font-semibold">📎 참고 자료 ({genResult.citations.length})</p>
+                  <p className="text-xs text-[var(--muted)] mb-2 font-semibold"> 참고 자료 ({genResult.citations.length})</p>
                   <div className="flex flex-wrap gap-1.5">
                     {genResult.citations.map((c: any, i: number) => (
                       <a key={c.id} href={c.url || '#'} target={c.url ? '_blank' : undefined}
                         className="text-[10px] px-2 py-0.5 rounded border bg-[var(--card-bg)] hover:border-blue-400 transition"
                         title={c.title}>
-                        {c.type === 'nec' ? '🏛️' : c.type === 'news' ? '📰' : c.type === 'community' ? '💬' : c.type === 'youtube' ? '📺' : '📋'} {i + 1}. {(c.title || '').slice(0, 30)}
+                        {c.type === 'nec' ? '' : c.type === 'news' ? '' : c.type === 'community' ? '' : c.type === 'youtube' ? '' : ''} {i + 1}. {(c.title || '').slice(0, 30)}
                       </a>
                     ))}
                   </div>
@@ -394,7 +394,7 @@ export default function ContentToolsPage() {
                 }`}>
                   <div className="flex items-center gap-2 mb-1">
                     <span className={`font-bold text-sm ${genResult.compliance.compliant ? 'text-green-500' : 'text-red-500'}`}>
-                      ⚖️ {genResult.compliance.compliant ? '선거법 적합' : '선거법 위반 소지'}
+                       {genResult.compliance.compliant ? '선거법 적합' : '선거법 위반 소지'}
                     </span>
                     <span className="text-xs text-[var(--muted)]">점수: {genResult.compliance.score}/100</span>
                   </div>

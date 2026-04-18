@@ -74,3 +74,39 @@
 ## 참고 프로젝트
 - 기존 votesite: https://votesite-phi.vercel.app/ssw/ (선거 홍보 사이트 참고)
 - mybot_ver2: /Users/jojo/pro/mybot_ver2(영진_클로드용)/ (분석 엔진 참고, 2단계 이후)
+
+---
+
+## ★ 배포 워크플로우 (2026-04-18 확정) — 반드시 준수
+
+**Docker 매번 --no-cache 빌드는 8분 이상 소요. 함부로 빌드 돌리지 말 것.**
+
+### 필수 순서
+1. **코드 수정** (homepage/src/...)
+2. **로컬 `next build`**: `cd homepage && ./node_modules/.bin/next build` — 컴파일 에러 차단
+3. **로컬 Hot-swap 검증** (Docker 재빌드 없이):
+   ```
+   docker cp .next/standalone/server.js ep_homepage:/app/server.js
+   docker cp .next/standalone/.next/. ep_homepage:/app/.next/
+   docker cp .next/static ep_homepage:/app/.next/static
+   docker restart ep_homepage
+   ```
+4. **Playwright MCP로 실제 렌더링 검증** — 사용자에게 스크린샷 요청 금지. Claude가 직접 확인:
+   - `mcp__playwright__browser_navigate` → 해당 페이지
+   - `mcp__playwright__browser_evaluate` → DOM 상태·값 확인
+   - 필요 시 임시 비번 주입(`bcrypt.hashpw(b'TEST_PW_temp', gensalt(12))`) + 원본 백업 + 테스트 후 복원
+5. **문제 없음 확인 후에만** Docker `--no-cache` 빌드 + `docker compose push` + `compose up --force-recreate`
+6. **git commit + push** (main) → GitHub Actions가 자동으로 빌드·GHCR push 수행 — **이게 영구 배포 상태**
+7. **최종 검증**: Playwright로 배포 후 한 번 더 확인
+
+### 하지 말 것
+- ❌ 로컬 검증 없이 Docker 빌드 먼저 돌리기 (8분 낭비)
+- ❌ grep 검수만 하고 "수정 완료" 선언 (실제 렌더링 확인 필수)
+- ❌ 사용자에게 "브라우저에서 확인해주세요" 요청 — Playwright MCP가 있으면 Claude가 직접 확인
+- ❌ git commit 없이 Docker push만 → Watchtower 재시작 시 GHCR에서 pull 해서 덮어써짐. git이 진실(source of truth).
+
+### Why (2026-04-18 사고 복기)
+- 한 세션에서 Docker 빌드를 6회 이상 돌려 50분 이상 낭비
+- 실제 원인은 NPM 라우팅 + 쿠키 set 방식 — Docker 빌드는 무관
+- Playwright로 10초면 DOM 확인 가능한데 사용자에게 반복 테스트 요청 → 분노
+- 이후 모든 UI 변경은 **로컬 build → hot-swap → Playwright 검증 → Docker 빌드 → git push** 순서 엄수

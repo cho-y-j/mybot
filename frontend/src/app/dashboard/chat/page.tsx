@@ -194,18 +194,16 @@ export default function ChatPage() {
         {/* Header */}
         <div className="flex items-center justify-between mb-2">
           <div>
-            <h1 className="text-lg font-bold flex items-center gap-2">
-              <span>🤖</span> AI 분석 어시스턴트
-            </h1>
+            <h1 className="text-lg font-bold">AI 분석 어시스턴트</h1>
             <p className="text-xs text-[var(--muted)]">
               {election?.name || '선거'} 데이터 기반 맞춤형 대화
             </p>
           </div>
           <div className="flex bg-[var(--muted-bg)] rounded-lg p-0.5 gap-0.5">
             {([
-              { key: 'fast', icon: '⚡', label: '빠른' },
-              { key: 'standard', icon: '✦', label: '고품질' },
-              { key: 'premium', icon: '◆', label: '최고' },
+              { key: 'fast', label: '빠른' },
+              { key: 'standard', label: '고품질' },
+              { key: 'premium', label: '최고' },
             ] as const).map(m => (
               <button key={m.key} onClick={() => setModelTier(m.key)}
                 className={`px-2 py-1 rounded-md text-xs font-medium transition ${
@@ -215,7 +213,7 @@ export default function ChatPage() {
                       : 'bg-violet-600 text-white'
                     : 'text-[var(--muted)]'
                 }`}>
-                {m.icon} {m.label}
+                {m.label}
               </button>
             ))}
           </div>
@@ -225,7 +223,7 @@ export default function ChatPage() {
         <div className="flex-1 overflow-y-auto bg-[var(--card-bg)] rounded-xl border border-[var(--card-border)] p-4 space-y-4">
           {messages.length === 0 && !activeSessionId && (
             <div className="flex flex-col items-center justify-center h-full text-center">
-              <span className="text-4xl mb-3">🤖</span>
+              <span className="text-4xl mb-3"></span>
               <p className="font-bold text-lg mb-1">
                 {ourCandidate ? `${ourCandidate.name} 후보 분석 AI` : 'AI 분석 어시스턴트'}
               </p>
@@ -250,7 +248,7 @@ export default function ChatPage() {
               }`}>
                 {msg.role === 'ai' && (
                   <div className="flex items-center gap-1.5 mb-1">
-                    <span className="text-sm">🤖</span>
+                    <span className="text-sm"></span>
                     <span className="text-xs font-medium text-[var(--muted)]">AI 어시스턴트</span>
                   </div>
                 )}
@@ -298,7 +296,7 @@ export default function ChatPage() {
                 {/* 출처 목록 (하단) */}
                 {msg.role === 'ai' && msg.citations && msg.citations.length > 0 && (
                   <div className="mt-3 pt-3 border-t border-[var(--card-border)]">
-                    <p className="text-[11px] text-[var(--muted)] mb-2 font-semibold">📎 출처 ({msg.citations.length})</p>
+                    <p className="text-[11px] text-[var(--muted)] mb-2 font-semibold"> 출처 ({msg.citations.length})</p>
                     <div className="flex flex-wrap gap-1.5">
                       {msg.citations.map((c, i) => (
                         <CitationBadge key={c.id} citation={c} num={i + 1} />

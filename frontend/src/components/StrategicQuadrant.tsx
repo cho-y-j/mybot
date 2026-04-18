@@ -2,30 +2,34 @@
 import { useEffect, useState } from 'react';
 import { api } from '@/services/api';
 
-const QUADRANT_STYLES: Record<string, { bg: string; border: string; text: string; iconBg: string }> = {
+const QUADRANT_STYLES: Record<string, { bg: string; border: string; text: string; iconBg: string; iconPath: React.ReactNode }> = {
   strength: {
     bg: 'bg-blue-50 dark:bg-blue-950/30',
     border: 'border-blue-200 dark:border-blue-800',
     text: 'text-blue-700 dark:text-blue-300',
-    iconBg: 'bg-blue-100 dark:bg-blue-900',
+    iconBg: 'bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300',
+    iconPath: <path d="M12 2l2.39 7.36H22l-6.19 4.5L18.2 21 12 16.5 5.8 21l2.39-7.14L2 9.36h7.61L12 2z" />,
   },
   weakness: {
     bg: 'bg-red-50 dark:bg-red-950/30',
     border: 'border-red-200 dark:border-red-800',
     text: 'text-red-700 dark:text-red-300',
-    iconBg: 'bg-red-100 dark:bg-red-900',
+    iconBg: 'bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-300',
+    iconPath: <><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></>,
   },
   opportunity: {
     bg: 'bg-orange-50 dark:bg-orange-950/30',
     border: 'border-orange-200 dark:border-orange-800',
     text: 'text-orange-700 dark:text-orange-300',
-    iconBg: 'bg-orange-100 dark:bg-orange-900',
+    iconBg: 'bg-orange-100 dark:bg-orange-900 text-orange-600 dark:text-orange-300',
+    iconPath: <><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></>,
   },
   threat: {
     bg: 'bg-amber-50 dark:bg-amber-950/30',
     border: 'border-amber-200 dark:border-amber-800',
     text: 'text-amber-700 dark:text-amber-300',
-    iconBg: 'bg-amber-100 dark:bg-amber-900',
+    iconBg: 'bg-amber-100 dark:bg-amber-900 text-amber-600 dark:text-amber-300',
+    iconPath: <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />,
   },
 };
 
@@ -89,7 +93,7 @@ export default function StrategicQuadrant({ electionId, defaultVisible = 2, fetc
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold flex items-center gap-2">
-            🎯 전략 4사분면 <span className="text-sm font-normal text-gray-500">— AI가 분류한 액션 가능 콘텐츠</span>
+            전략 4사분면 <span className="text-sm font-normal text-gray-500">— AI가 분류한 액션 가능 콘텐츠</span>
           </h2>
           <p className="text-xs text-gray-500 mt-1">
             AI 분석 진행률: {analysis_progress.analyzed}/{analysis_progress.total} ({analysis_progress.pct}%) ·
@@ -117,8 +121,10 @@ export default function StrategicQuadrant({ electionId, defaultVisible = 2, fetc
             <div key={key} className={`rounded-xl border-2 ${style.border} ${style.bg} p-4`}>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <span className={`text-2xl w-10 h-10 flex items-center justify-center rounded-lg ${style.iconBg}`}>
-                    {q.icon}
+                  <span className={`w-10 h-10 flex items-center justify-center rounded-lg ${style.iconBg}`}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      {style.iconPath}
+                    </svg>
                   </span>
                   <div>
                     <div className={`font-bold ${style.text}`}>{q.label}</div>

@@ -10,7 +10,6 @@ export default function CandidateComparisonPage() {
   const [gaps, setGaps] = useState<any>(null);
   const [surveys, setSurveys] = useState<any[]>([]);
   const [mediaData, setMediaData] = useState<any>(null);
-  const [history, setHistory] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
 
@@ -22,19 +21,14 @@ export default function CandidateComparisonPage() {
     if (!election) return;
     setLoading(true);
     try {
-      const token = (sessionStorage.getItem('access_token') || localStorage.getItem('access_token'));
-      const [gp, sv, md, hist] = await Promise.all([
+      const [gp, sv, md] = await Promise.all([
         api.getCompetitorGaps(election.id).catch(() => null),
         api.getSurveys(election.id).catch(() => ({ surveys: [] })),
         api.getMediaOverview(election.id).catch(() => null),
-        fetch(`/api/history/election-history/by-region/${election.id}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }).then(r => r.ok ? r.json() : null).catch(() => null),
       ]);
       setGaps(gp);
       setSurveys(sv.surveys || []);
       setMediaData(md);
-      setHistory(hist);
     } catch (e: any) {
       console.error('candidates load error:', e);
     } finally { setLoading(false); }
@@ -91,7 +85,10 @@ export default function CandidateComparisonPage() {
   }).reverse().map(s => {
     const r = parseResults(s.results);
     const row: any = { date: s.date?.substring(5) || '' };
-    orderedNames.forEach(n => { row[n] = r[n] || 0; });
+    orderedNames.forEach(n => {
+      const v = r[n];
+      row[n] = (typeof v === 'number' && v > 0) ? v : null;
+    });
     return row;
   });
 
@@ -308,7 +305,7 @@ export default function CandidateComparisonPage() {
         ) : (
           <div className="text-center py-8 text-sm text-[var(--muted)]">
             <p>아직 여론조사 자료가 없습니다.</p>
-            <p className="text-xs mt-2">📋 여론조사 메뉴에서 공표된 결과를 입력하면 자동으로 추이 그래프가 표시됩니다.</p>
+            <p className="text-xs mt-2"> 여론조사 메뉴에서 공표된 결과를 입력하면 자동으로 추이 그래프가 표시됩니다.</p>
           </div>
         )}
       </div>
@@ -405,76 +402,6 @@ export default function CandidateComparisonPage() {
         </div>
       )}
 
-      {/* 과거 선거 결과 (맨 아래) */}
-      {history && (history.results?.length > 0 || history.turnouts?.length > 0) && (
-        <div className="card">
-          <h3 className="font-semibold mb-4">🏛️ 역대 선거 결과 (선관위) — {history.election?.region} {history.election?.type}</h3>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {history.results?.length > 0 && (
-              <div>
-                <h4 className="text-sm font-semibold mb-2">연도별 상위 후보</h4>
-                <div className="space-y-3">
-                  {history.results.map((yr: any, i: number) => (
-                    <div key={i} className="border-l-2 border-blue-400 pl-3">
-                      <p className="text-sm font-bold mb-1">{yr.year}년</p>
-                      <div className="space-y-0.5">
-                        {yr.candidates.map((c: any, j: number) => (
-                          <div key={j} className="flex items-center gap-2 text-xs">
-                            <span className={`w-1.5 h-1.5 rounded-full ${c.is_winner ? 'bg-yellow-500' : 'bg-gray-400'}`} />
-                            <span className={c.is_winner ? 'font-bold' : 'text-[var(--muted)]'}>
-                              {c.candidate} ({c.party})
-                            </span>
-                            <span className="ml-auto text-[var(--muted)]">{c.vote_rate ? `${c.vote_rate}%` : '-'}</span>
-                            {c.is_winner && <span className="text-yellow-500 text-[10px]">★ 당선</span>}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            <div className="space-y-4">
-              {history.turnouts?.length > 0 && (
-                <div>
-                  <h4 className="text-sm font-semibold mb-2">역대 투표율</h4>
-                  <div className="space-y-1">
-                    {history.turnouts.map((t: any, i: number) => (
-                      <div key={i} className="flex items-center gap-2 text-xs">
-                        <span className="w-12 text-[var(--muted)]">{t.year}년</span>
-                        <div className="flex-1 bg-gray-100 rounded-full h-2 overflow-hidden">
-                          <div className="bg-blue-500 h-full" style={{ width: `${Math.min(100, t.turnout_rate)}%` }} />
-                        </div>
-                        <span className="w-12 text-right font-semibold">{t.turnout_rate}%</span>
-                      </div>
-                    ))}
-                    {history.turnouts.length > 0 && (
-                      <p className="text-[10px] text-[var(--muted)] mt-2">
-                        평균: <strong>{(history.turnouts.reduce((a: number, t: any) => a + t.turnout_rate, 0) / history.turnouts.length).toFixed(1)}%</strong>
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
-              {history.party_stats && Object.keys(history.party_stats).length > 0 && (
-                <div>
-                  <h4 className="text-sm font-semibold mb-2">정당별 당선 횟수</h4>
-                  <div className="space-y-1">
-                    {Object.entries(history.party_stats)
-                      .sort((a: any, b: any) => b[1] - a[1])
-                      .map(([party, count]: any, i: number) => (
-                        <div key={i} className="flex items-center gap-2 text-xs">
-                          <span className="flex-1">{party}</span>
-                          <span className="font-bold text-blue-500">{count}회</span>
-                        </div>
-                      ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

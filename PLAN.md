@@ -1,12 +1,53 @@
 # ElectionPulse 수정 플랜 & 체크리스트
 
-**최근 갱신**: 2026-04-18
-**현재 단계**: 기능·디자인 전면 점검 (이전 빌드 미반영 복구 포함)
+**최근 갱신**: 2026-04-18 (세션 중)
+**현재 단계**: Phase A/B 대부분 완료, 여론조사 근본 재설계는 별도 세션 예정
 **검수 대상**: Tenant `5403b830` / Election `e0eacdb9` (우리=김진균, 경쟁=조동욱/김성근/신문규/윤건영)
 
 **근본 문제**: 이전 세션에서 수정한 코드가 Docker 빌드 캐시 + Watchtower 자동 복원으로 반영 안 됨.
 **원칙**: 모든 수정 한꺼번에 완료 → **1회 빌드 → GHCR push → 배포 → 실제 검증** (하나씩 빌드 금지)
 **Watchtower**: 현재 정지 중 (2026-04-16). GHCR push 완료 후 재시작.
+
+---
+
+## 2026-04-18 세션 — 완료/진행
+
+### ✅ 완료 (빌드+배포+검증)
+- A-5 홈페이지 세션 쿠키 `sameSite: lax` (auth.ts)
+- A-4 후보비교 역대선거 블록 제거 + 선차트 `connectNulls`
+- A-3 여론조사 부분 패치 (DB 1건 `e1463d3b` governor→superintendent, 전체보기 탭 선거유형별 그룹핑)
+- A-1 선거법 표현 UI/프롬프트 치환 (프론트+백엔드 20+ 파일, "공격/공략" → "대응/차별점", `attack` enum은 내부 식별자로 유지)
+- B-2 이모지 전수 정리 (단색 라인 SVG로 교체 or 제거)
+  - 전문가 모드 **전략 4사분면**(StrategicQuadrant): 백엔드 `q.icon` 무시, 프론트에서 단색 SVG 렌더
+  - **AI 비서 FloatingAssistant 복구** (빈 버튼 사고 → 채팅 SVG + "AI 비서" 라벨 + × 닫기 버튼)
+  - 쉬운 모드 /easy 홈 재디자인 (SVG 아이콘 + hover `-translate-y-0.5` + 부제)
+- 컨테이너 `TZ=Asia/Seoul` 적용 (backend/celery-worker/celery-beat) — 브리핑 날짜 하루 밀림 버그 해결
+- 보고서 PDF 정책 확정: 오전/오후 브리핑은 PDF 없음, 일일+주간만 PDF (현재 코드 정상 동작 확인)
+
+### ✅ 완료 (2026-04-18 세션 종반)
+- **세션 쿠키 근본 버그 수정** (재로그인 루프 원인)
+  - Route Handler의 `cookies().set()` → `response.cookies.set()` 로 전환
+  - 공통 헬퍼 `applySessionCookies(res, ...)` 신설 (`homepage/src/lib/auth.ts`)
+  - 4개 경로 모두 적용: `/api/auth/login`, `/{code}/api/auth/login`, `/api/auth/register`(신규 가입 자동 로그인), `/sso`(홈페이지 편집 SSO)
+  - CLAUDE.md 1.20에 영구 룰 기록
+- **NPM 라우팅 근본 버그 수정** (homepage admin UI 전면 404 원인)
+  - `/api/site/*`, `/api/analytics/*`, `/api/auth/me`, `/api/auth/logout`을 homepage로 명시 라우팅
+  - 기존 `^~ /api/`가 모두 mybot backend로 보내서 homepage admin이 호출하는 route 전부 404
+  - 수정 위치: `/data/nginx/custom/server_proxy.conf` (NPM 볼륨 마운트)
+  - nginx -s reload 로 즉시 반영 (재빌드 불필요)
+  - CLAUDE.md 1.23에 영구 룰 기록
+
+### 🟡 진행 중
+- homepage 세션 쿠키 수정 후 재빌드 완료, push + recreate + 실제 curl `Set-Cookie` 검증 대기
+
+### ⏳ 별도 세션 예정 (근본 재설계)
+- **여론조사 전면 재설계**
+  - 현재 문제: 선거 유형/후보 혼재, 교차분석(DB 488건)이 UI에서 누락, 복합 설문 처리 없음
+  - 필요: "선거 유형 > 후보자 > 날짜" 3단 계층, 교차분석 복구, 복합 설문(교육감+도지사 같이 포함된 것) 파싱
+  - 금지: 급한 패치로 손대기 — 설계 합의 후 재작업
+- 쉬운 모드 나머지 페이지 디자인 개선
+- 전역 hover 효과 검토 (이미 /easy 홈은 강화됨)
+- SMTP 설정 후 메일 발송 구현 (현재 `.env.server`에 변수 있으나 값 미설정)
 
 ---
 

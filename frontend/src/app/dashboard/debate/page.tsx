@@ -51,13 +51,13 @@ export default function DebatePage() {
     if (!result) return;
     const text = [
       `[오프닝]\n${result.opening}`,
-      `\n[핵심 공략 포인트]`,
+      `\n[핵심 토론 포인트]`,
       ...(result.key_points || []).map((kp: any, i: number) =>
-        `${i + 1}. ${kp.topic}\n   우리 입장: ${kp.our_position}\n   근거: ${kp.data_point}\n   질문: ${kp.attack_question}`
+        `${i + 1}. ${kp.topic}\n 우리 입장: ${kp.our_position}\n 근거: ${kp.data_point}\n 질문: ${kp.attack_question}`
       ),
       `\n[예상 반박 대비]`,
       ...(result.rebuttals || []).map((r: any, i: number) =>
-        `${i + 1}. 상대 주장: ${r.opponent_claim}\n   반박: ${r.our_response}`
+        `${i + 1}. 상대 주장: ${r.opponent_claim}\n 반박: ${r.our_response}`
       ),
       `\n[마무리]\n${result.closing}`,
     ].join('\n');
@@ -127,8 +127,8 @@ export default function DebatePage() {
           <label className="block text-sm font-medium mb-1">스타일</label>
           <div className="flex gap-2">
             {[
-              { value: 'aggressive', label: '공격적', desc: '상대 약점 강하게 지적' },
-              { value: 'balanced', label: '균형', desc: '공격+방어 적절 배합' },
+              { value: 'aggressive', label: '단호한', desc: '상대 약점 팩트 기반 지적' },
+              { value: 'balanced', label: '균형', desc: '대응+방어 적절 배합' },
               { value: 'defensive', label: '방어적', desc: '우리 강점 중심' },
             ].map(s => (
               <button
@@ -168,9 +168,9 @@ export default function DebatePage() {
             </div>
           </div>
           <div className="space-y-2 text-xs text-[var(--muted)]">
-            <div className="flex items-center gap-2"><span className="text-green-500">✓</span> 상대 후보 뉴스 분석</div>
-            <div className="flex items-center gap-2"><span className="text-green-500">✓</span> 커뮤니티 여론 수집</div>
-            <div className="flex items-center gap-2"><span className="text-green-500">✓</span> 여론조사 데이터 반영</div>
+            <div className="flex items-center gap-2"><span className="text-green-500"></span> 상대 후보 뉴스 분석</div>
+            <div className="flex items-center gap-2"><span className="text-green-500"></span> 커뮤니티 여론 수집</div>
+            <div className="flex items-center gap-2"><span className="text-green-500"></span> 여론조사 데이터 반영</div>
             <div className="flex items-center gap-2"><div className="animate-pulse text-blue-500">●</div> AI 대본 생성 + 선거법 검증</div>
           </div>
         </div>
@@ -195,16 +195,14 @@ export default function DebatePage() {
 
           {/* 오프닝 */}
           <Section
-            title="오프닝 발언" emoji="🎤"
-            open={openSections.opening} toggle={() => toggleSection('opening')}
+            title="오프닝 발언" open={openSections.opening} toggle={() => toggleSection('opening')}
           >
             <p className="whitespace-pre-wrap">{result.opening}</p>
           </Section>
 
-          {/* 핵심 공략 */}
+          {/* 핵심 토론 포인트 */}
           <Section
-            title={`핵심 공략 포인트 (${result.key_points?.length || 0}개)`} emoji="⚔️"
-            open={openSections.key_points} toggle={() => toggleSection('key_points')}
+            title={`핵심 토론 포인트 (${result.key_points?.length || 0}개)`} open={openSections.key_points} toggle={() => toggleSection('key_points')}
           >
             <div className="space-y-4">
               {(result.key_points || []).map((kp: any, i: number) => (
@@ -222,8 +220,7 @@ export default function DebatePage() {
 
           {/* 반박 대비 */}
           <Section
-            title={`예상 반박 대비 (${result.rebuttals?.length || 0}개)`} emoji="🛡️"
-            open={openSections.rebuttals} toggle={() => toggleSection('rebuttals')}
+            title={`예상 반박 대비 (${result.rebuttals?.length || 0}개)`} open={openSections.rebuttals} toggle={() => toggleSection('rebuttals')}
           >
             <div className="space-y-3">
               {(result.rebuttals || []).map((r: any, i: number) => (
@@ -241,8 +238,7 @@ export default function DebatePage() {
 
           {/* 마무리 */}
           <Section
-            title="마무리 발언" emoji="🏁"
-            open={openSections.closing} toggle={() => toggleSection('closing')}
+            title="마무리 발언" open={openSections.closing} toggle={() => toggleSection('closing')}
           >
             <p className="whitespace-pre-wrap">{result.closing}</p>
           </Section>
@@ -255,7 +251,7 @@ export default function DebatePage() {
                 : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
             }`}>
               <div className="flex items-center gap-2 font-medium">
-                {result.compliance.compliant ? '✅' : '⚠️'}
+                {result.compliance.compliant ? '' : ''}
                 선거법 검증: {result.compliance.compliant ? '통과' : '주의 필요'}
                 {result.compliance.score != null && (
                   <span className="text-sm text-gray-500">({result.compliance.score}점)</span>
@@ -293,8 +289,8 @@ export default function DebatePage() {
   );
 }
 
-function Section({ title, emoji, open, toggle, children }: {
-  title: string; emoji: string; open: boolean; toggle: () => void; children: React.ReactNode;
+function Section({ title, open, toggle, children }: {
+  title: string; open: boolean; toggle: () => void; children: React.ReactNode;
 }) {
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 overflow-hidden">
@@ -302,7 +298,7 @@ function Section({ title, emoji, open, toggle, children }: {
         onClick={toggle}
         className="w-full px-5 py-3 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700"
       >
-        <span className="font-medium">{emoji} {title}</span>
+        <span className="font-medium">{title}</span>
         <span className="text-gray-400">{open ? '▼' : '▶'}</span>
       </button>
       {open && <div className="px-5 pb-4">{children}</div>}

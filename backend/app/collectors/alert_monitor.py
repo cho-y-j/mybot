@@ -292,7 +292,7 @@ async def check_db_alerts(
     """DB 기반 실시간 위기 감지 (Phase 2 이벤트 기반 방식).
 
     수집+AI 분석이 끝난 직후 호출. AI가 이미 분류한
-    strategic_value='weakness' (우리 후보 공격), ai_threat_level in ('high','medium'),
+    strategic_value='weakness' (우리 후보 약점 노출), ai_threat_level in ('high','medium'),
     sentiment_verified=TRUE 인 항목들을 긴급 알림 후보로 삼는다.
 
     Redis SET을 사용해 이미 알림 발송한 URL은 중복 제외.
@@ -335,7 +335,7 @@ async def check_db_alerts(
             pass
 
     # ── 뉴스에서 critical 항목 쿼리 ──
-    # 우리 후보 공격 (weakness) + 고위협 (high threat_level) + 검증된 부정
+    # 우리 후보 약점 노출 (weakness) + 고위협 (high threat_level) + 검증된 부정
     rows = (await db.execute(sql_text(f"""
         SELECT n.id, n.title, n.url, n.ai_summary, n.ai_reason,
                n.sentiment,

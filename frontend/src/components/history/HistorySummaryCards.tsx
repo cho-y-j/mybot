@@ -44,7 +44,7 @@ export default function HistorySummaryCards({ summary }: { summary: Summary }) {
     {
       label: '스윙 시군',
       value: `${summary.swing_count} / ${summary.total_districts}`,
-      sub: summary.swing_count > 0 ? '집중 공략 대상' : '안정',
+      sub: summary.swing_count > 0 ? '집중 대응 대상' : '안정',
       tone: 'text-orange-600 dark:text-orange-400',
     },
     {
@@ -55,7 +55,7 @@ export default function HistorySummaryCards({ summary }: { summary: Summary }) {
     },
     {
       label: 'AI 핵심 액션',
-      value: summary.top_action ? '✓' : '미생성',
+      value: summary.top_action ? '' : '미생성',
       sub: summary.top_action || 'AI 전략 탭에서 생성',
       tone: 'text-indigo-600 dark:text-indigo-400',
       wide: true,

@@ -157,17 +157,38 @@ export default function EasyHome() {
       <div>
         <h2 className="text-lg font-bold mb-3">오늘 수집 현황</h2>
         <div className="grid grid-cols-3 gap-3">
-          <Link href="/easy/news" className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 text-center hover:border-[var(--foreground)]/30 transition">
+          <Link href="/easy/news"
+            className="group bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 hover:border-blue-500/50 hover:bg-blue-500/5 hover:-translate-y-0.5 transition-all">
+            <div className="flex items-center justify-between mb-2">
+              <svg className="w-5 h-5 text-[var(--muted)] group-hover:text-blue-500 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8M15 18h-5M10 6h8v4h-8V6Z"/>
+              </svg>
+              <span className="text-[10px] text-[var(--muted)] group-hover:text-blue-500">보기 →</span>
+            </div>
             <div className="text-2xl font-black text-[var(--foreground)]">{summary.news_today}</div>
-            <div className="text-xs text-[var(--muted)] mt-1">뉴스</div>
+            <div className="text-xs text-[var(--muted)] mt-0.5">뉴스</div>
           </Link>
-          <Link href="/easy/youtube" className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 text-center hover:border-[var(--foreground)]/30 transition">
+          <Link href="/easy/youtube"
+            className="group bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 hover:border-emerald-500/50 hover:bg-emerald-500/5 hover:-translate-y-0.5 transition-all">
+            <div className="flex items-center justify-between mb-2">
+              <svg className="w-5 h-5 text-[var(--muted)] group-hover:text-emerald-500 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M17 8h1a4 4 0 1 1 0 8h-1M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V8ZM7 1v3M11 1v3M15 1v3"/>
+              </svg>
+              <span className="text-[10px] text-[var(--muted)] group-hover:text-emerald-500">보기 →</span>
+            </div>
             <div className="text-2xl font-black text-[var(--foreground)]">{summary.comm_today}</div>
-            <div className="text-xs text-[var(--muted)] mt-1">커뮤니티</div>
+            <div className="text-xs text-[var(--muted)] mt-0.5">커뮤니티</div>
           </Link>
-          <Link href="/easy/youtube" className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 text-center hover:border-[var(--foreground)]/30 transition">
+          <Link href="/easy/youtube"
+            className="group bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 hover:border-rose-500/50 hover:bg-rose-500/5 hover:-translate-y-0.5 transition-all">
+            <div className="flex items-center justify-between mb-2">
+              <svg className="w-5 h-5 text-[var(--muted)] group-hover:text-rose-500 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m10 15 5-3-5-3zM2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+              </svg>
+              <span className="text-[10px] text-[var(--muted)] group-hover:text-rose-500">보기 →</span>
+            </div>
             <div className="text-2xl font-black text-[var(--foreground)]">{summary.yt_today}</div>
-            <div className="text-xs text-[var(--muted)] mt-1">미디어</div>
+            <div className="text-xs text-[var(--muted)] mt-0.5">미디어</div>
           </Link>
         </div>
       </div>
@@ -177,14 +198,22 @@ export default function EasyHome() {
         <h2 className="text-lg font-bold mb-3">빠른 만들기</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            { href: '/easy/content?type=blog', label: '블로그 글' },
-            { href: '/easy/content?type=sns', label: 'SNS 포스팅' },
-            { href: '/easy/content?type=card', label: '카드뉴스' },
-            { href: '/easy/debate', label: '토론 대본' },
+            { href: '/easy/content?type=blog', label: '블로그 글', desc: '네이버 블로그용 (1~2천자)',
+              svg: <><path d="M4 19h16M4 5h16M4 12h10"/></> },
+            { href: '/easy/content?type=sns', label: 'SNS 포스팅', desc: '페북/인스타 (500자 이내)',
+              svg: <><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></> },
+            { href: '/easy/content?type=card', label: '카드뉴스', desc: '이미지 카드 메시지',
+              svg: <><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></> },
+            { href: '/easy/debate', label: '토론 대본', desc: '방송·합동 토론용',
+              svg: <><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3ZM19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></> },
           ].map(item => (
             <Link key={item.href} href={item.href}
-              className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-5 text-center hover:border-[var(--foreground)]/30 transition">
+              className="group bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 hover:border-blue-500/60 hover:bg-blue-500/5 hover:-translate-y-0.5 transition-all">
+              <svg className="w-6 h-6 text-[var(--muted)] group-hover:text-blue-500 transition-colors mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                {item.svg}
+              </svg>
               <div className="font-semibold text-sm">{item.label}</div>
+              <div className="text-[11px] text-[var(--muted)] mt-0.5">{item.desc}</div>
             </Link>
           ))}
         </div>
@@ -195,24 +224,36 @@ export default function EasyHome() {
         <h2 className="text-lg font-bold mb-3">분석 & 참고</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            { href: '/easy/candidates', label: '후보 비교' },
-            { href: '/easy/history', label: '과거 선거' },
-            { href: '/easy/surveys', label: '여론조사' },
-            { href: '/easy/trends', label: '트렌드' },
+            { href: '/easy/candidates', label: '후보 비교', desc: '경쟁자 감성·지지율',
+              svg: <><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2M16 3.13a4 4 0 0 1 0 7.75M22 21v-2a4 4 0 0 0-3-3.87"/></> },
+            { href: '/easy/history', label: '과거 선거', desc: '역대 결과·성향',
+              svg: <><path d="M3 12a9 9 0 1 0 9-9M3 12h4l3-6 4 12 3-6h4"/></> },
+            { href: '/easy/surveys', label: '여론조사', desc: '지지율·교차분석',
+              svg: <><path d="M3 3v18h18M9 17V9M13 17V5M17 17v-6"/></> },
+            { href: '/easy/trends', label: '트렌드', desc: '급상승 키워드',
+              svg: <><path d="m3 17 6-6 4 4 8-8M14 7h7v7"/></> },
           ].map(item => (
             <Link key={item.href} href={item.href}
-              className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-5 text-center hover:border-[var(--foreground)]/30 transition">
+              className="group bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 hover:border-violet-500/60 hover:bg-violet-500/5 hover:-translate-y-0.5 transition-all">
+              <svg className="w-6 h-6 text-[var(--muted)] group-hover:text-violet-500 transition-colors mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                {item.svg}
+              </svg>
               <div className="font-semibold text-sm">{item.label}</div>
+              <div className="text-[11px] text-[var(--muted)] mt-0.5">{item.desc}</div>
             </Link>
           ))}
         </div>
       </div>
 
       {/* 도움말 */}
-      <div className="bg-[var(--muted-bg)] rounded-xl p-4 text-xs text-[var(--muted)]">
-        <p className="font-semibold mb-1">💡 팁</p>
-        <p>우측 하단의 💬 버튼을 누르면 언제든 AI 비서에게 질문할 수 있어요.</p>
-        <p className="mt-1">더 자세한 분석이 필요하면 좌측 사이드바의 "전문가 메뉴"를 열어보세요.</p>
+      <div className="bg-[var(--muted-bg)] rounded-xl p-4 text-xs text-[var(--muted)] flex items-start gap-3">
+        <svg className="w-4 h-4 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>
+        </svg>
+        <div>
+          <p>우측 하단 <strong className="text-[var(--foreground)]">AI 비서</strong> 버튼을 누르면 언제든 질문할 수 있어요.</p>
+          <p className="mt-1">더 자세한 분석이 필요하면 좌측 사이드바의 <strong className="text-[var(--foreground)]">전문가 메뉴</strong>를 열어보세요.</p>
+        </div>
       </div>
     </div>
   );

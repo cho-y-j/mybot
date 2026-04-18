@@ -195,6 +195,49 @@ session.add(YouTubeVideo(..., published_at=pub_at))  # None이면 NULL 저장
 - `/easy/{news,candidates,surveys,trends,youtube,debate,schedules}` 는 dashboard 컴포넌트 재사용
 - `/easy` 레이아웃: 2단계 사이드바 + FloatingAssistant (모든 페이지 우하단 챗)
 
+### 1.20. Next.js 쿠키 세팅 — `NextResponse.cookies.set()` 필수 (2026-04-18)
+**Route Handler에서 `cookies().set()` 금지. 반드시 `response.cookies.set()` 사용.**
+- Why: App Router에서 `NextResponse.json()` 또는 `NextResponse.redirect()`로 새 응답을 생성해 반환하면, `cookies().set()`의 쿠키가 응답 Set-Cookie 헤더에 **누락되는 사례**가 있음.
+- 2026-04-18 사고: homepage `/sso`, `/api/auth/{login,register}`, `/{code}/api/auth/login` 4곳이 `cookies().set()`으로 `mh_session` 설정 → 실제 응답에 쿠키 안 붙음 → 로그인/SSO 직후 재로그인 루프 (수 회 신고됨).
+- **통합 헬퍼 사용 필수**: `homepage/src/lib/auth.ts`의 `applySessionCookies(response, sessionId, userType, code, rememberMe)`.
+- 검수는 grep만으로 불충분. **실제 `curl -i`로 Set-Cookie 헤더 확인** 또는 브라우저 DevTools Network 탭 확인.
+
+### 1.21. 컨테이너 TZ=Asia/Seoul 고정 (2026-04-18)
+**ep_backend, ep_celery_worker, ep_celery_beat 환경변수에 `TZ=Asia/Seoul` 필수.**
+- Why: Docker 기본 TZ는 UTC. `date.today()`, `datetime.now()`(naive)가 UTC 기준 반환 → KST 오전 09:00 이전 실행되는 브리핑/스케줄이 **어제 날짜로 저장**되는 버그 (사용자가 "오늘 오전 브리핑이 어제 날짜로 표기" 라고 보고).
+- 위치: `docker/docker-compose.yml`의 backend/celery-* 서비스 `environment:` 섹션.
+- 코드 내 `datetime.now(timezone.utc)`는 명시적 UTC라 OK. 문제는 naive `date.today()`와 `datetime.now()`.
+
+### 1.23. NPM 라우팅 — homepage 전용 API 분리 (2026-04-18)
+**두 Next.js 앱(mybot frontend + homepage)이 같은 `ai.on1.kr` 도메인에 공존하므로 `/api/*` 라우팅이 충돌한다.**
+
+- mybot backend: `/api/auth/login`, `/api/auth/refresh` 등 대시보드용 API
+- homepage: `/api/site/*`, `/api/analytics/*`, `/api/auth/me`, `/api/auth/logout` 등 관리자 편집용
+
+**NPM custom conf 라우팅 규칙 (`/data/nginx/custom/server_proxy.conf`)**:
+- `^~ /api/site/` → ep_homepage (homepage admin UI 데이터)
+- `^~ /api/analytics/` → ep_homepage
+- `= /api/auth/me` → ep_homepage
+- `= /api/auth/logout` → ep_homepage
+- `^~ /api/` (나머지) → ep_backend (mybot 분석 API)
+
+**왜 이 순서가 중요한가**: nginx `^~` prefix는 **길이순 우선 매칭**. `^~ /api/site/` 가 `^~ /api/` 보다 구체적이므로 먼저 매칭됨. `= /api/auth/me` 는 exact match라 최우선.
+
+**증상이 뭐였나 (2026-04-18 사고)**: homepage admin 페이지에서 좌측 메뉴 클릭 → 내부 API(`/api/site/blocks`, `/api/auth/me` 등) 호출 → NPM이 모두 mybot backend로 보냄 → mybot backend에 해당 route 없음 → 404/403 → UI 깨짐 + 재로그인 요구. "신규 가입자 포함 모든 사용자가 admin 편집 불가" 상태.
+
+**새 API 추가 시 체크리스트**: homepage가 `/api/X` 새로 만들면 `server_proxy.conf`에 homepage 라우팅 location 추가 필수. 아니면 mybot으로 흘러가서 404.
+
+### 1.22. 보고서/브리핑 PDF 정책 (2026-04-18 확정)
+| 시간(KST) | 타입 | 텍스트 | 텔레그램 | 메일 | PDF |
+|---|---|---|---|---|---|
+| 07:00 | 오전 브리핑 | ✓ | ✓ | ✓ (SMTP 설정 시) | ✗ |
+| 13:00 | 오후 브리핑 | ✓ | ✓ | ✓ | ✗ |
+| 18:00 | 일일 보고서 | ✓ | ✓ | ✓ | ✓ |
+| 월 09:00 | 주간 보고서 | ✓ | ✓ | ✓ | ✓ |
+
+- PDF는 `tasks.py` `_run_briefing`의 `if briefing_type == "daily"` + `_run_weekly_report` 두 경로에서만 생성.
+- 오전/오후는 의도적으로 PDF 제외 — 모바일 텔레그램/메일로 빠르게 훑는 용도.
+
 ### 1.13. 온보딩 시 선거 중복 생성 금지 (2026-04-13)
 가입 시 동일한 선거가 이미 존재하면 **새로 만들지 않고 기존 election을 재사용**한다.
 - 매칭 키: `election_type + region_sido + region_sigungu + election_date`
@@ -403,6 +446,10 @@ session.add(YouTubeVideo(..., published_at=pub_at))  # None이면 NULL 저장
 - ❌ 가짜 완료 선언: 파일만 편집하고 실제 실행 없이 "됐습니다"
 - ❌ 실패 시 해당 단계 주석 처리하고 다음 단계 진행
 - ❌ Claude CLI를 API로 교체하자는 제안 (CLI subprocess가 기본 아키텍처임)
+- ❌ **Route Handler에서 `cookies().set(...)`** — `NextResponse.json/redirect` 반환 시 응답에 안 붙음 (2026-04-18 재로그인 버그). 반드시 `response.cookies.set(...)` 또는 `applySessionCookies()` 헬퍼 사용.
+- ❌ **일괄 이모지/치환 스크립트로 모든 .tsx 파일을 밀어버리기** — 2026-04-18 사고: `{ icon: '🎤' }` 형태를 정규식으로 일괄 삭제 → AI 비서 버튼 본문이 빈 `<button></button>`이 됨 (닫힌 상태 버튼, 닫기 X 버튼 등). 이모지 제거는 **컴포넌트별 UI 맥락 확인 후** 개별 결정: (a) 완전 제거 (b) 단색 라인 SVG로 교체 (c) 의도적 유지 (경고 문구 등). 그리고 빈 `{prop}` 참조 JSX는 반드시 제거해 레이아웃 깨지지 않게.
+- ❌ **grep/정적 검수만으로 "수정 완료" 선언** — 2026-04-18 재로그인 사고: sameSite strict→lax grep 확인만으로 완료 선언했으나 실제 원인은 쿠키 전달 자체 실패. 인증/세션/쿠키 수정은 반드시 **`curl -i`로 Set-Cookie 응답 헤더** 또는 **브라우저 DevTools Network 탭**으로 실제 동작 확인.
+- ❌ **컨테이너 TZ 무시** — Docker 기본 UTC에서 `date.today()` 쓰면 KST 새벽 시간대에 날짜가 하루 밀림. `TZ=Asia/Seoul` 환경변수 필수 (1.21 참조).
 
 ---
 

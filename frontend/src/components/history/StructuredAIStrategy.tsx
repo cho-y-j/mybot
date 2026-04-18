@@ -83,7 +83,7 @@ export default function StructuredAIStrategy({
         <>
           {/* Key Findings */}
           <div className="card">
-            <h4 className="text-sm font-bold text-violet-600 dark:text-violet-400 mb-3">🔍 핵심 발견 사항</h4>
+            <h4 className="text-sm font-bold text-violet-600 dark:text-violet-400 mb-3"> 핵심 발견 사항</h4>
             <ul className="space-y-2">
               {structured!.key_findings.map((f, i) => (
                 <li key={i} className="flex gap-2 text-sm">
@@ -97,18 +97,18 @@ export default function StructuredAIStrategy({
           {/* Strength / Weakness */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="card border-l-4 border-blue-500">
-              <h4 className="text-sm font-bold text-blue-600 dark:text-blue-400 mb-2">✨ 강세 지역 활용 전략</h4>
+              <h4 className="text-sm font-bold text-blue-600 dark:text-blue-400 mb-2"> 강세 지역 활용 전략</h4>
               <p className="text-sm leading-relaxed whitespace-pre-line">{structured!.strength_strategy}</p>
             </div>
             <div className="card border-l-4 border-red-500">
-              <h4 className="text-sm font-bold text-red-600 dark:text-red-400 mb-2">⚠️ 약세 지역 공략 전략</h4>
+              <h4 className="text-sm font-bold text-red-600 dark:text-red-400 mb-2">약세 지역 대응 전략</h4>
               <p className="text-sm leading-relaxed whitespace-pre-line">{structured!.weakness_strategy}</p>
             </div>
           </div>
 
           {/* Top Actions */}
           <div className="card">
-            <h4 className="text-sm font-bold text-orange-600 dark:text-orange-400 mb-3">🎯 다음 단계 액션</h4>
+            <h4 className="text-sm font-bold text-orange-600 dark:text-orange-400 mb-3"> 다음 단계 액션</h4>
             <div className="space-y-3">
               {structured!.top_actions.map((a, i) => (
                 <div key={i} className="border border-gray-200 dark:border-gray-700 rounded-lg p-3">
@@ -127,7 +127,7 @@ export default function StructuredAIStrategy({
       ) : data?.text ? (
         <div className="card">
           <p className="text-sm whitespace-pre-line">{data.text}</p>
-          <p className="text-xs text-gray-400 mt-2">⚠️ JSON 파싱 실패 — 원본 텍스트를 표시합니다.</p>
+          <p className="text-xs text-gray-400 mt-2"> JSON 파싱 실패 — 원본 텍스트를 표시합니다.</p>
         </div>
       ) : (
         <div className="card text-center text-gray-500 py-12 text-sm">

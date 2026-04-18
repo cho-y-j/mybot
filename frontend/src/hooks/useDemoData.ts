@@ -87,7 +87,7 @@ export function generateDemoData(candidates: Candidate[]) {
       if (name === oursName) {
         return `${name}: ${d.count < topNews.count ? '뉴스 노출량 확대 필요' : '현재 노출량 유지'} — 긍정률 ${posRate}%`;
       }
-      return `${name}: 뉴스 ${d.count}건, 부정 ${d.negative}건 ${d.negative > 3 ? '— 약점 공략 가능' : '— 모니터링 지속'}`;
+      return `${name}: 뉴스 ${d.count}건, 부정 ${d.negative}건 ${d.negative > 3 ? '— 차별점 부각 가능' : '— 모니터링 지속'}`;
     }),
     risk: `${oursName} 후보의 노출량이 경쟁자 대비 ${
       oursNews && topNews.count > oursNews.count

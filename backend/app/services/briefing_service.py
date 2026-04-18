@@ -89,7 +89,7 @@ def generate_rule_briefing(our_name: str, news_by_cand: list, scores: list, neg_
 
     for n in news_by_cand:
         if not n.get("is_ours") and n.get("negative", 0) >= 3:
-            opportunities.append(f"{n['name']} 부정뉴스 {n['negative']}건 — 공략 가능")
+            opportunities.append(f"{n['name']} 부정뉴스 {n['negative']}건 — 차별점 부각 가능")
     if our_news and our_news.get("positive", 0) > 0:
         opportunities.append(f"긍정 뉴스 {our_news['positive']}건 — SNS 확산 활용")
 

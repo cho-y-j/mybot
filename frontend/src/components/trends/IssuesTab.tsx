@@ -26,7 +26,7 @@ interface IssuesTabProps {
   onNavigateToSearch: (keyword: string) => void;
 }
 
-const MEDALS = ['🥇', '🥈', '🥉'];
+const MEDALS = ['', '', ''];
 
 export default function IssuesTab({ election, issueData, onNavigateToSearch }: IssuesTabProps) {
   const [categories, setCategories] = useState<Record<string, { keywords: string[]; count: number }>>({});

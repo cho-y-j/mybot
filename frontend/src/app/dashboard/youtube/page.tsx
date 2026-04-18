@@ -121,7 +121,7 @@ export default function YouTubePage() {
           {ourCrisisVideos.length > 0 && (
             <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30">
               <div className="flex items-center gap-2 mb-2">
-                <span className="text-red-500 font-bold text-sm">🚨 우리 후보 위기 {ourCrisisVideos.length}건</span>
+                <span className="text-red-500 font-bold text-sm"> 우리 후보 위기 {ourCrisisVideos.length}건</span>
                 <span className="text-xs text-[var(--muted)]">즉시 방어/해명 필요</span>
               </div>
               <div className="space-y-1">
@@ -140,12 +140,12 @@ export default function YouTubePage() {
               </div>
             </div>
           )}
-          {/* 경쟁자 리스크 — 공격 기회 */}
+          {/* 경쟁자 리스크 — 대응 기회 */}
           {rivalRiskVideos.length > 0 && (
             <div className="p-4 rounded-xl bg-orange-500/10 border border-orange-500/30">
               <div className="flex items-center gap-2 mb-2">
-                <span className="text-orange-500 font-bold text-sm">🔥 경쟁자 리스크 {rivalRiskVideos.length}건</span>
-                <span className="text-xs text-[var(--muted)]">공격/대응 콘텐츠 기회</span>
+                <span className="text-orange-500 font-bold text-sm">경쟁자 리스크 {rivalRiskVideos.length}건</span>
+                <span className="text-xs text-[var(--muted)]">대응 콘텐츠 기회</span>
               </div>
               <div className="space-y-1">
                 {rivalRiskVideos.slice(0, 3).map((v: any, i: number) => (
@@ -243,7 +243,7 @@ export default function YouTubePage() {
                     {mediaCands.map((c: any) => (
                       <tr key={c.name} className={`border-b border-[var(--card-border)]/50 ${c.is_ours ? 'bg-blue-500/5' : ''}`}>
                         <td className="py-3 font-bold" style={{ color: colorMap[c.name] }}>
-                          {c.name} {c.is_ours && '★'}
+                          {c.name} {c.is_ours && ''}
                         </td>
                         <td className="py-3 text-center">
                           <div className="font-bold">{c.news?.count || 0}</div>
@@ -298,7 +298,7 @@ export default function YouTubePage() {
 
                   return (
                     <div key={c.name} className={`p-4 rounded-xl border border-[var(--card-border)] ${c.is_ours ? 'ring-1 ring-blue-500/30' : ''}`}>
-                      <div className="font-bold mb-3" style={{ color: colorMap[c.name] }}>{c.name} {c.is_ours && '★'}</div>
+                      <div className="font-bold mb-3" style={{ color: colorMap[c.name] }}>{c.name} {c.is_ours && ''}</div>
                       <div className="space-y-2">
                         <div className="flex items-center gap-2">
                           <span className="text-xs w-16 text-[var(--muted)]">뉴스</span>
@@ -435,7 +435,7 @@ export default function YouTubePage() {
                     <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold"
                       style={{ backgroundColor: colorMap[d.name] }}>{d.name[0]}</div>
                     <div>
-                      <h3 className="font-bold">{d.name} {d.is_ours && '★'}</h3>
+                      <h3 className="font-bold">{d.name} {d.is_ours && ''}</h3>
                       <p className="text-xs text-[var(--muted)]">참여율 {d.engagement_rate}%</p>
                     </div>
                   </div>
@@ -680,7 +680,7 @@ export default function YouTubePage() {
               {/* 우리 후보 위기 — 즉시 방어 */}
               {ourCrisisVideos.length > 0 && (
                 <div className="card border-red-500/30">
-                  <h3 className="font-bold mb-2 text-red-500">🚨 우리 후보 위기 ({ourCrisisVideos.length}건)</h3>
+                  <h3 className="font-bold mb-2 text-red-500"> 우리 후보 위기 ({ourCrisisVideos.length}건)</h3>
                   <p className="text-xs text-[var(--muted)] mb-4">우리 후보를 부정적으로 다룬 조회수 5,000+ 영상 — 즉시 방어/해명 필요</p>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {ourCrisisVideos.map((v: any, i: number) => (
@@ -710,11 +710,11 @@ export default function YouTubePage() {
                 </div>
               )}
 
-              {/* 경쟁자 리스크 — 공격 기회 */}
+              {/* 경쟁자 리스크 — 대응 기회 */}
               {rivalRiskVideos.length > 0 && (
                 <div className="card border-orange-500/30">
-                  <h3 className="font-bold mb-2 text-orange-500">🔥 경쟁자 리스크 ({rivalRiskVideos.length}건)</h3>
-                  <p className="text-xs text-[var(--muted)] mb-4">경쟁자를 부정적으로 다룬 조회수 5,000+ 영상 — 우리 캠프의 공격/대응 콘텐츠 기회</p>
+                  <h3 className="font-bold mb-2 text-orange-500">경쟁자 리스크 ({rivalRiskVideos.length}건)</h3>
+                  <p className="text-xs text-[var(--muted)] mb-4">경쟁자를 부정적으로 다룬 조회수 5,000+ 영상 — 우리 캠프의 대응 콘텐츠 기회</p>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {rivalRiskVideos.map((v: any, i: number) => (
                       <a key={i} href={`https://www.youtube.com/watch?v=${v.video_id}`}
@@ -852,7 +852,7 @@ export default function YouTubePage() {
                       <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm"
                         style={{ backgroundColor: colorMap[c.name] }}>{c.name[0]}</div>
                       <div>
-                        <h3 className="font-bold">{c.name} {c.is_ours && '★'}</h3>
+                        <h3 className="font-bold">{c.name} {c.is_ours && ''}</h3>
                         <p className="text-xs text-[var(--muted)]">{c.total_posts}건</p>
                       </div>
                     </div>

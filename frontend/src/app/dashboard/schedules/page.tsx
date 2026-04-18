@@ -4,7 +4,7 @@ import { useElection } from '@/hooks/useElection';
 import { api } from '@/services/api';
 
 const TYPE_ICONS: Record<string, string> = {
-  news: '📰', community: '💬', youtube: '▶️', trends: '📈', briefing: '📋', alert: '🚨',
+  news: '', community: '', youtube: '▶', trends: '', briefing: '', alert: '',
 };
 
 const TYPE_COLORS: Record<string, string> = {
@@ -204,7 +204,7 @@ export default function SchedulesPage() {
         {sorted.map(s => (
           <div key={s.id} className={`card p-4 flex items-center justify-between ${!s.enabled ? 'opacity-50' : ''}`}>
             <div className="flex items-center gap-4">
-              <span className="text-xl">{TYPE_ICONS[s.schedule_type] || '📌'}</span>
+              <span className="text-xl">{TYPE_ICONS[s.schedule_type] || ''}</span>
               <div>
                 <div className="flex items-center gap-2">
                   <span className="font-medium">{s.name}</span>

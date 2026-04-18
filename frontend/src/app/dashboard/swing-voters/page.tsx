@@ -200,7 +200,7 @@ function IssueCard({ issue }: { issue: any }) {
                     p.sentiment === 'positive' ? 'text-green-500' :
                     p.sentiment === 'negative' ? 'text-red-500' : 'text-gray-400'
                   }>
-                    {p.sentiment === 'positive' ? '🟢' : p.sentiment === 'negative' ? '🔴' : '⚪'}
+                    {p.sentiment === 'positive' ? '' : p.sentiment === 'negative' ? '' : ''}
                   </span>
                   <span className="text-gray-400">[{p.source}]</span>
                   {p.url ? (

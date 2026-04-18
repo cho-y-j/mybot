@@ -274,7 +274,7 @@ async def get_analysis_overview(
     for n in news_by_candidate:
         if not n["is_ours"] and n["negative"] >= 3:
             alerts.append({"level": "opportunity", "title": f"{n['name']} 약점",
-                "message": f"{n['name']} 부정 뉴스 {n['negative']}건 — 공략 가능"})
+                "message": f"{n['name']} 부정 뉴스 {n['negative']}건 — 차별점 부각 가능"})
 
     result = {
         "election": {

@@ -17,9 +17,9 @@ interface StrengthGrid {
 
 const TIER_STYLE: Record<Cell['strength'], { bg: string; border: string; label: string; text: string }> = {
   prog_strong: { bg: 'bg-blue-600', border: 'border-blue-700', label: '진보 강세', text: 'text-white' },
-  prog_lean:   { bg: 'bg-blue-300', border: 'border-blue-400', label: '진보 우세', text: 'text-blue-900' },
-  swing:       { bg: 'bg-amber-200', border: 'border-amber-300', label: '경합', text: 'text-amber-900' },
-  cons_lean:   { bg: 'bg-red-300', border: 'border-red-400', label: '보수 우세', text: 'text-red-900' },
+  prog_lean: { bg: 'bg-blue-300', border: 'border-blue-400', label: '진보 우세', text: 'text-blue-900' },
+  swing: { bg: 'bg-amber-200', border: 'border-amber-300', label: '경합', text: 'text-amber-900' },
+  cons_lean: { bg: 'bg-red-300', border: 'border-red-400', label: '보수 우세', text: 'text-red-900' },
   cons_strong: { bg: 'bg-red-600', border: 'border-red-700', label: '보수 강세', text: 'text-white' },
 };
 

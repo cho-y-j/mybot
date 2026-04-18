@@ -180,7 +180,7 @@ function SurveyCard({ survey: s, candidateNames, compact }: { survey: any; candi
           return (
             <div key={name} className="flex items-center gap-2">
               <span className={`w-28 text-xs truncate ${ours ? 'text-blue-500 font-bold' : ''}`}>
-                {name}{ours ? ' ★' : ''}
+                {name}{ours ? ' ' : ''}
               </span>
               <div className="flex-1 h-2.5 bg-[var(--card-border)] rounded-full overflow-hidden">
                 <div className="h-full rounded-full"
@@ -352,7 +352,7 @@ export default function SurveysPage() {
                     return (
                       <div key={name} className={`p-3 rounded-xl ${ours ? 'bg-blue-500/10 ring-1 ring-blue-500/30' : 'bg-[var(--muted-bg)]'}`}>
                         <div className="flex items-center justify-between mb-1.5">
-                          <span className={`font-semibold ${ours ? 'text-blue-500' : ''}`}>{name} {ours && '★'}</span>
+                          <span className={`font-semibold ${ours ? 'text-blue-500' : ''}`}>{name} {ours && ''}</span>
                           <span className={`text-2xl font-black ${v === maxVal && v > 0 ? 'text-amber-500' : ours ? 'text-blue-500' : ''}`}>{v}%</span>
                         </div>
                         <div className="h-3 bg-[var(--card-border)] rounded-full overflow-hidden">
@@ -539,15 +539,56 @@ export default function SurveysPage() {
             })}
           </div>
 
-          {/* 목록 */}
-          <div className="space-y-2">
-            {filteredSurveys.map((s, i) => (
-              <SurveyCard key={s.id || i} survey={s} candidateNames={candidateNames} />
-            ))}
-            {filteredSurveys.length === 0 && (
-              <div className="card text-center py-8 text-[var(--muted)]">해당 조건의 여론조사가 없습니다.</div>
-            )}
-          </div>
+          {/* 목록 — 전체/우리 후보 선택 시 선거유형별 그룹핑, 특정 타입 선택 시 단순 목록 */}
+          {(typeFilter === 'all' || typeFilter === 'ours') ? (() => {
+            const TYPE_ORDER = ['superintendent', 'governor', 'congressional', 'mayor', 'gun_head', 'gu_head', 'metro_council', 'basic_council'];
+            const groups: Record<string, any[]> = {};
+            filteredSurveys.forEach(s => {
+              const key = s.election_type || 'untagged';
+              (groups[key] = groups[key] || []).push(s);
+            });
+            const orderedKeys = [
+              ...TYPE_ORDER.filter(k => groups[k]),
+              ...Object.keys(groups).filter(k => !TYPE_ORDER.includes(k) && k !== 'untagged').sort(),
+              ...(groups['untagged'] ? ['untagged'] : []),
+            ];
+            return (
+              <div className="space-y-5">
+                {orderedKeys.map(type => {
+                  const rows = groups[type] || [];
+                  if (rows.length === 0) return null;
+                  const label = type === 'untagged' ? '미분류' : (TYPE_LABEL[type] || type);
+                  const color = type === 'untagged' ? 'bg-gray-400' : (TYPE_COLOR[type] || 'bg-gray-500');
+                  return (
+                    <div key={type}>
+                      <div className="flex items-center gap-2 mb-2 pb-2 border-b border-[var(--card-border)]">
+                        <span className={`text-[10px] px-2 py-0.5 rounded text-white font-bold ${color}`}>{label}</span>
+                        <h4 className="text-sm font-bold">{label} 여론조사</h4>
+                        <span className="text-xs text-[var(--muted)]">({rows.length}건)</span>
+                      </div>
+                      <div className="space-y-2">
+                        {rows.map((s, i) => (
+                          <SurveyCard key={s.id || `${type}-${i}`} survey={s} candidateNames={candidateNames} />
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+                {filteredSurveys.length === 0 && (
+                  <div className="card text-center py-8 text-[var(--muted)]">해당 조건의 여론조사가 없습니다.</div>
+                )}
+              </div>
+            );
+          })() : (
+            <div className="space-y-2">
+              {filteredSurveys.map((s, i) => (
+                <SurveyCard key={s.id || i} survey={s} candidateNames={candidateNames} />
+              ))}
+              {filteredSurveys.length === 0 && (
+                <div className="card text-center py-8 text-[var(--muted)]">해당 조건의 여론조사가 없습니다.</div>
+              )}
+            </div>
+          )}
         </>
       )}
 

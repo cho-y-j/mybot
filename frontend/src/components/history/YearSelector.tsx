@@ -23,7 +23,7 @@ export default function YearSelector({
     <div className="card">
       <div className="flex items-center gap-3 flex-wrap">
         <div>
-          <div className="text-xs font-bold text-gray-700 dark:text-gray-300">📅 기준 회차</div>
+          <div className="text-xs font-bold text-gray-700 dark:text-gray-300"> 기준 회차</div>
           <div className="text-[11px] text-gray-500">선택한 회차의 결과만 표시됩니다</div>
         </div>
         <div className="flex gap-1 flex-wrap">

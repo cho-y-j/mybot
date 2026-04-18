@@ -439,7 +439,7 @@ async def _build_strategy_context(db, tenant_id, election_id, candidates, our) -
             if w.action_summary:
                 lines.append(f"    대응: {w.action_summary[:120]}")
 
-    # ── 3) 경쟁자 약점 (opportunity) TOP 5 — 공격 기회 (race-shared) ──
+    # ── 3) 경쟁자 약점 (opportunity) TOP 5 — 대응 기회 (race-shared) ──
     opp = (await db.execute(text("""
         SELECT rn.title, rn.ai_summary, ca.action_summary, c.name AS cand_name
         FROM race_news_camp_analysis ca
@@ -452,7 +452,7 @@ async def _build_strategy_context(db, tenant_id, election_id, candidates, our) -
     """), {"tid": tenant_id, "eid": election_id})).all()
 
     if opp:
-        lines.append("\n[경쟁자 약점 — 공격 기회]")
+        lines.append("\n[경쟁자 약점 — 대응 기회]")
         for o in opp:
             lines.append(f"  • [{o.cand_name or '?'}] {o.title}")
             if o.ai_summary:

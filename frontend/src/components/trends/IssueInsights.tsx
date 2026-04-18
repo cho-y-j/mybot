@@ -131,7 +131,7 @@ export default function IssueInsights({ election, issueData, onNavigateToSearch 
                           <th key={name} className={`text-center py-2 px-2 font-semibold text-xs ${
                             name === matrix.our_candidate ? 'text-blue-500' : ''
                           }`}>
-                            {name}{name === matrix.our_candidate ? ' ★' : ''}
+                            {name}{name === matrix.our_candidate ? ' ' : ''}
                           </th>
                         ))}
                       </tr>

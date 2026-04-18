@@ -385,14 +385,14 @@ async def generate_content(
         "press": {"label": "보도자료", "chars": chars_spec,
                   "structure": "제목 → 부제 → 리드(핵심 1문장, 육하원칙) → 본문(배경/내용/의미) → 후보 코멘트 인용문 → 문의처(캠프 연락처 형식)"},
         "defense": {"label": "해명/대응문", "chars": chars_spec,
-                    "structure": "사안 요약(중립 서술) → 사실 관계 정리(번호 목록) → 우리 입장(논리적, 감정 배제) → 향후 계획. 반박 공격 금지, 팩트 중심"},
+                    "structure": "사안 요약(중립 서술) → 사실 관계 정리(번호 목록) → 우리 입장(논리적, 감정 배제) → 향후 계획. 감정적 반박 금지, 팩트 중심"},
     }
     spec = type_specs.get(content_type, type_specs["blog"])
 
     purpose_map = {
         "promote": "우리 후보 강점·비전 부각. 긍정적·희망적 톤.",
         "attack": "경쟁 후보 약점을 팩트로만 지적 (비방·인신공격 금지, 데이터 기반 비교만).",
-        "defend": "부정 보도/공격 대응. 침착하고 논리적, 감정 배제.",
+        "defend": "부정 보도·견제 대응. 침착하고 논리적, 감정 배제.",
         "policy": "구체 정책 설명. 쉬운 용어, 유권자 눈높이.",
         "inform": "정보 안내 (행사/공지/일정). 간결·정확.",
     }
@@ -542,7 +542,7 @@ async def generate_debate_script(
     user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
-    """AI 토론 대본 생성 — 상대 후보 약점 기반 공략 스크립트."""
+    """AI 토론 대본 생성 — 상대 후보 약점 기반 대응 스크립트."""
     from app.services.debate_service import generate_debate_script as _gen
     return await _gen(
         db, user["tenant_id"], election_id,

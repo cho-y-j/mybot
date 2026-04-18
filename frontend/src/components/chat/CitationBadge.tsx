@@ -27,13 +27,13 @@ export function CitationBadge({ citation, num }: { citation: Citation; num: numb
   const color = typeColors[citation.type] || 'bg-gray-500/20 text-gray-400 border-gray-500/30';
 
   const typeLabel: Record<string, string> = {
-    news: '📰',
-    community: '💬',
-    youtube: '📺',
-    report: '📋',
-    briefing: '📝',
-    realtime_news: '⚡️실시간',
-    nec: '🏛️NEC',
+    news: '',
+    community: '',
+    youtube: '',
+    report: '',
+    briefing: '',
+    realtime_news: '실시간',
+    nec: 'NEC',
   };
 
   return (
@@ -43,7 +43,7 @@ export function CitationBadge({ citation, num }: { citation: Citation; num: numb
         className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border text-[10px] font-medium mx-0.5 ${color} hover:scale-110 transition-transform cursor-pointer`}
         title={citation.title}
       >
-        <span>{typeLabel[citation.type] || '📎'}</span>
+        <span>{typeLabel[citation.type] || ''}</span>
         <span>{num}</span>
       </button>
 
@@ -58,13 +58,13 @@ export function CitationBadge({ citation, num }: { citation: Citation; num: numb
           >
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <span className="text-2xl">{typeLabel[citation.type] || '📎'}</span>
+                <span className="text-2xl">{typeLabel[citation.type] || ''}</span>
                 <span className={`text-xs px-2 py-0.5 rounded ${color}`}>
                   출처 {num} · {citation.type}
                 </span>
               </div>
               <button onClick={() => setOpen(false)} className="text-[var(--muted)] hover:text-white text-lg">
-                ✕
+                
               </button>
             </div>
 

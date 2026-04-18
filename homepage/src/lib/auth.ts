@@ -1,6 +1,7 @@
 import { randomBytes } from "crypto";
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
+import type { NextResponse } from "next/server";
 import { prisma } from "./db";
 import type { SessionUser } from "@/types/user";
 
@@ -96,9 +97,53 @@ export function setSessionCookie(sessionId: string, rememberMe: boolean) {
   cookieStore.set(COOKIE_NAME, sessionId, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
+    sameSite: "lax",
     path: "/",
     maxAge,
+  });
+}
+
+/**
+ * Route Handler 응답에 세션 쿠키 3종을 직접 부착.
+ * Next.js App Router에서 `cookies().set()`은 `NextResponse`를 새로 생성해 반환할 때
+ * 응답 헤더에 누락될 수 있음 — 이 헬퍼는 `response.cookies.set()`로 확실히 부착.
+ *
+ * Why: /sso, /api/auth/{login,register,register(gate)} 등 NextResponse를 직접 반환하는
+ *      route에서 과거 `cookies().set()`만 쓸 때 재로그인 버그 발생 (2026-04-18).
+ */
+export function applySessionCookies(
+  res: NextResponse,
+  sessionId: string,
+  userType: "super_admin" | "user",
+  code: string,
+  rememberMe: boolean
+) {
+  const secure = process.env.NODE_ENV === "production";
+  const sessionMaxAge = rememberMe
+    ? REMEMBER_ME_DAYS * 24 * 60 * 60
+    : SESSION_EXPIRY_HOURS * 60 * 60;
+  const longMaxAge = 30 * 24 * 60 * 60;
+
+  res.cookies.set(COOKIE_NAME, sessionId, {
+    httpOnly: true,
+    secure,
+    sameSite: "lax",
+    path: "/",
+    maxAge: sessionMaxAge,
+  });
+  res.cookies.set("mh_user_type", userType, {
+    httpOnly: false,
+    secure,
+    sameSite: "lax",
+    path: "/",
+    maxAge: longMaxAge,
+  });
+  res.cookies.set("mh_code", code, {
+    httpOnly: false,
+    secure,
+    sameSite: "lax",
+    path: "/",
+    maxAge: longMaxAge,
   });
 }
 
@@ -112,7 +157,7 @@ export function clearSessionCookie() {
   cookieStore.set(COOKIE_NAME, "", {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
+    sameSite: "lax",
     path: "/",
     maxAge: 0,
   });

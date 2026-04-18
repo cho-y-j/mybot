@@ -472,7 +472,7 @@ def _generate_recommendation(
         "유튜브 영상 수": f"유튜브 콘텐츠 {comp_name} 대비 부족 — 숏폼/설명 영상 제작 확대 필요",
         "유튜브 총 조회수": f"유튜브 조회수 {comp_name} 대비 부족 — 콘텐츠 홍보 및 SEO 최적화 필요",
         "검색량": f"검색량 {comp_name} 대비 부족 — 브랜드 인지도 향상 캠페인 필요",
-        "여론조사 지지율": f"지지율 {comp_name} 대비 열세 — 핵심 공약 어필 및 표적 유권자 공략 필요",
+        "여론조사 지지율": f"지지율 {comp_name} 대비 열세 — 핵심 공약 어필 및 타겟 유권자 대응 전략 필요",
         "유튜브 참여율": f"유튜브 참여율 {comp_name} 대비 부족 — 댓글 유도, 공유 이벤트 등 인게이지먼트 강화",
     }
     return recommendations.get(area, f"{area}에서 {comp_name} 대비 개선 필요")

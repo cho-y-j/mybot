@@ -134,7 +134,7 @@ async def generate_daily_report(
 
     for s in cand_stats:
         if not s["is_ours"] and s["neg"] >= 3:
-            alerts.append(f"💡 {s['name']} 부정뉴스 {s['neg']}건 — 약점 공략 가능")
+            alerts.append(f"💡 {s['name']} 부정뉴스 {s['neg']}건 — 차별점 부각 가능")
 
     # ── 5. 불편한 진실 ──
     truths = []

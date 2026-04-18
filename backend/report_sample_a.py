@@ -410,10 +410,10 @@ def generate():
     pdf.ln(5)
     pdf.set_font("K", "B", 10)
     pdf.set_text_color(*GREEN)
-    pdf.cell(0, 8, "공략 기회", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 8, "대응 기회", new_x="LMARGIN", new_y="NEXT")
 
     opps = [
-        "조동욱 부정뉴스 6건 — 약점 공략 가능",
+        "조동욱 부정뉴스 6건 — 차별점 부각 가능",
         "신문규 부정뉴스 4건 — 비교 콘텐츠 제작",
         "김성근 유튜브 조회수 높지만 커뮤니티 약세 — 커뮤니티 선점",
     ]

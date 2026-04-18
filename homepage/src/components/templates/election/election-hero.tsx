@@ -97,26 +97,25 @@ export default function ElectionHero({
   );
 
   /* ── Slogan area ── */
+  // 2026-04-18: 큰 h1을 candidateName(= user.name, "XX캠프")로 박았던 구조 →
+  //             사용자 편집이 반영되지 않는 문제 → heroSlogan을 메인 h1으로.
+  //             positionTitle 라인에 후보자 실명 병기.
+  const mainHeadline = settings.heroSlogan || candidateName;
+  const nameLine = [settings.positionTitle, candidateName].filter(Boolean).join(" · ");
   const sloganArea = (
     <div className="text-center text-white px-6 py-12 sm:py-16">
-      {settings.positionTitle && (
+      {nameLine && (
         <p className="text-sm font-medium tracking-widest uppercase opacity-90 mb-3">
-          {settings.positionTitle}
+          {nameLine}
         </p>
       )}
 
-      <h1 className="text-5xl font-bold tracking-tight sm:text-6xl md:text-7xl mb-4">
-        {candidateName}
+      <h1 className="text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl mb-4 leading-tight">
+        {mainHeadline}
       </h1>
 
-      {settings.heroSlogan && (
-        <p className="text-xl font-semibold sm:text-2xl leading-snug mb-2">
-          &ldquo;{settings.heroSlogan}&rdquo;
-        </p>
-      )}
-
       {settings.heroSubSlogan && (
-        <p className="text-sm opacity-75 leading-relaxed max-w-md mx-auto mb-8">
+        <p className="text-base sm:text-lg opacity-90 leading-relaxed max-w-2xl mx-auto mb-8">
           {settings.heroSubSlogan}
         </p>
       )}

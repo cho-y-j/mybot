@@ -232,7 +232,7 @@ export default function NewsAnalysisPage() {
                 ? 'bg-blue-500 text-white font-bold'
                 : 'bg-[var(--muted-bg)] text-[var(--muted)] hover:text-[var(--foreground)]'
             }`}>
-            {c === 'all' ? '전체' : c}{c === ourCandidate?.name ? ' ★' : ''}
+            {c === 'all' ? '전체' : c}{c === ourCandidate?.name ? ' ' : ''}
           </button>
         ))}
         <div className="h-4 w-px bg-[var(--card-border)] mx-1" />

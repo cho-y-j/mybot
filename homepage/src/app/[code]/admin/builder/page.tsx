@@ -48,13 +48,23 @@ interface ScheduleItem {
 }
 
 interface NewsItem {
-  id?: number;
+  id?: number | null;
   title: string;
   source: string | null;
   url: string | null;
   imageUrl?: string | null;
   publishedDate: string | null;
   sortOrder?: number;
+  /** 2026-04-18: 'ai' = mybot 자동수집, 'manual' = 직접 등록. 없으면 manual 취급. */
+  sourceType?: "ai" | "manual";
+  /** AI 항목의 고유키 (url) — feedOverride POST에 사용 */
+  sourceKey?: string | null;
+  /** feedOverride 반영된 숨김 상태 (AI 항목만) */
+  hidden?: boolean;
+  /** 상단 고정 순서 (AI 항목만) */
+  pinOrder?: number | null;
+  /** AI 항목의 요약 (선택 표시용) */
+  summary?: string | null;
 }
 
 interface VideoItem {
@@ -238,7 +248,16 @@ export default function BuilderPage() {
         apiFetch<VideoItem[]>("/api/site/videos"),
         apiFetch<ContactItem[]>("/api/site/contacts"),
       ]);
-    if (bRes.success && bRes.data) setBlocks(bRes.data);
+    if (bRes.success && bRes.data) {
+      setBlocks(bRes.data);
+      // 2026-04-18: 편집 버튼 찾기 어려움 → 처음 진입 시 첫 번째 보이는 블럭 자동 선택.
+      // 사용자가 ESC/닫기 버튼으로 명시적으로 닫을 때까지 열린 상태 유지.
+      setEditingBlockType((prev) => {
+        if (prev) return prev; // 이미 선택된 게 있으면 유지
+        const first = bRes.data!.find((b) => b.visible) || bRes.data![0];
+        return first ? first.type : null;
+      });
+    }
     if (sRes.success && sRes.data) setSettings(sRes.data);
     if (pRes.success && pRes.data) setProfiles(pRes.data);
     if (plRes.success && plRes.data) setPledges(plRes.data);
@@ -798,11 +817,11 @@ function SectionWrapper({
 
   return (
     <div
-      className={`relative transition-all duration-200 ${
+      className={`relative transition-all duration-200 cursor-pointer ${
         isDragging ? "opacity-40" : ""
       } ${isDragOver ? "ring-2 ring-blue-500/50 ring-inset" : ""} ${
-        !block.visible ? "opacity-40" : ""
-      }`}
+        isEditing ? "ring-2 ring-blue-500 ring-inset" : ""
+      } ${!block.visible ? "opacity-40" : ""}`}
       draggable
       onDragStart={onDragStart}
       onDragOver={onDragOver}
@@ -811,6 +830,12 @@ function SectionWrapper({
       onDragEnd={onDragEnd}
       onMouseEnter={() => onHover(true)}
       onMouseLeave={() => onHover(false)}
+      onClick={(e) => {
+        // 툴바 버튼/링크/input/editor 내부 클릭은 무시 (stopPropagation으로 이미 차단되지만 방어)
+        const t = e.target as HTMLElement;
+        if (t.closest("button, a, input, textarea, select, [contenteditable]")) return;
+        if (!isEditing) onEdit();
+      }}
     >
       {/* Hover toolbar */}
       <div
@@ -855,23 +880,12 @@ function SectionWrapper({
             </svg>
           )}
         </button>
-        {/* Edit button */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onEdit();
-          }}
-          className={`rounded p-1 text-xs transition-colors ${
-            isEditing
-              ? "text-blue-400 bg-blue-500/20"
-              : "text-zinc-400 hover:text-white hover:bg-white/10"
-          }`}
-          title="편집"
-        >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-          </svg>
-        </button>
+        {/* 편집 중 표시 배지 — 블럭 클릭만으로 편집 열림 (편집 버튼 제거 2026-04-18) */}
+        {isEditing && (
+          <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold bg-blue-500/20 text-blue-300">
+            편집 중
+          </span>
+        )}
         {/* Delete button */}
         <button
           onClick={(e) => {
@@ -1036,23 +1050,20 @@ function HeroPreview({
     </div>
   );
 
+  const mainHeadline = settings.heroSlogan || candidateName;
+  const nameLine = [settings.positionTitle, candidateName].filter(Boolean).join(" · ");
   const sloganArea = (
     <div className="text-center text-white px-6 py-12 sm:py-16">
-      {settings.positionTitle && (
+      {nameLine && (
         <p className="text-sm font-medium tracking-widest uppercase opacity-90 mb-3">
-          {settings.positionTitle}
+          {nameLine}
         </p>
       )}
-      <h1 className="text-5xl font-bold tracking-tight sm:text-6xl md:text-7xl mb-4">
-        {candidateName}
+      <h1 className="text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl mb-4 leading-tight">
+        {mainHeadline}
       </h1>
-      {settings.heroSlogan && (
-        <p className="text-xl font-semibold sm:text-2xl leading-snug mb-2">
-          &ldquo;{settings.heroSlogan}&rdquo;
-        </p>
-      )}
       {settings.heroSubSlogan && (
-        <p className="text-sm opacity-75 leading-relaxed max-w-md mx-auto mb-8">
+        <p className="text-base sm:text-lg opacity-90 leading-relaxed max-w-2xl mx-auto mb-8">
           {settings.heroSubSlogan}
         </p>
       )}
@@ -4259,9 +4270,8 @@ function NewsEditor({
   onSaved,
   onCancel,
 }: EditorBaseProps & { items: NewsItem[] }) {
-  const [items, setItems] = useState<NewsItem[]>(
-    [...initialItems].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
-  );
+  // API가 이미 pin→manual→AI→hidden 순으로 정렬해 반환 — local sort 제거 (AI 항목의 sortOrder 부재 혼선 방지)
+  const [items, setItems] = useState<NewsItem[]>(initialItems);
   const blockContent = (block.content || {}) as Record<string, unknown>;
   const [showCount, setShowCount] = useState<number>((blockContent.showCount as number) || 3);
   const [form, setForm] = useState({
@@ -4358,8 +4368,30 @@ function NewsEditor({
     const newItems = [...items];
     [newItems[idx], newItems[targetIdx]] = [newItems[targetIdx], newItems[idx]];
     setItems(newItems);
-    const ids = newItems.map((i) => i.id!);
-    await apiFetch("/api/site/news/reorder", { method: "PUT", body: JSON.stringify({ ids }) });
+    // manual 항목만 reorder API 대상 (AI 항목은 pinOrder로 별도 관리)
+    const ids = newItems.filter((i) => i.sourceType !== "ai" && i.id).map((i) => i.id!);
+    if (ids.length > 0) {
+      await apiFetch("/api/site/news/reorder", { method: "PUT", body: JSON.stringify({ ids }) });
+    }
+    onSaved();
+  }
+
+  // AI 자동수집 항목 숨기기/보이기 토글 — feedOverride 사용
+  async function toggleAiHide(item: NewsItem) {
+    if (item.sourceType !== "ai" || !item.sourceKey) return;
+    onSaving();
+    const nextHidden = !item.hidden;
+    await apiFetch("/api/site/feed-overrides", {
+      method: "POST",
+      body: JSON.stringify({
+        feedType: "ai_news",
+        sourceKey: item.sourceKey,
+        hidden: nextHidden,
+      }),
+    });
+    setItems((prev) =>
+      prev.map((i) => (i.sourceKey === item.sourceKey ? { ...i, hidden: nextHidden } : i))
+    );
     onSaved();
   }
 
@@ -4381,10 +4413,16 @@ function NewsEditor({
         />
       </div>
 
+      {/* AI 자동수집 안내 */}
+      <div className="rounded-lg border border-violet-500/20 bg-violet-900/10 px-3 py-2 text-[11px] leading-relaxed text-violet-200/80">
+        <span className="inline-block text-[9px] font-bold px-1.5 py-0.5 rounded bg-violet-500/30 text-violet-100 mr-1.5 align-middle">AI</span>
+        분석 엔진이 수집·검증한 <strong className="text-violet-100">우리 후보 관련 긍정 뉴스</strong>가 자동으로 표시됩니다. 원치 않는 항목은 눈 아이콘으로 숨기세요.
+      </div>
+
       {items.length > 0 && (
         <div className="space-y-1.5 max-h-60 overflow-y-auto">
           {items.map((item, idx) => {
-            const isEditing = editingId === item.id;
+            const isEditing = editingId != null && item.id === editingId;
 
             if (isEditing) {
               return (
@@ -4431,79 +4469,118 @@ function NewsEditor({
               );
             }
 
+            const isAi = item.sourceType === "ai";
+            const isHidden = Boolean(item.hidden);
             return (
               <div
-                key={item.id}
-                draggable
-                onDragStart={() => setNewsDragIdx(idx)}
-                onDragOver={(e) => { e.preventDefault(); setNewsDragOverIdx(idx); }}
+                key={item.id ?? item.sourceKey ?? idx}
+                draggable={!isAi}
+                onDragStart={() => !isAi && setNewsDragIdx(idx)}
+                onDragOver={(e) => { e.preventDefault(); if (!isAi) setNewsDragOverIdx(idx); }}
                 onDragLeave={() => setNewsDragOverIdx(null)}
                 onDrop={async () => {
-                  if (newsDragIdx === null || newsDragIdx === idx) return;
+                  if (isAi || newsDragIdx === null || newsDragIdx === idx) return;
                   const newItems = [...items];
                   const [moved] = newItems.splice(newsDragIdx, 1);
                   newItems.splice(idx, 0, moved);
                   setItems(newItems);
                   setNewsDragIdx(null);
                   setNewsDragOverIdx(null);
-                  const ids = newItems.map((i) => i.id!);
-                  await apiFetch("/api/site/news/reorder", { method: "PUT", body: JSON.stringify({ ids }) });
+                  const ids = newItems.filter((i) => i.sourceType !== "ai" && i.id).map((i) => i.id!);
+                  if (ids.length > 0) {
+                    await apiFetch("/api/site/news/reorder", { method: "PUT", body: JSON.stringify({ ids }) });
+                  }
                   onSaved();
                 }}
                 onDragEnd={() => { setNewsDragIdx(null); setNewsDragOverIdx(null); }}
-                className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 cursor-grab transition-all ${
+                className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 transition-all ${
+                  !isAi ? "cursor-grab" : ""
+                } ${
                   newsDragIdx === idx ? "opacity-40 border-blue-500/30 bg-zinc-800/30" :
                   newsDragOverIdx === idx ? "border-blue-400/50 bg-blue-900/20" :
+                  isHidden ? "border-white/5 bg-zinc-900/30 opacity-50" :
+                  isAi ? "border-violet-500/20 bg-violet-900/10" :
                   "border-white/5 bg-zinc-800/50"
                 }`}
               >
-                {/* Reorder buttons */}
-                <div className="flex flex-col gap-0.5">
-                  <button
-                    onClick={() => swapOrder(idx, "up")}
-                    disabled={idx === 0}
-                    className="text-zinc-600 hover:text-white disabled:opacity-30 transition-colors"
-                    title="위로"
-                  >
-                    <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={() => swapOrder(idx, "down")}
-                    disabled={idx === items.length - 1}
-                    className="text-zinc-600 hover:text-white disabled:opacity-30 transition-colors"
-                    title="아래로"
-                  >
-                    <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
-                </div>
-                <span className="flex-1 text-sm text-zinc-200 truncate">
+                {/* Reorder buttons — manual only */}
+                {!isAi && (
+                  <div className="flex flex-col gap-0.5">
+                    <button
+                      onClick={() => swapOrder(idx, "up")}
+                      disabled={idx === 0}
+                      className="text-zinc-600 hover:text-white disabled:opacity-30 transition-colors"
+                      title="위로"
+                    >
+                      <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => swapOrder(idx, "down")}
+                      disabled={idx === items.length - 1}
+                      className="text-zinc-600 hover:text-white disabled:opacity-30 transition-colors"
+                      title="아래로"
+                    >
+                      <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
+                {isAi && (
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300 whitespace-nowrap">
+                    AI
+                  </span>
+                )}
+                <span className={`flex-1 text-sm truncate ${isHidden ? "text-zinc-500 line-through" : "text-zinc-200"}`}>
                   {item.title}
                 </span>
                 {item.source && (
-                  <span className="text-xs text-zinc-500">{item.source}</span>
+                  <span className="text-xs text-zinc-500 whitespace-nowrap">{item.source}</span>
                 )}
-                {/* Edit button */}
-                <button
-                  onClick={() => startEdit(item)}
-                  className="text-zinc-600 hover:text-blue-400 transition-colors"
-                  title="수정"
-                >
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                  </svg>
-                </button>
-                <button
-                  onClick={() => item.id && removeItem(item.id)}
-                  className="text-zinc-600 hover:text-red-400 transition-colors"
-                >
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+                {/* AI: hide 토글만 / Manual: 수정 + 삭제 */}
+                {isAi ? (
+                  <button
+                    onClick={() => toggleAiHide(item)}
+                    className={`transition-colors ${
+                      isHidden ? "text-zinc-500 hover:text-green-400" : "text-zinc-400 hover:text-amber-400"
+                    }`}
+                    title={isHidden ? "공개 사이트에 다시 표시" : "공개 사이트에서 숨기기"}
+                  >
+                    {isHidden ? (
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    ) : (
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                      </svg>
+                    )}
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => startEdit(item)}
+                      className="text-zinc-600 hover:text-blue-400 transition-colors"
+                      title="수정"
+                    >
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => item.id && removeItem(item.id)}
+                      className="text-zinc-600 hover:text-red-400 transition-colors"
+                      title="삭제"
+                    >
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </>
+                )}
               </div>
             );
           })}

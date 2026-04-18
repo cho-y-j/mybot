@@ -12,13 +12,13 @@ import YearSelector from '@/components/history/YearSelector';
 
 type Tab = 'party' | 'strength' | 'drilldown' | 'dong' | 'turnout' | 'ai';
 
-const TABS: { key: Tab; label: string; icon: string }[] = [
-  { key: 'party', label: '정당 추이', icon: '📈' },
-  { key: 'strength', label: '시·군·구 정당 강세', icon: '🗺️' },
-  { key: 'drilldown', label: '시·군·구 드릴다운', icon: '🔍' },
-  { key: 'dong', label: '읍·면·동 단위', icon: '📍' },
-  { key: 'turnout', label: '투표율', icon: '🗳️' },
-  { key: 'ai', label: 'AI 전략', icon: '🤖' },
+const TABS: { key: Tab; label: string }[] = [
+  { key: 'party', label: '정당 추이', },
+  { key: 'strength', label: '시·군·구 정당 강세', },
+  { key: 'drilldown', label: '시·군·구 드릴다운', },
+  { key: 'dong', label: '읍·면·동 단위', },
+  { key: 'turnout', label: '투표율', },
+  { key: 'ai', label: 'AI 전략', },
 ];
 
 const PARTY_COLOR: Record<string, string> = {
@@ -99,7 +99,7 @@ export default function MayorView({ data, electionId, onRefresh }: { data: any; 
 
   function handleSelectDistrict(d: string) {
     setSelectedDistrict(d);
-    setTab('dong');  // 시군 카드 클릭 → 바로 동 단위 탭으로
+    setTab('dong'); // 시군 카드 클릭 → 바로 동 단위 탭으로
   }
 
   return (
@@ -118,7 +118,6 @@ export default function MayorView({ data, electionId, onRefresh }: { data: any; 
                   : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
               }`}
             >
-              <span className="mr-1">{t.icon}</span>
               {t.label}
             </button>
           ))}
@@ -143,8 +142,8 @@ export default function MayorView({ data, electionId, onRefresh }: { data: any; 
           <div className="space-y-3">
             <div className="card bg-violet-50 dark:bg-violet-950/30 border-violet-200 dark:border-violet-800 text-xs text-violet-800 dark:text-violet-200">
               {aggregate
-                ? `📊 역대 ${yearOptions.length}회 누적 우세 정당 (${yearOptions[yearOptions.length - 1]}~${yearOptions[0]}년)`
-                : `🗳️ ${year}년 단일 회차 1위 정당`}
+                ? ` 역대 ${yearOptions.length}회 누적 우세 정당 (${yearOptions[yearOptions.length - 1]}~${yearOptions[0]}년)`
+                : ` ${year}년 단일 회차 1위 정당`}
               <span className="ml-2 text-violet-600">— 카드 클릭 시 같은 회차 기준으로 드릴다운</span>
             </div>
             <RawPartyHeatmap data={yearHeatmap} onSelectDistrict={handleSelectDistrict} />

@@ -122,7 +122,7 @@ export default function HistoryPage() {
 
       {data?.fallback_notice && (
         <div className="rounded-xl border-2 border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700 p-3 text-xs text-amber-800 dark:text-amber-200">
-          ⚠️ {data.fallback_notice}
+           {data.fallback_notice}
         </div>
       )}
 

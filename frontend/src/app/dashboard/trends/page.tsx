@@ -213,7 +213,7 @@ export default function TrendsPage() {
                   a.level === 'opportunity' ? 'bg-amber-500/10 border border-amber-500/30 text-amber-400' :
                   'bg-blue-500/10 border border-blue-500/30 text-blue-400'
                 }`}>
-                  {a.level === 'critical' ? '🚨' : '💡'} {a.message}
+                  {a.level === 'critical' ? '' : ''} {a.message}
                 </div>
               ))}
             </div>
@@ -224,7 +224,7 @@ export default function TrendsPage() {
             {candVolumes.map((c, i) => (
               <div key={c.name} className={`card text-center ${c.isOurs ? 'ring-1 ring-blue-500/30 bg-blue-500/5' : ''}`}>
                 <div className={`text-2xl font-black ${c.isOurs ? 'text-blue-500' : i === 0 ? 'text-amber-500' : ''}`}>{c.volume.toFixed(1)}</div>
-                <div className="font-semibold text-sm mt-1">{c.name} {c.isOurs && '★'}</div>
+                <div className="font-semibold text-sm mt-1">{c.name} {c.isOurs && ''}</div>
                 <div className="text-[10px] text-[var(--muted)]">7일 {c.avg7d.toFixed(1)} | 30일 {c.avg30d.toFixed(1)}</div>
                 <div className={`text-[10px] mt-0.5 ${c.trend === 'rising' ? 'text-green-500' : c.trend === 'falling' ? 'text-red-500' : 'text-[var(--muted)]'}`}>
                   {c.trend === 'rising' ? '↑ 상승' : c.trend === 'falling' ? '↓ 하락' : '→ 유지'}

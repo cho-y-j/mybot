@@ -227,7 +227,8 @@ export function SurveyTrendChart({ data, candidates }: { data: any[]; candidates
             stroke={CANDIDATE_COLORS[i % CANDIDATE_COLORS.length]}
             strokeWidth={2.5}
             dot={{ r: 3, fill: CANDIDATE_COLORS[i % CANDIDATE_COLORS.length], strokeWidth: 0 }}
-            activeDot={{ r: 6, strokeWidth: 2, fill: '#fff', stroke: CANDIDATE_COLORS[i % CANDIDATE_COLORS.length] }} />
+            activeDot={{ r: 6, strokeWidth: 2, fill: '#fff', stroke: CANDIDATE_COLORS[i % CANDIDATE_COLORS.length] }}
+            connectNulls />
         ))}
       </LineChart>
     </ResponsiveContainer>
