@@ -6,11 +6,11 @@ import { useRouter } from "next/navigation";
 import { IconifyIcon } from "@/components/ui/iconify-icon";
 
 const NAV_ITEMS = [
-  { path: "", icon: "solar:widget-bold", label: "대시보드" },
-  { path: "/builder", icon: "solar:layers-bold", label: "페이지 빌더" },
-  { path: "/content", icon: "solar:document-text-bold", label: "콘텐츠 관리" },
-  { path: "/analytics", icon: "solar:chart-2-bold", label: "분석" },
-  { path: "/settings", icon: "solar:settings-bold", label: "설정" },
+  { path: "", icon: "solar:widget-linear", label: "대시보드" },
+  { path: "/builder", icon: "solar:layers-linear", label: "페이지 빌더" },
+  { path: "/content", icon: "solar:document-text-linear", label: "콘텐츠 관리" },
+  { path: "/analytics", icon: "solar:chart-2-linear", label: "분석" },
+  { path: "/settings", icon: "solar:settings-linear", label: "설정" },
 ];
 
 export default function CustomerAdminLayout({
@@ -35,14 +35,14 @@ export default function CustomerAdminLayout({
   }
 
   return (
-    <div className="min-h-[100dvh] bg-zinc-950">
+    <div className="min-h-[100dvh] bg-airtable-bg tracking-airtable-body text-airtable-navy font-sans">
       {/* Sidebar */}
-      <aside className="fixed left-0 top-0 z-30 hidden h-full w-60 border-r border-white/5 bg-zinc-900/50 p-4 md:block">
+      <aside className="fixed left-0 top-0 z-30 hidden h-full w-64 border-r border-airtable-border bg-airtable-surface p-4 md:block">
         <div className="mb-8 flex items-center gap-2 px-3">
-          <IconifyIcon icon="solar:home-2-bold" width="22" height="22" />
-          <span className="text-lg font-bold text-zinc-100">MyHome</span>
-          <span className="ml-auto rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-medium text-blue-400">
-            Site
+          <IconifyIcon icon="solar:home-2-bold" width="22" height="22" className="text-airtable-blue" />
+          <span className="text-lg font-bold tracking-normal text-airtable-navy">MyHome</span>
+          <span className="ml-auto rounded-md border border-airtable-border bg-airtable-bg px-2 py-0.5 text-[11px] font-medium text-[#333333]">
+            Site Admin
           </span>
         </div>
 
@@ -58,13 +58,13 @@ export default function CustomerAdminLayout({
               <Link
                 key={item.path}
                 href={href}
-                className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all duration-200 ${
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-[14px] transition-colors ${
                   isActive
-                    ? "bg-accent/10 font-medium text-accent"
-                    : "text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
+                    ? "bg-airtable-blue/10 font-medium text-airtable-blue tracking-airtable-btn"
+                    : "text-[#333333] hover:bg-airtable-bg hover:text-airtable-navy hover:shadow-airtable-subtle"
                 }`}
               >
-                <IconifyIcon icon={item.icon} width="18" height="18" />
+                <IconifyIcon icon={isActive ? item.icon.replace('-linear', '-bold') : item.icon} width="18" height="18" />
                 {item.label}
               </Link>
             );
@@ -73,17 +73,17 @@ export default function CustomerAdminLayout({
       </aside>
 
       {/* Main content */}
-      <div className="md:ml-60">
+      <div className="md:ml-64">
         {/* Header */}
-        <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-white/5 bg-zinc-950/80 px-6 backdrop-blur-xl">
+        <header className="sticky top-0 z-20 flex h-[52px] items-center justify-between border-b border-airtable-border bg-airtable-surface/95 px-6 backdrop-blur-md">
           {/* Mobile menu button */}
           <div className="flex items-center gap-3 md:hidden">
-            <IconifyIcon icon="solar:home-2-bold" width="20" height="20" />
-            <span className="font-semibold text-zinc-100">MyHome</span>
+            <IconifyIcon icon="solar:home-2-bold" width="20" height="20" className="text-airtable-blue" />
+            <span className="font-semibold text-airtable-navy">MyHome</span>
           </div>
 
-          <div className="hidden items-center gap-2 text-sm text-zinc-400 md:flex">
-            <span className="font-mono text-zinc-300">{code}</span>
+          <div className="hidden items-center gap-2 text-sm text-[#333333] md:flex">
+            <span className="font-medium text-airtable-navy tracking-airtable-card">{code}</span>
             <span>사이트 관리</span>
           </div>
 
@@ -92,14 +92,14 @@ export default function CustomerAdminLayout({
               href={`/${code}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200"
+              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium text-[#333333] transition-colors hover:bg-airtable-bg hover:text-airtable-navy"
             >
               <IconifyIcon icon="solar:square-top-down-linear" width="16" height="16" />
               사이트 보기
             </a>
             <button
               onClick={handleLogout}
-              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200"
+              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium text-[#333333] transition-colors hover:bg-airtable-bg hover:text-airtable-navy"
             >
               <IconifyIcon icon="solar:logout-2-linear" width="16" height="16" />
               로그아웃
@@ -108,7 +108,7 @@ export default function CustomerAdminLayout({
         </header>
 
         {/* Mobile bottom navigation */}
-        <nav className="fixed bottom-0 left-0 z-30 flex w-full border-t border-white/5 bg-zinc-900/95 backdrop-blur-xl md:hidden">
+        <nav className="fixed bottom-0 left-0 z-30 flex w-full border-t border-airtable-border bg-airtable-surface/95 backdrop-blur-md md:hidden">
           {NAV_ITEMS.map((item) => {
             const href = basePath + item.path;
             const isActive =
@@ -120,18 +120,18 @@ export default function CustomerAdminLayout({
               <Link
                 key={item.path}
                 href={href}
-                className={`flex flex-1 flex-col items-center gap-0.5 py-2.5 text-[10px] transition-colors ${
-                  isActive ? "text-accent" : "text-zinc-500"
+                className={`flex flex-1 flex-col items-center justify-center gap-1 py-3 text-[11px] font-medium transition-colors ${
+                  isActive ? "text-airtable-blue" : "text-[#333333]"
                 }`}
               >
-                <IconifyIcon icon={item.icon} width="20" height="20" />
+                <IconifyIcon icon={isActive ? item.icon.replace('-linear', '-bold') : item.icon} width="20" height="20" />
                 {item.label}
               </Link>
             );
           })}
         </nav>
 
-        <main className="p-6 pb-24 md:pb-6">{children}</main>
+        <main className="min-h-[calc(100vh-52px)] p-6 md:p-8 pb-24 md:pb-8">{children}</main>
       </div>
     </div>
   );

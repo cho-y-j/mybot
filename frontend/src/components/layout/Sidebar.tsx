@@ -84,13 +84,16 @@ export default function Sidebar({ onClose }: { onClose?: () => void } = {}) {
                     href={item.href}
                     onClick={() => onClose?.()}
                     className={clsx(
-                      'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all',
+                      'relative flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all',
                       active
-                        ? 'bg-primary-500/10 text-primary-500 font-semibold'
+                        ? 'bg-[var(--muted-bg)] text-[var(--foreground)] font-semibold'
                         : 'text-[var(--muted)] hover:bg-[var(--muted-bg)] hover:text-[var(--foreground)]'
                     )}
                   >
-                    <svg className="w-[18px] h-[18px] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                    {active && (
+                      <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-[16px] rounded-r bg-[var(--foreground)]" />
+                    )}
+                    <svg className="w-[16px] h-[16px] flex-shrink-0 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
                       <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
                     </svg>
                     {item.label}

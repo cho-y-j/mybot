@@ -141,32 +141,33 @@ export default function AnalyticsPage() {
   }
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className="mx-auto max-w-6xl space-y-6 pb-12">
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-airtable-border pb-4">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-100">📊 방문자 분석</h1>
-          <p className="mt-1 text-sm text-zinc-500">실시간 방문자 통계 및 인사이트</p>
+          <h1 className="text-2xl font-bold tracking-tight text-airtable-navy">방문자 분석</h1>
+          <p className="mt-1 text-[13px] text-[#666666]">웹사이트 실시간 방문자 통계 및 이벤트 분석</p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex rounded-lg border border-white/10 bg-zinc-800 p-0.5">
+          <div className="flex rounded-md border border-airtable-border bg-airtable-bg p-0.5">
             {(["week", "month"] as const).map((p) => (
               <button
                 key={p}
                 onClick={() => setPeriod(p)}
-                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
+                className={`rounded-[4px] px-3 py-1.5 text-[13px] font-medium transition-all ${
                   period === p
-                    ? "bg-emerald-500 text-zinc-950"
-                    : "text-zinc-400 hover:text-white"
+                    ? "bg-white text-airtable-navy shadow-[0_1px_3px_rgba(0,0,0,0.1)]"
+                    : "text-[#666666] hover:text-airtable-navy"
                 }`}
               >
-                {p === "week" ? "7일" : "30일"}
+                {p === "week" ? "최근 7일" : "최근 30일"}
               </button>
             ))}
           </div>
           <button
             onClick={fetchData}
-            className="rounded-lg border border-white/10 bg-zinc-800 p-2 text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-white"
+            className="flex h-[32px] w-[32px] items-center justify-center rounded-md border border-airtable-border bg-airtable-surface text-[#666666] transition-colors hover:bg-airtable-bg hover:text-airtable-navy"
+            title="새로고침"
           >
             ↻
           </button>
@@ -174,89 +175,93 @@ export default function AnalyticsPage() {
       </div>
 
       {/* ── Summary Cards ── */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="오늘 방문자" value={todayVisits} suffix="명" icon="👤" trend={todayUnique > 0 ? `순방문 ${todayUnique}명` : undefined} color="emerald" />
-        <StatCard label="총 방문자" value={total} suffix="명" icon="👥" trend={`순방문 ${overview?.uniqueVisitors ?? 0}명`} color="blue" />
-        <StatCard label="모바일 비율" value={mobilePercent} suffix="%" icon="📱" trend={`${mobile.toLocaleString()}명`} color="violet" />
-        <StatCard label="이벤트" value={totalEvents} suffix="건" icon="⚡" trend={eventData.length > 0 ? `${eventData[0].name} ${eventData[0].value}건` : undefined} color="amber" />
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatCard label="오늘 방문자" value={todayVisits} suffix="명" trend={todayUnique > 0 ? `순방문 ${todayUnique}명` : undefined} color="emerald" />
+        <StatCard label="총 방문자" value={total} suffix="명" trend={`순방문 ${overview?.uniqueVisitors ?? 0}명`} color="blue" />
+        <StatCard label="모바일 접속률" value={mobilePercent} suffix="%" trend={`${mobile.toLocaleString()}명 접속`} color="violet" />
+        <StatCard label="총 발생 이벤트" value={totalEvents} suffix="건" trend={eventData.length > 0 ? `최다: ${eventData[0].name}` : undefined} color="amber" />
       </div>
 
       {/* ── Visitor Trend (Area Chart) ── */}
-      <div className="rounded-2xl border border-white/5 bg-zinc-900/80 p-5">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-zinc-200">📈 방문자 추이</h2>
-          <span className="text-xs text-zinc-600">최근 {period === "week" ? "7" : "30"}일</span>
+      <div className="rounded-[12px] border border-airtable-border bg-airtable-surface p-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+        <div className="mb-6 flex items-center justify-between">
+          <h2 className="text-[15px] font-medium tracking-airtable-card text-airtable-navy">방문자 추이</h2>
+          <span className="text-[12px] text-[#666666]">기간: {period === "week" ? "7일" : "30일"}</span>
         </div>
         {chartData.length === 0 ? (
-          <EmptyState message="방문자 데이터가 없습니다" />
+          <EmptyState message="방문자 데이터가 수집되지 않았습니다" />
         ) : (
-          <ResponsiveContainer width="100%" height={280}>
+          <div className="h-[280px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
               <defs>
                 <linearGradient id="colorVisit" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                  <stop offset="5%" stopColor="#1b61c9" stopOpacity={0.2} />
+                  <stop offset="95%" stopColor="#1b61c9" stopOpacity={0} />
                 </linearGradient>
                 <linearGradient id="colorUnique" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.2} />
+                  <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-              <XAxis dataKey="date" tick={{ fill: "#71717a", fontSize: 11 }} axisLine={{ stroke: "#27272a" }} />
-              <YAxis tick={{ fill: "#71717a", fontSize: 11 }} axisLine={{ stroke: "#27272a" }} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#e0e2e6" vertical={false} />
+              <XAxis dataKey="date" tickLine={false} axisLine={false} tick={{ fill: "#666666", fontSize: 11 }} dy={10} />
+              <YAxis tickLine={false} axisLine={false} tick={{ fill: "#666666", fontSize: 11 }} />
               <Tooltip
-                contentStyle={{ backgroundColor: "#18181b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, fontSize: 12 }}
-                labelStyle={{ color: "#a1a1aa", marginBottom: 4 }}
-                itemStyle={{ color: "#e4e4e7" }}
+                contentStyle={{ backgroundColor: "#ffffff", border: "1px solid #e0e2e6", borderRadius: "8px", fontSize: "12px", boxShadow: "0 4px 6px rgba(0,0,0,0.05)" }}
+                labelStyle={{ color: "#333333", fontWeight: "bold", marginBottom: "4px" }}
+                itemStyle={{ color: "#181d26" }}
               />
-              <Legend wrapperStyle={{ fontSize: 12, color: "#a1a1aa" }} />
-              <Area type="monotone" dataKey="방문자" stroke="#10b981" strokeWidth={2} fill="url(#colorVisit)" />
-              <Area type="monotone" dataKey="순방문자" stroke="#3b82f6" strokeWidth={2} fill="url(#colorUnique)" />
+              <Legend wrapperStyle={{ fontSize: "12px", color: "#666666", paddingTop: "10px" }} iconType="circle" />
+              <Area type="monotone" name="전체 방문자" dataKey="방문자" stroke="#1b61c9" strokeWidth={2} fill="url(#colorVisit)" activeDot={{ r: 6, strokeWidth: 0 }} />
+              <Area type="monotone" name="순수 방문자" dataKey="순방문자" stroke="#10b981" strokeWidth={2} fill="url(#colorUnique)" activeDot={{ r: 6, strokeWidth: 0 }} />
             </AreaChart>
           </ResponsiveContainer>
+          </div>
         )}
       </div>
 
       {/* ── Middle Row: Device + Bar ── */}
-      <div className="grid gap-4 lg:grid-cols-5">
+      <div className="grid gap-6 lg:grid-cols-5">
         {/* Device Breakdown (Pie) */}
-        <div className="rounded-2xl border border-white/5 bg-zinc-900/80 p-5 lg:col-span-2">
-          <h2 className="mb-4 text-base font-semibold text-zinc-200">📱 기기별 분석</h2>
+        <div className="rounded-[12px] border border-airtable-border bg-airtable-surface p-6 lg:col-span-2 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+          <h2 className="mb-6 text-[15px] font-medium tracking-airtable-card text-airtable-navy">접속 기기 분석</h2>
           {deviceData.length === 0 ? (
-            <EmptyState message="데이터가 없습니다" />
+            <EmptyState message="데이터 없음" />
           ) : (
-            <div className="flex flex-col items-center gap-4">
-              <ResponsiveContainer width="100%" height={200}>
+            <div className="flex flex-col items-center gap-6">
+              <div className="h-[200px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
                     data={deviceData}
                     cx="50%"
                     cy="50%"
-                    innerRadius={55}
+                    innerRadius={65}
                     outerRadius={85}
-                    paddingAngle={3}
+                    paddingAngle={2}
                     dataKey="value"
                     strokeWidth={0}
                   >
                     {deviceData.map((entry) => (
-                      <Cell key={entry.name} fill={entry.color} />
+                      <Cell key={entry.name} fill={entry.color === "#10b981" ? "#1b61c9" : "#64748b"} />
                     ))}
                   </Pie>
                   <Tooltip
-                    contentStyle={{ backgroundColor: "#18181b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, fontSize: 12 }}
+                    contentStyle={{ backgroundColor: "#ffffff", border: "1px solid #e0e2e6", borderRadius: "8px", fontSize: "12px", boxShadow: "0 4px 6px rgba(0,0,0,0.05)" }}
                     formatter={(value: unknown) => [`${Number(value).toLocaleString()}명`, ""]}
                   />
                 </PieChart>
               </ResponsiveContainer>
-              <div className="flex gap-6">
+              </div>
+              <div className="flex w-full justify-center gap-8 border-t border-airtable-border pt-4">
                 {deviceData.map((d) => (
                   <div key={d.name} className="flex items-center gap-2">
-                    <div className="h-3 w-3 rounded-full" style={{ backgroundColor: d.color }} />
-                    <div>
-                      <span className="text-sm font-medium text-zinc-300">{d.name}</span>
-                      <span className="ml-2 text-xs text-zinc-500">
-                        {d.value.toLocaleString()}명 ({total > 0 ? Math.round((d.value / total) * 100) : 0}%)
+                    <div className="h-2 w-2 rounded-full" style={{ backgroundColor: d.color === "#10b981" ? "#1b61c9" : "#64748b" }} />
+                    <div className="flex flex-col">
+                      <span className="text-[13px] font-medium text-airtable-navy">{d.name}</span>
+                      <span className="text-[12px] text-[#666666]">
+                        {total > 0 ? Math.round((d.value / total) * 100) : 0}%
                       </span>
                     </div>
                   </div>
@@ -267,53 +272,58 @@ export default function AnalyticsPage() {
         </div>
 
         {/* Daily Bar Chart (Mobile vs Desktop) */}
-        <div className="rounded-2xl border border-white/5 bg-zinc-900/80 p-5 lg:col-span-3">
-          <h2 className="mb-4 text-base font-semibold text-zinc-200">💻 기기별 방문 추이</h2>
+        <div className="rounded-[12px] border border-airtable-border bg-airtable-surface p-6 lg:col-span-3 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+          <h2 className="mb-6 text-[15px] font-medium tracking-airtable-card text-airtable-navy">기기별 일간 방문 추이</h2>
           {chartData.length === 0 ? (
-            <EmptyState message="데이터가 없습니다" />
+            <EmptyState message="데이터 없음" />
           ) : (
-            <ResponsiveContainer width="100%" height={200}>
+            <div className="h-[240px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                <XAxis dataKey="date" tick={{ fill: "#71717a", fontSize: 10 }} axisLine={{ stroke: "#27272a" }} />
-                <YAxis tick={{ fill: "#71717a", fontSize: 10 }} axisLine={{ stroke: "#27272a" }} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#e0e2e6" vertical={false} />
+                <XAxis dataKey="date" tickLine={false} axisLine={false} tick={{ fill: "#666666", fontSize: 11 }} dy={10} />
+                <YAxis tickLine={false} axisLine={false} tick={{ fill: "#666666", fontSize: 11 }} />
                 <Tooltip
-                  contentStyle={{ backgroundColor: "#18181b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, fontSize: 12 }}
-                  labelStyle={{ color: "#a1a1aa" }}
+                  contentStyle={{ backgroundColor: "#ffffff", border: "1px solid #e0e2e6", borderRadius: "8px", fontSize: "12px", boxShadow: "0 4px 6px rgba(0,0,0,0.05)" }}
+                  cursor={{ fill: '#f8fafc' }}
                 />
-                <Legend wrapperStyle={{ fontSize: 11, color: "#a1a1aa" }} />
-                <Bar dataKey="모바일" stackId="a" fill="#10b981" radius={[0, 0, 0, 0]} />
-                <Bar dataKey="데스크톱" stackId="a" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                <Legend wrapperStyle={{ fontSize: "12px", color: "#666666", paddingTop: "10px" }} iconType="circle" />
+                <Bar dataKey="모바일" stackId="a" fill="#1b61c9" radius={[0, 0, 0, 0]} maxBarSize={40} />
+                <Bar dataKey="데스크톱" stackId="a" fill="#64748b" radius={[4, 4, 0, 0]} maxBarSize={40} />
               </BarChart>
             </ResponsiveContainer>
+            </div>
           )}
         </div>
       </div>
 
       {/* ── Bottom Row: Events ── */}
-      <div className="rounded-2xl border border-white/5 bg-zinc-900/80 p-5">
-        <h2 className="mb-4 text-base font-semibold text-zinc-200">⚡ 이벤트 통계</h2>
+      <div className="rounded-[12px] border border-airtable-border bg-airtable-surface p-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+        <h2 className="mb-6 text-[15px] font-medium tracking-airtable-card text-airtable-navy">특정 행동(이벤트) 발생 내역</h2>
         {eventData.length === 0 ? (
-          <EmptyState message="이벤트 데이터가 없습니다" />
+          <EmptyState message="기록된 이벤트가 없습니다" />
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {eventData.map((event, i) => {
               const percent = totalEvents > 0 ? Math.round((event.value / totalEvents) * 100) : 0;
+              // Clean color array for Airtable style (Blues, teals, slates)
+              const cleanColors = ["#1b61c9", "#0f766e", "#64748b", "#475569", "#334155"];
+              const c = cleanColors[i % cleanColors.length];
               return (
-                <div key={event.name} className="rounded-xl border border-white/5 bg-zinc-800/50 p-4">
-                  <div className="mb-2 flex items-center justify-between">
-                    <span className="text-sm font-medium text-zinc-300">{event.name}</span>
-                    <span className="rounded-full px-2 py-0.5 text-xs font-bold" style={{ backgroundColor: `${COLORS[i % COLORS.length]}20`, color: COLORS[i % COLORS.length] }}>
+                <div key={event.name} className="flex flex-col rounded-[8px] border border-airtable-border bg-white p-4 transition-all hover:border-airtable-blue/50 hover:shadow-sm">
+                  <div className="mb-3 flex items-center justify-between">
+                    <span className="text-[14px] font-medium text-airtable-navy">{event.name}</span>
+                    <span className="flex h-5 items-center justify-center rounded-full px-2 text-[11px] font-bold" style={{ backgroundColor: `${c}15`, color: c }}>
                       {percent}%
                     </span>
                   </div>
-                  <div className="text-2xl font-bold text-zinc-100 mb-2">
-                    {event.value.toLocaleString()}<span className="text-sm font-normal text-zinc-500 ml-1">건</span>
+                  <div className="mb-3 text-2xl font-bold tracking-tight text-airtable-navy">
+                    {event.value.toLocaleString()}<span className="ml-[2px] text-[13px] font-normal text-[#666666]">회</span>
                   </div>
-                  <div className="h-1.5 overflow-hidden rounded-full bg-zinc-700">
+                  <div className="h-[4px] w-full overflow-hidden rounded-full bg-airtable-bg">
                     <div
                       className="h-full rounded-full transition-all duration-500"
-                      style={{ width: `${percent}%`, backgroundColor: COLORS[i % COLORS.length] }}
+                      style={{ width: `${percent}%`, backgroundColor: c }}
                     />
                   </div>
                 </div>
@@ -327,36 +337,31 @@ export default function AnalyticsPage() {
 }
 
 /* ── Sub Components ── */
-function StatCard({ label, value, suffix, icon, trend, color }: {
-  label: string; value: number; suffix: string; icon: string; trend?: string;
+function StatCard({ label, value, suffix, trend }: {
+  label: string; value: number; suffix: string; trend?: string;
   color: "emerald" | "blue" | "violet" | "amber";
 }) {
-  const bg: Record<string, string> = {
-    emerald: "from-emerald-500/10 to-emerald-500/5 border-emerald-500/20",
-    blue: "from-blue-500/10 to-blue-500/5 border-blue-500/20",
-    violet: "from-violet-500/10 to-violet-500/5 border-violet-500/20",
-    amber: "from-amber-500/10 to-amber-500/5 border-amber-500/20",
-  };
   return (
-    <div className={`rounded-2xl border bg-gradient-to-br p-4 ${bg[color]}`}>
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-lg">{icon}</span>
-        <span className="text-xs font-medium text-zinc-500">{label}</span>
+    <div className="flex flex-col justify-between rounded-[8px] border border-airtable-border bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-shadow hover:shadow-airtable-subtle">
+      <div className="mb-2">
+        <span className="text-[13px] font-medium tracking-airtable-card text-[#666666]">{label}</span>
       </div>
-      <div className="text-2xl font-bold text-zinc-100">
-        {value.toLocaleString()}<span className="text-sm font-normal text-zinc-500 ml-1">{suffix}</span>
+      <div className="mb-2 text-3xl font-bold tracking-tight text-airtable-navy">
+        {value.toLocaleString()}<span className="ml-[2px] text-[14px] font-normal text-[#666666]">{suffix}</span>
       </div>
-      {trend && <p className="mt-1 text-[11px] text-zinc-600">{trend}</p>}
+      {trend ? (
+        <p className="text-[12px] font-medium text-airtable-blue tracking-airtable-btn">{trend}</p>
+      ) : (
+        <p className="text-[12px] text-transparent select-none">-</p>
+      )}
     </div>
   );
 }
 
 function EmptyState({ message }: { message: string }) {
   return (
-    <div className="flex flex-col items-center justify-center py-16">
-      <div className="text-4xl mb-3 opacity-30">📊</div>
-      <p className="text-sm text-zinc-600">{message}</p>
-      <p className="mt-1 text-xs text-zinc-700">사이트에 방문자가 생기면 여기에 표시됩니다</p>
+    <div className="flex flex-col items-center justify-center rounded-[8px] border border-dashed border-airtable-border bg-airtable-bg py-16">
+      <p className="text-[14px] font-medium text-[#666666]">{message}</p>
     </div>
   );
 }

@@ -147,7 +147,7 @@ function ContentWizardInner() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold">📝 콘텐츠 만들기</h1>
+          <h1 className="text-2xl font-bold">콘텐츠 만들기</h1>
           <p className="text-sm text-[var(--muted)] mt-1">1/3 단계 — 어떤 콘텐츠를 만들까요?</p>
         </div>
 

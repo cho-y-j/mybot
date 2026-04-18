@@ -2,6 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Paperlogy — 한국어 디스플레이 폰트 (mybot 과 통일) */
+@font-face { font-family: 'Paperlogy'; font-weight: 100; font-display: swap; src: url('/fonts/paperlogy/Paperlogy-1Thin.ttf') format('truetype'); }
+@font-face { font-family: 'Paperlogy'; font-weight: 200; font-display: swap; src: url('/fonts/paperlogy/Paperlogy-2ExtraLight.ttf') format('truetype'); }
+@font-face { font-family: 'Paperlogy'; font-weight: 300; font-display: swap; src: url('/fonts/paperlogy/Paperlogy-3Light.ttf') format('truetype'); }
+@font-face { font-family: 'Paperlogy'; font-weight: 400; font-display: swap; src: url('/fonts/paperlogy/Paperlogy-4Regular.ttf') format('truetype'); }
+@font-face { font-family: 'Paperlogy'; font-weight: 500; font-display: swap; src: url('/fonts/paperlogy/Paperlogy-5Medium.ttf') format('truetype'); }
+@font-face { font-family: 'Paperlogy'; font-weight: 600; font-display: swap; src: url('/fonts/paperlogy/Paperlogy-6SemiBold.ttf') format('truetype'); }
+@font-face { font-family: 'Paperlogy'; font-weight: 700; font-display: swap; src: url('/fonts/paperlogy/Paperlogy-7Bold.ttf') format('truetype'); }
+@font-face { font-family: 'Paperlogy'; font-weight: 800; font-display: swap; src: url('/fonts/paperlogy/Paperlogy-8ExtraBold.ttf') format('truetype'); }
+@font-face { font-family: 'Paperlogy'; font-weight: 900; font-display: swap; src: url('/fonts/paperlogy/Paperlogy-9Black.ttf') format('truetype'); }
+
 @layer base {
   * {
     word-break: keep-all;
@@ -12,8 +23,12 @@
   }
 
   body {
-    font-family: "Pretendard", system-ui, sans-serif;
+    font-family: 'Paperlogy', 'Pretendard', system-ui, sans-serif;
   }
+
+  /* SVG 아이콘 절제 — mybot 과 동일한 룰 */
+  svg { opacity: 0.75; }
+  button:hover svg, a:hover svg { opacity: 1; }
 }
 
 @layer utilities {

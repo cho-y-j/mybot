@@ -12,6 +12,14 @@ const config: Config = {
         sans: ["Pretendard", "system-ui", "sans-serif"],
       },
       colors: {
+        airtable: {
+          navy: "#181d26",
+          blue: "#1b61c9",
+          border: "#e0e2e6",
+          bg: "#f8fafc",
+          surface: "#ffffff",
+          textWeak: "rgba(4,14,32,0.69)",
+        },
         accent: {
           DEFAULT: "#10b981",
           50: "#ecfdf5",
@@ -26,6 +34,15 @@ const config: Config = {
           900: "#064e3b",
           950: "#022c22",
         },
+      },
+      boxShadow: {
+        airtable: "rgba(0, 0, 0, 0.32) 0px 0px 1px, rgba(0, 0, 0, 0.08) 0px 0px 2px, rgba(45, 127, 249, 0.28) 0px 1px 3px, rgba(0, 0, 0, 0.06) 0px 0px 0px 0.5px inset",
+        'airtable-subtle': "rgba(15, 48, 106, 0.05) 0px 0px 20px",
+      },
+      letterSpacing: {
+        'airtable-body': '0.18px',
+        'airtable-card': '0.12px',
+        'airtable-btn': '0.08px',
       },
       transitionTimingFunction: {
         supanova: "cubic-bezier(0.16, 1, 0.3, 1)",

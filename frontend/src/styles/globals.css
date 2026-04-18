@@ -2,33 +2,112 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
-  --card-bg: #ffffff;
-  --card-border: #f1f5f9;
-  --input-bg: #ffffff;
-  --input-border: #e2e8f0;
-  --muted: #64748b;
-  --muted-bg: #f1f5f9;
+/* Paperlogy — 한국어 디스플레이 폰트 (랜딩/홈페이지 메인) */
+@font-face {
+  font-family: 'Paperlogy';
+  font-weight: 100;
+  font-style: normal;
+  font-display: swap;
+  src: url('/fonts/paperlogy/Paperlogy-1Thin.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Paperlogy';
+  font-weight: 200;
+  font-style: normal;
+  font-display: swap;
+  src: url('/fonts/paperlogy/Paperlogy-2ExtraLight.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Paperlogy';
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+  src: url('/fonts/paperlogy/Paperlogy-3Light.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Paperlogy';
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url('/fonts/paperlogy/Paperlogy-4Regular.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Paperlogy';
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+  src: url('/fonts/paperlogy/Paperlogy-5Medium.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Paperlogy';
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+  src: url('/fonts/paperlogy/Paperlogy-6SemiBold.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Paperlogy';
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+  src: url('/fonts/paperlogy/Paperlogy-7Bold.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Paperlogy';
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+  src: url('/fonts/paperlogy/Paperlogy-8ExtraBold.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Paperlogy';
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+  src: url('/fonts/paperlogy/Paperlogy-9Black.ttf') format('truetype');
 }
 
+/* DESIGN.md (Airtable 톤) — 흰 캔버스 + Deep Navy + Airtable Blue */
+:root {
+  --background: #ffffff;
+  --foreground: #181d26;
+  --card-bg: #ffffff;
+  --card-border: #e0e2e6;
+  --input-bg: #ffffff;
+  --input-border: #e0e2e6;
+  --muted: rgba(24,29,38,0.62);
+  --muted-bg: #f8fafc;
+  --primary: #1b61c9;
+  --accent: #181d26;
+}
+
+/* DESIGN.md 7-DARK 매핑 — 깊은 네이비 + Bright Blue */
 .dark {
-  --background: #0f1117;
+  --background: #0b0e1a;
   --foreground: #e2e8f0;
   --card-bg: #1a1d2e;
-  --card-border: #2a2d3e;
-  --input-bg: #1e2235;
-  --input-border: #333750;
+  --card-border: rgba(255,255,255,0.06);
+  --input-bg: rgba(255,255,255,0.04);
+  --input-border: rgba(255,255,255,0.10);
   --muted: #94a3b8;
-  --muted-bg: #1e2235;
+  --muted-bg: rgba(255,255,255,0.04);
+  --primary: #4d8df9;
+  --accent: #e2e8f0;
 }
+
+/* 모든 SVG 아이콘 — 기본 opacity 절제 (시선 분산 방지). 본문 콘텐츠가 주인공.
+   특정 컴포넌트에서 강조 필요 시 className에 opacity-100 명시. */
+svg { opacity: 0.75; }
+button:hover svg, a:hover svg, [aria-current=true] svg, .active svg { opacity: 1; }
+/* 차트는 데이터 시각화 — 전체 opacity 적용 */
+[data-chart] svg, .recharts-wrapper svg { opacity: 1; }
 
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-family: 'Paperlogy', 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  letter-spacing: 0.08px;
 }
 
 /* 스크롤바 */

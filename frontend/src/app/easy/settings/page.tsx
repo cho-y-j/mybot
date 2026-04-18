@@ -5,10 +5,10 @@ import { useElection } from '@/hooks/useElection';
 import { api } from '@/services/api';
 
 const TABS = [
-  { id: 'election', label: '선거 관리', icon: '🗳️' },
-  { id: 'candidates', label: '후보자 관리', icon: '👥' },
-  { id: 'schedules', label: '수집 스케줄', icon: '⏰' },
-  { id: 'account', label: '계정 · 알림', icon: '⚙️' },
+  { id: 'election', label: '선거 관리' },
+  { id: 'candidates', label: '후보자 관리' },
+  { id: 'schedules', label: '수집 스케줄' },
+  { id: 'account', label: '계정 · 알림' },
 ] as const;
 
 type TabId = typeof TABS[number]['id'];
@@ -235,8 +235,7 @@ function CandidatesTab() {
 
 // ─── 스케줄 탭 ──────────────────────────────────────────────
 
-const STYPE_ICONS: Record<string, string> = { news: '📰', community: '💬', youtube: '▶️', trends: '📈', briefing: '📋', alert: '🚨', full_with_briefing: '📦', full_collection: '📥' };
-const STYPE_COLORS: Record<string, string> = { news: 'bg-blue-500/20 text-blue-400', community: 'bg-purple-500/20 text-purple-400', youtube: 'bg-red-500/20 text-red-400', trends: 'bg-amber-500/20 text-amber-400', briefing: 'bg-green-500/20 text-green-400', alert: 'bg-orange-500/20 text-orange-400', full_with_briefing: 'bg-emerald-500/20 text-emerald-400', full_collection: 'bg-cyan-500/20 text-cyan-400' };
+const STYPE_LABELS: Record<string, string> = { news: '뉴스', community: '커뮤니티', youtube: '유튜브', trends: '트렌드', briefing: '브리핑', alert: '알림', full_with_briefing: '전체+브리핑', full_collection: '전체수집' };
 
 function SchedulesTab() {
   const { election } = useElection();
@@ -336,11 +335,10 @@ function SchedulesTab() {
         {sorted.map(s => (
           <div key={s.id} className={`p-3 rounded-xl border border-[var(--card-border)] bg-[var(--card-bg)] flex items-center justify-between ${!s.enabled ? 'opacity-40' : ''}`}>
             <div className="flex items-center gap-3">
-              <span className="text-lg">{STYPE_ICONS[s.schedule_type] || '📌'}</span>
               <div>
                 <div className="flex items-center gap-2">
                   <span className="font-medium text-sm">{s.name}</span>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${STYPE_COLORS[s.schedule_type] || 'bg-gray-500/20 text-gray-400'}`}>{s.type_label || s.schedule_type}</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--muted-bg)] text-[var(--muted)]">{STYPE_LABELS[s.schedule_type] || s.schedule_type}</span>
                 </div>
                 <div className="flex items-center gap-1 mt-1">
                   {(s.fixed_times || []).map((t: string, i: number) => <span key={i} className="text-[11px] font-mono bg-white/5 px-1.5 py-0.5 rounded">{t}</span>)}
@@ -546,12 +544,12 @@ function AccountTab() {
                 <div key={r.id} className={`flex items-center justify-between p-3 rounded-lg border border-[var(--card-border)] ${!r.is_active ? 'opacity-40' : ''}`}>
                   <div>
                     <div className="flex items-center gap-2">
-                      <span>{r.chat_type === 'group' ? '👥' : '👤'}</span>
+                      <span className="text-[10px] uppercase tracking-wider text-[var(--muted)]">{r.chat_type === 'group' ? '그룹' : '개인'}</span>
                       <span className="text-sm font-medium">{r.name}</span>
                       <span className="text-[10px] text-[var(--muted)]">ID: {r.chat_id}</span>
                     </div>
                     <div className="flex gap-1.5 mt-1.5">
-                      {[['receive_news', r.receive_news, '📰 뉴스', 'blue'], ['receive_briefing', r.receive_briefing, '📋 브리핑', 'green'], ['receive_alert', r.receive_alert, '🚨 알림', 'red']].map(([field, val, label, color]) => (
+                      {[['receive_news', r.receive_news, '뉴스', 'blue'], ['receive_briefing', r.receive_briefing, '브리핑', 'green'], ['receive_alert', r.receive_alert, '알림', 'red']].map(([field, val, label, color]) => (
                         <button key={field as string} onClick={() => handleToggleRecipient(r.id, field as string, val as boolean)}
                           className={`text-[10px] px-1.5 py-0.5 rounded-full ${val ? `bg-${color}-500/20 text-${color}-400` : 'bg-white/5 text-[var(--muted)]'}`}>
                           {label as string}
@@ -578,7 +576,7 @@ function AccountTab() {
             </div>
             <div className="flex gap-2">
               <select className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm" value={recipientForm.chat_type} onChange={e => setRecipientForm({ ...recipientForm, chat_type: e.target.value })}>
-                <option value="private">👤 개인</option><option value="group">👥 그룹</option>
+                <option value="private">개인</option><option value="group">그룹</option>
               </select>
               <button type="submit" className="flex-1 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-500">수신자 추가</button>
             </div>
@@ -619,10 +617,9 @@ function SettingsContent() {
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
             className={`flex-1 min-w-0 px-3 py-2 text-sm rounded-lg transition whitespace-nowrap ${
               activeTab === tab.id
-                ? 'bg-blue-600 text-white font-semibold shadow'
-                : 'text-[var(--muted)] hover:text-white hover:bg-white/5'
+                ? 'bg-[var(--foreground)] text-[var(--background)] font-semibold'
+                : 'text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-white/5'
             }`}>
-            <span className="mr-1">{tab.icon}</span>
             <span className="hidden sm:inline">{tab.label}</span>
             <span className="sm:hidden">{tab.label.split(' ')[0]}</span>
           </button>

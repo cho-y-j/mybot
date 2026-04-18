@@ -31,10 +31,7 @@ function ReportsInner() {
   const [genTopic, setGenTopic] = useState('');
   const [generating, setGenerating] = useState(false);
 
-  // PDF 미리보기
-  const [showPdf, setShowPdf] = useState(false);
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
-  const [loadingPdf, setLoadingPdf] = useState(false);
 
   const pdfUrl = selected && election
     ? `/api/reports/${election.id}/${selected.id}/download-pdf`
@@ -68,7 +65,6 @@ function ReportsInner() {
     try {
       const r = await api.getReport(election.id, id);
       setSelected(r);
-      setShowPdf(false);
       if (pdfBlobUrl) { URL.revokeObjectURL(pdfBlobUrl); setPdfBlobUrl(null); }
     } catch {}
   };
@@ -87,23 +83,6 @@ function ReportsInner() {
     } catch (e: any) {
       alert('생성 실패: ' + e.message);
     } finally { setGenerating(false); }
-  };
-
-  const loadPdfPreview = async () => {
-    if (!pdfUrl) return;
-    if (pdfBlobUrl) { setShowPdf(true); return; }
-    setLoadingPdf(true);
-    try {
-      const res = await fetch(pdfUrl, {
-        headers: { Authorization: `Bearer ${(sessionStorage.getItem('access_token') || localStorage.getItem('access_token'))}` },
-      });
-      if (res.ok) {
-        const blob = await res.blob();
-        setPdfBlobUrl(URL.createObjectURL(blob));
-        setShowPdf(true);
-      }
-    } catch {}
-    finally { setLoadingPdf(false); }
   };
 
   const typeLabel: Record<string, string> = {
@@ -125,7 +104,7 @@ function ReportsInner() {
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h1 className="text-2xl font-bold">📊 보고서</h1>
+          <h1 className="text-2xl font-bold">보고서</h1>
           <p className="text-sm text-[var(--muted)] mt-1">매일 자동 생성 + 원하는 보고서 즉시 요청</p>
         </div>
         <button onClick={() => setShowGenerate(!showGenerate)}
@@ -187,18 +166,18 @@ function ReportsInner() {
             className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm">첫 보고서 만들기</button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 min-w-0">
           {/* 목록 */}
-          <div className="space-y-2 max-h-[700px] overflow-y-auto">
+          <div className="space-y-2 max-h-[300px] lg:max-h-[700px] overflow-y-auto overflow-x-hidden min-w-0">
             {reports.slice(0, 30).map(r => (
               <button key={r.id} onClick={() => loadDetail(r.id)}
-                className={`w-full text-left p-3 rounded-lg border transition ${
+                className={`w-full text-left p-3 rounded-lg border transition min-w-0 ${
                   selected?.id === r.id ? 'border-blue-500 bg-blue-500/5' : 'border-[var(--card-border)] hover:border-blue-300'
                 }`}>
-                <div className="flex items-center gap-2">
-                  <span className={`w-2 h-2 rounded-full ${typeColors[r.type || r.report_type] || 'bg-gray-400'}`} />
-                  <span className="text-xs font-medium">{typeLabel[r.type || r.report_type] || r.type}</span>
-                  <span className="text-[10px] text-[var(--muted)] ml-auto">{r.date || r.report_date}</span>
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${typeColors[r.type || r.report_type] || 'bg-gray-400'}`} />
+                  <span className="text-xs font-medium truncate">{typeLabel[r.type || r.report_type] || r.type}</span>
+                  <span className="text-[10px] text-[var(--muted)] ml-auto flex-shrink-0">{r.date || r.report_date}</span>
                 </div>
                 <p className="text-xs mt-1 line-clamp-2">{r.title}</p>
                 <div className="flex gap-1 mt-1">
@@ -210,9 +189,9 @@ function ReportsInner() {
           </div>
 
           {/* 내용 */}
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-2 min-w-0 overflow-hidden">
             {selected ? (
-              <div className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-5">
+              <div className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 sm:p-5 min-w-0 overflow-hidden">
                 <div className="flex items-start justify-between mb-3 pb-3 border-b border-[var(--card-border)] flex-wrap gap-2">
                   <div>
                     <h3 className="font-bold">{selected.title}</h3>
@@ -224,26 +203,34 @@ function ReportsInner() {
                   <div className="flex gap-2 flex-wrap">
                     {pdfUrl && (
                       <>
-                        <button onClick={() => showPdf ? setShowPdf(false) : loadPdfPreview()}
-                          disabled={loadingPdf}
-                          className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700 disabled:opacity-50">
-                          {loadingPdf ? '로딩...' : showPdf ? '📄 텍스트 보기' : '📄 PDF 미리보기'}
+                        <button onClick={async () => {
+                          const res = await fetch(pdfUrl, {
+                            headers: { Authorization: `Bearer ${(sessionStorage.getItem('access_token') || localStorage.getItem('access_token'))}` },
+                          });
+                          if (res.ok) {
+                            const blob = await res.blob();
+                            const url = URL.createObjectURL(blob);
+                            window.open(url, '_blank');
+                          }
+                        }}
+                          className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700">
+                          PDF 보기
                         </button>
-                        <a href={pdfUrl} download
-                          onClick={async (e) => {
-                            e.preventDefault();
-                            const res = await fetch(pdfUrl, { headers: { Authorization: `Bearer ${(sessionStorage.getItem('access_token') || localStorage.getItem('access_token'))}` } });
-                            if (res.ok) {
-                              const blob = await res.blob();
-                              const a = document.createElement('a');
-                              a.href = URL.createObjectURL(blob);
-                              a.download = `${selected.title || 'report'}.pdf`;
-                              a.click();
-                            }
-                          }}
-                          className="px-3 py-1.5 bg-violet-600 text-white rounded-lg text-xs hover:bg-violet-700">
-                          ⬇ 다운로드
-                        </a>
+                        <button onClick={async () => {
+                          const res = await fetch(pdfUrl, {
+                            headers: { Authorization: `Bearer ${(sessionStorage.getItem('access_token') || localStorage.getItem('access_token'))}` },
+                          });
+                          if (res.ok) {
+                            const blob = await res.blob();
+                            const a = document.createElement('a');
+                            a.href = URL.createObjectURL(blob);
+                            a.download = `${selected.title || 'report'}.pdf`;
+                            a.click();
+                          }
+                        }}
+                          className="px-3 py-1.5 border border-[var(--card-border)] text-[var(--foreground)] rounded-lg text-xs hover:bg-[var(--muted-bg)]">
+                          다운로드
+                        </button>
                       </>
                     )}
                     <button onClick={async () => {
@@ -266,11 +253,8 @@ function ReportsInner() {
                   </div>
                 </div>
 
-                {/* PDF 뷰어 or 텍스트 */}
-                {showPdf && pdfBlobUrl ? (
-                  <iframe src={pdfBlobUrl} className="w-full rounded-lg border border-[var(--card-border)] h-[400px] lg:h-[600px]" />
-                ) : (
-                  <div className="max-h-[600px] overflow-y-auto">
+                {/* 텍스트 본문 */}
+                <div className="max-h-[600px] overflow-y-auto">
                     {/\n[=#]/.test((selected.content || selected.content_text || '')) && !/^#\s/.test((selected.content || selected.content_text || '')) ? (
                       <pre className="text-sm whitespace-pre-wrap font-sans leading-relaxed bg-[var(--muted-bg)] p-4 rounded">
                         {selected.content || selected.content_text || '(내용 없음)'}
@@ -283,7 +267,6 @@ function ReportsInner() {
                       </div>
                     )}
                   </div>
-                )}
 
                 {/* 다음 액션 */}
                 <div className="mt-4 pt-4 border-t border-[var(--card-border)]">
@@ -291,15 +274,15 @@ function ReportsInner() {
                   <div className="flex gap-2 flex-wrap">
                     <Link href={`/easy/content?type=sns&topic=${encodeURIComponent(selected.title || '')}`}
                       className="text-xs px-3 py-2 bg-[var(--muted-bg)] rounded-lg hover:bg-blue-500/10">
-                      📱 SNS 포스팅 만들기
+                      SNS 포스팅 만들기
                     </Link>
                     <Link href={`/easy/content?type=blog&topic=${encodeURIComponent(selected.title || '')}`}
                       className="text-xs px-3 py-2 bg-[var(--muted-bg)] rounded-lg hover:bg-blue-500/10">
-                      📝 블로그 글 만들기
+                      블로그 글 만들기
                     </Link>
                     <Link href="/easy/assistant"
                       className="text-xs px-3 py-2 bg-[var(--muted-bg)] rounded-lg hover:bg-blue-500/10">
-                      💬 AI에게 더 물어보기
+                      AI에게 더 물어보기
                     </Link>
                   </div>
                 </div>
