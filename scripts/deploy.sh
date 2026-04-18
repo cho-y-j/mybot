@@ -15,28 +15,33 @@ cd "$ROOT"
 
 SERVICE="${1:-}"
 FULL=false
+NO_CACHE=false
 COMMIT_MSG=""
 
 shift || true
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --full)   FULL=true; shift ;;
-    --commit) COMMIT_MSG="${2:-}"; shift 2 ;;
-    *)        echo "Unknown arg: $1"; exit 1 ;;
+    --full)      FULL=true; shift ;;
+    --no-cache)  NO_CACHE=true; shift ;;
+    --rebuild)   NO_CACHE=true; shift ;;
+    --commit)    COMMIT_MSG="${2:-}"; shift 2 ;;
+    *)           echo "Unknown arg: $1"; exit 1 ;;
   esac
 done
 
 if [[ -z "$SERVICE" ]]; then
   cat <<'USAGE'
-사용법: ./scripts/deploy.sh <service> [--full] [--commit "msg"]
-  service: homepage | frontend | backend
-  --full:  Docker 빌드 + GHCR push + 컨테이너 recreate
-  --commit: git commit + main push (생략 시 커밋 안 함)
+사용법: ./scripts/deploy.sh <service> [--full] [--rebuild] [--commit "msg"]
+  service:    homepage | frontend | backend
+  --full:     Docker 빌드 + GHCR push + 컨테이너 recreate
+  --rebuild:  --no-cache 로 강제 재빌드 (기본은 캐시 활용 = 빠름)
+  --commit:   git commit + main push
 
 예:
-  ./scripts/deploy.sh homepage                         # 로컬 + hot-swap만 (초안 검증)
-  ./scripts/deploy.sh homepage --full                  # 프로덕션 배포
-  ./scripts/deploy.sh homepage --full --commit "fix: ..."
+  ./scripts/deploy.sh homepage                                # 로컬 + hot-swap만 (10초)
+  ./scripts/deploy.sh homepage --full                         # 캐시 활용 빌드 (60초~2분)
+  ./scripts/deploy.sh homepage --full --rebuild               # 캐시 무시 완전 재빌드 (5~8분)
+  ./scripts/deploy.sh homepage --full --commit "fix: ..."     # 배포 + git push
 USAGE
   exit 1
 fi
@@ -80,8 +85,14 @@ fi
 
 # ───────── 3. Full 모드: Docker 빌드 + push + recreate ─────────
 if [[ "$FULL" == "true" ]]; then
-  log "Docker 이미지 빌드 (--no-cache, 수 분 소요)"
-  (cd "$ROOT/docker" && DOCKER_BUILDKIT=0 docker compose build --no-cache "$SERVICE" > /tmp/deploy_docker.log 2>&1) || {
+  if [[ "$NO_CACHE" == "true" ]]; then
+    log "Docker 이미지 빌드 (--no-cache, 5~8분 소요)"
+    BUILD_ARGS="--no-cache"
+  else
+    log "Docker 이미지 빌드 (캐시 활용, 60초~2분 예상)"
+    BUILD_ARGS=""
+  fi
+  (cd "$ROOT/docker" && DOCKER_BUILDKIT=0 docker compose build $BUILD_ARGS "$SERVICE" > /tmp/deploy_docker.log 2>&1) || {
     echo "--- Docker 빌드 로그 tail ---"; tail -20 /tmp/deploy_docker.log; fail "Docker 빌드 실패"
   }
   log "✓ Docker 빌드 완료"
