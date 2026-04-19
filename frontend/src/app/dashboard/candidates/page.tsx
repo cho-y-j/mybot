@@ -46,7 +46,7 @@ export default function CandidateComparisonPage() {
   };
 
   if (elLoading || loading) return <div className="flex items-center justify-center h-64"><div className="animate-spin h-8 w-8 border-4 border-primary-500 border-t-transparent rounded-full" /></div>;
-  if (!election) return <div className="card text-center py-12 text-gray-500">선거를 먼저 설정해주세요.</div>;
+  if (!election) return <div className="card text-center py-12 text-[var(--muted)]">선거를 먼저 설정해주세요.</div>;
 
   const newsByCand = overview?.news_by_candidate || [];
   // Our candidate first
@@ -128,19 +128,18 @@ export default function CandidateComparisonPage() {
 
       {/* AI Gap Summary */}
       {gaps?.ai_summary && (
-        <div className="bg-gradient-to-r from-purple-500/5 to-pink-500/5 rounded-xl border border-purple-500/20 p-5">
+        <div className="card bg-blue-500/5 border-blue-500/20">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <span className="text-lg">AI</span>
               <h3 className="font-bold">AI 경쟁 분석</h3>
-              <span className="text-xs bg-purple-500/10 text-purple-500 px-2 py-0.5 rounded-full">{gaps.analysis_period}</span>
+              <span className="text-xs bg-blue-500/10 text-blue-500 px-2 py-0.5 rounded-full">{gaps.analysis_period}</span>
               {gaps.cached && (
                 <span className="text-[10px] text-[var(--muted)]">캐시 ({gaps.cached_at?.substring(5, 16)})</span>
               )}
             </div>
             <button onClick={handleRefreshAnalysis} disabled={analyzing}
-              className="px-3 py-1.5 bg-purple-600 text-white rounded-lg text-xs hover:bg-purple-700 disabled:opacity-50">
-              {analyzing ? 'AI 분석 중...' : 'AI 재분석'}
+              className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700 disabled:opacity-50">
+              {analyzing ? '분석 중...' : '재분석'}
             </button>
           </div>
           <p className="text-sm leading-relaxed">{gaps.ai_summary}</p>
@@ -149,7 +148,7 @@ export default function CandidateComparisonPage() {
       {!gaps?.ai_summary && (
         <div className="card text-center py-6">
           <button onClick={handleRefreshAnalysis} disabled={analyzing}
-            className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 disabled:opacity-50">
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
             {analyzing ? 'AI 분석 중...' : 'AI 경쟁 분석 실행'}
           </button>
           <p className="text-xs text-[var(--muted)] mt-2">경쟁자 대비 갭 분석 + AI 요약을 생성합니다</p>
@@ -167,7 +166,7 @@ export default function CandidateComparisonPage() {
           const surveyVal = latestSurvey[c.name] || 0;
 
           return (
-            <div key={c.id} className={`card ${c.is_our_candidate ? 'ring-2 ring-blue-400 bg-blue-50/30' : ''}`}>
+            <div key={c.id} className={`card ${c.is_our_candidate ? 'ring-1 ring-blue-500/30 bg-blue-500/5' : ''}`}>
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-14 h-14 rounded-full flex items-center justify-center text-white font-bold text-xl shadow-md"
                   style={{ backgroundColor: colorMap[c.name] }}>
@@ -176,31 +175,31 @@ export default function CandidateComparisonPage() {
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="font-bold text-lg">{c.name}</h3>
-                    {c.is_our_candidate && <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">우리 후보</span>}
+                    {c.is_our_candidate && <span className="text-xs bg-blue-500/10 text-blue-500 px-2 py-0.5 rounded-full font-semibold">우리 후보</span>}
                   </div>
-                  <p className="text-sm text-gray-500">{c.party || '무소속'} {c.party_alignment ? `(${c.party_alignment === 'conservative' ? '보수' : c.party_alignment === 'progressive' ? '진보' : '중도'})` : ''}</p>
+                  <p className="text-sm text-[var(--muted)]">{c.party || '무소속'} {c.party_alignment ? `(${c.party_alignment === 'conservative' ? '보수' : c.party_alignment === 'progressive' ? '진보' : '중도'})` : ''}</p>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                <div className="bg-gray-50 rounded-lg p-3 text-center">
+                <div className="bg-[var(--muted-bg)] rounded-lg p-3 text-center">
                   <p className="text-2xl font-bold" style={{ color: colorMap[c.name] }}>{surveyVal ? `${surveyVal}%` : '-'}</p>
-                  <p className="text-xs text-gray-500">최근 지지율</p>
+                  <p className="text-xs text-[var(--muted)]">최근 지지율</p>
                 </div>
-                <div className="bg-gray-50 rounded-lg p-3 text-center">
-                  <p className="text-2xl font-bold text-gray-700">{data?.count || 0}</p>
-                  <p className="text-xs text-gray-500">뉴스 건수</p>
+                <div className="bg-[var(--muted-bg)] rounded-lg p-3 text-center">
+                  <p className="text-2xl font-bold">{data?.count || 0}</p>
+                  <p className="text-xs text-[var(--muted)]">뉴스 건수</p>
                 </div>
-                <div className="bg-green-50 rounded-lg p-3 text-center">
+                <div className="bg-green-500/5 rounded-lg p-3 text-center">
                   <p className="text-2xl font-bold text-green-600">{posRate}%</p>
-                  <p className="text-xs text-gray-500">긍정률 {effective > 0 ? `(${effective}건)` : ''}</p>
+                  <p className="text-xs text-[var(--muted)]">긍정률 {effective > 0 ? `(${effective}건)` : ''}</p>
                 </div>
-                <div className="bg-red-50 rounded-lg p-3 text-center">
+                <div className="bg-red-500/5 rounded-lg p-3 text-center">
                   <p className="text-2xl font-bold text-red-600">{data?.negative || 0}</p>
-                  <p className="text-xs text-gray-500">부정 뉴스</p>
+                  <p className="text-xs text-[var(--muted)]">부정 뉴스</p>
                 </div>
               {qualityLow && (
-                <div className="col-span-2 bg-amber-50 border border-amber-200 rounded-lg p-2 text-xs text-amber-700 text-center">
+                <div className="col-span-2 bg-amber-500/10 border border-amber-500/30 rounded-lg p-2 text-xs text-amber-600 dark:text-amber-400 text-center">
                   분석 품질 낮음 — 중립 {data?.neutral_rate}% (재분석 필요)
                 </div>
               )}
@@ -208,11 +207,11 @@ export default function CandidateComparisonPage() {
 
               {/* Sentiment bar */}
               <div className="mt-4">
-                <div className="h-2 rounded-full overflow-hidden flex bg-gray-100">
+                <div className="h-2 rounded-full overflow-hidden flex bg-[var(--muted-bg)]">
                   {total > 0 && <>
                     <div className="bg-green-500 h-full" style={{ width: `${(data?.positive || 0) / total * 100}%` }} />
                     <div className="bg-red-500 h-full" style={{ width: `${(data?.negative || 0) / total * 100}%` }} />
-                    <div className="bg-gray-400 h-full" style={{ width: `${(data?.neutral || 0) / total * 100}%` }} />
+                    <div className="bg-[var(--muted)] h-full opacity-60" style={{ width: `${(data?.neutral || 0) / total * 100}%` }} />
                   </>}
                 </div>
               </div>
@@ -240,18 +239,18 @@ export default function CandidateComparisonPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {gapItems.length > 0 && (
               <div>
-                <p className="text-xs font-bold text-red-600 mb-2 uppercase">부족 영역</p>
+                <p className="text-xs font-bold text-red-600 mb-2 uppercase tracking-wider">부족 영역</p>
                 <div className="space-y-2">
                   {gapItems.map((g: any, i: number) => (
-                    <div key={i} className="bg-red-50 rounded-lg p-3 text-sm">
-                      <p className="font-medium text-red-800">{g.area}</p>
+                    <div key={i} className="bg-red-500/5 border border-red-500/20 rounded-lg p-3 text-sm">
+                      <p className="font-semibold text-red-600">{g.area}</p>
                       {(g.details || []).map((d: string, j: number) => (
-                        <p key={j} className="text-red-600 text-xs mt-1">• {d}</p>
+                        <p key={j} className="text-[var(--muted)] text-xs mt-1">• {d}</p>
                       ))}
                       {(g.recommendations || []).map((r: string, j: number) => (
                         <p key={j} className="text-red-500 text-xs mt-1">→ {r}</p>
                       ))}
-                      {g.quality_warning && <p className="text-amber-600 text-[10px] mt-1">* 분석 품질 낮음</p>}
+                      {g.quality_warning && <p className="text-amber-500 text-[10px] mt-1">* 분석 품질 낮음</p>}
                     </div>
                   ))}
                 </div>
@@ -259,15 +258,15 @@ export default function CandidateComparisonPage() {
             )}
             {strengthItems.length > 0 && (
               <div>
-                <p className="text-xs font-bold text-green-600 mb-2 uppercase">우위 영역</p>
+                <p className="text-xs font-bold text-green-600 mb-2 uppercase tracking-wider">우위 영역</p>
                 <div className="space-y-2">
                   {strengthItems.map((s: any, i: number) => (
-                    <div key={i} className="bg-green-50 rounded-lg p-3 text-sm">
-                      <p className="font-medium text-green-800">{s.area}</p>
+                    <div key={i} className="bg-green-500/5 border border-green-500/20 rounded-lg p-3 text-sm">
+                      <p className="font-semibold text-green-600">{s.area}</p>
                       {(s.details || []).map((d: string, j: number) => (
-                        <p key={j} className="text-green-600 text-xs mt-1">• {d}</p>
+                        <p key={j} className="text-[var(--muted)] text-xs mt-1">• {d}</p>
                       ))}
-                      {s.quality_warning && <p className="text-amber-600 text-[10px] mt-1">* 분석 품질 낮음</p>}
+                      {s.quality_warning && <p className="text-amber-500 text-[10px] mt-1">* 분석 품질 낮음</p>}
                     </div>
                   ))}
                 </div>
@@ -275,13 +274,13 @@ export default function CandidateComparisonPage() {
             )}
             {parityItems.length > 0 && (
               <div>
-                <p className="text-xs font-bold text-gray-600 mb-2 uppercase">비슷한 영역</p>
+                <p className="text-xs font-bold text-[var(--muted)] mb-2 uppercase tracking-wider">비슷한 영역</p>
                 <div className="space-y-2">
                   {parityItems.map((p: any, i: number) => (
-                    <div key={i} className="bg-gray-50 rounded-lg p-3 text-sm">
-                      <p className="font-medium text-gray-800">{p.area}</p>
+                    <div key={i} className="bg-[var(--muted-bg)] rounded-lg p-3 text-sm">
+                      <p className="font-semibold">{p.area}</p>
                       {(p.details || []).map((d: string, j: number) => (
-                        <p key={j} className="text-gray-500 text-xs mt-1">• {d}</p>
+                        <p key={j} className="text-[var(--muted)] text-xs mt-1">• {d}</p>
                       ))}
                     </div>
                   ))}
@@ -316,8 +315,8 @@ export default function CandidateComparisonPage() {
           <h3 className="font-semibold mb-4">지표별 상세 비교</h3>
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-200">
-                <th className="text-left p-3 text-gray-500 font-medium">지표</th>
+              <tr className="border-b border-[var(--card-border)]">
+                <th className="text-left p-3 text-[var(--muted)] font-medium">지표</th>
                 {orderedCands.map(c => (
                   <th key={c.id} className="text-center p-3 font-semibold" style={{ color: colorMap[c.name] }}>
                     {c.name} {c.is_our_candidate && '(*)'}
@@ -327,7 +326,7 @@ export default function CandidateComparisonPage() {
             </thead>
             <tbody>
               {/* News count */}
-              <tr className="border-b border-gray-100 hover:bg-gray-50">
+              <tr className="border-b border-[var(--card-border)]/50 hover:bg-[var(--muted-bg)]/30">
                 <td className="p-3 font-medium">뉴스 건수</td>
                 {orderedCands.map(c => {
                   const d = newsByCand.find((n: any) => n.name === c.name);
@@ -335,7 +334,7 @@ export default function CandidateComparisonPage() {
                 })}
               </tr>
               {/* Positive rate (neutral 제외 유효 감성 기준) */}
-              <tr className="border-b border-gray-100 hover:bg-gray-50">
+              <tr className="border-b border-[var(--card-border)]/50 hover:bg-[var(--muted-bg)]/30">
                 <td className="p-3 font-medium">긍정률</td>
                 {orderedCands.map(c => {
                   const d = newsByCand.find((n: any) => n.name === c.name);
@@ -348,7 +347,7 @@ export default function CandidateComparisonPage() {
                 })}
               </tr>
               {/* Negative count */}
-              <tr className="border-b border-gray-100 hover:bg-gray-50">
+              <tr className="border-b border-[var(--card-border)]/50 hover:bg-[var(--muted-bg)]/30">
                 <td className="p-3 font-medium">부정 뉴스</td>
                 {orderedCands.map(c => {
                   const d = newsByCand.find((n: any) => n.name === c.name);
@@ -356,7 +355,7 @@ export default function CandidateComparisonPage() {
                 })}
               </tr>
               {/* Latest survey */}
-              <tr className="border-b border-gray-100 hover:bg-gray-50">
+              <tr className="border-b border-[var(--card-border)]/50 hover:bg-[var(--muted-bg)]/30">
                 <td className="p-3 font-medium">최근 지지율</td>
                 {orderedCands.map(c => {
                   const val = latestSurvey[c.name];
