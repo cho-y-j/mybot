@@ -375,7 +375,8 @@ export default function SurveysPage() {
       if (r?.error) {
         setAnalyzeError(r.error);
       } else if (r?.sections?.ai_strategy?.ai_generated === false) {
-        setAnalyzeError('AI(Opus) 호출 실패 — CLI 토큰 만료 또는 네트워크 문제일 수 있습니다. 잠시 후 재시도하세요.');
+        const detail = r.sections.ai_strategy.text || '';
+        setAnalyzeError(`AI 분석을 완성하지 못했습니다. ${detail.slice(0, 200)}`);
       }
       setDeepData(r);
     } catch (e: any) {

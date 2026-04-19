@@ -112,8 +112,9 @@ async def analyze_survey_deep(
             tenant_id=str(tenant_id),
         )
     except Exception as e:
-        logger.warning("survey_ai_generation_failed", error=str(e))
-        ai_analysis = {"text": "AI 분석 생성 실패", "ai_generated": False}
+        import traceback as _tb
+        logger.warning("survey_ai_generation_failed", error=str(e), tb=_tb.format_exc()[:800])
+        ai_analysis = {"text": f"AI 분석 생성 실패: {str(e)[:120]}", "ai_generated": False}
 
     return {
         "total_surveys": len(surveys),
@@ -385,8 +386,8 @@ async def _generate_survey_ai(
 ### 약점 세그먼트 (우리가 열세)
 {chr(10).join(f'- [{s["dimension"]}] {s["segment"]}: {our_name} {s["our_rate"]}% vs {s["rival_name"]} {s["rival_rate"]}% ({s["gap"]}%p)' for s in weaknesses) if weaknesses else '- 교차분석 데이터 없음'}
 
-### 추세: {trend_analysis.get('momentum', {}).get('direction', '데이터 부족')} ({trend_analysis.get('momentum', {}).get('change', 0):+.1f}%p)
-### 부동층: {undecided_analysis.get('avg_undecided', 0):.1f}%
+### 추세: {(trend_analysis.get('momentum') or {}).get('direction', '데이터 부족')} ({(trend_analysis.get('momentum') or {}).get('change', 0):+.1f}%p)
+### 부동층: {(undecided_analysis or {}).get('avg_undecided', 0):.1f}%
 """
 
     prompt = f"""당신은 선거 여론조사 분석 전문가입니다. 아래 데이터를 바탕으로 {our_name} 후보의 전략을 분석하세요.
