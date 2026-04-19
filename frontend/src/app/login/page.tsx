@@ -1,18 +1,34 @@
 'use client';
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/services/api';
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#0b0e1a]" />}>
+      <LoginInner />
+    </Suspense>
+  );
+}
+
+function LoginInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [totpCode, setTotpCode] = useState('');
   const [needs2FA, setNeeds2FA] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [remember, setRemember] = useState(false);
+  // 기본 true — 창을 닫아도 유지. 토큰 자체 만료까지 로그인 상태 유지.
+  const [remember, setRemember] = useState(true);
+  const [expiredNotice, setExpiredNotice] = useState(false);
+  const nextPath = searchParams?.get('next') || '';
+
+  useEffect(() => {
+    if (searchParams?.get('expired') === '1') setExpiredNotice(true);
+  }, [searchParams]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,6 +40,8 @@ export default function LoginPage() {
       api.setTokens(data, remember);
       if (data?.user?.is_superadmin) {
         router.push('/admin');
+      } else if (nextPath && nextPath.startsWith('/')) {
+        router.push(nextPath);
       } else {
         // 기본: 쉬운 모드. 전문가 모드는 사이드바 전환 버튼으로만 진입
         localStorage.setItem('preferred_mode', 'easy');
@@ -60,6 +78,12 @@ export default function LoginPage() {
 
         <div className="p-8 rounded-2xl border border-white/5 bg-white/[0.02] backdrop-blur-sm">
           <h2 className="text-xl font-semibold text-white mb-6">로그인</h2>
+
+          {expiredNotice && (
+            <div className="mb-4 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-sm p-3 rounded-xl">
+              세션이 만료되었습니다. 다시 로그인해 주세요.
+            </div>
+          )}
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
@@ -111,7 +135,7 @@ export default function LoginPage() {
                 onChange={e => setRemember(e.target.checked)}
                 className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500 focus:ring-blue-500 focus:ring-offset-0"
               />
-              <span>로그인 상태 유지 (체크 안 하면 창 닫을 때 자동 로그아웃)</span>
+              <span>로그인 상태 유지 (권장 — 체크 해제하면 창 닫을 때 자동 로그아웃)</span>
             </label>
 
             <button

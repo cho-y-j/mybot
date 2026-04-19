@@ -341,6 +341,7 @@ export default function SurveysPage() {
     total_questions?: number;
   } | null>(null);
   const [deepData, setDeepData] = useState<any>(null);
+  const [analyzeError, setAnalyzeError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
   // 2026-04-19: 기본 탭을 'all'(그룹핑된 여론조사)로. 구 overview는 AI 분석 전용 요약.
@@ -366,9 +367,22 @@ export default function SurveysPage() {
     finally { setLoading(false); }
   };
   const loadDeepAnalysis = async () => {
-    if (!election) return; setAnalyzing(true);
-    try { setDeepData(await api.getSurveyDeepAnalysis(election.id)); }
-    catch {} finally { setAnalyzing(false); }
+    if (!election) return;
+    setAnalyzing(true);
+    setAnalyzeError(null);
+    try {
+      const r = await api.getSurveyDeepAnalysis(election.id);
+      if (r?.error) {
+        setAnalyzeError(r.error);
+      } else if (r?.sections?.ai_strategy?.ai_generated === false) {
+        setAnalyzeError('AI(Opus) 호출 실패 — CLI 토큰 만료 또는 네트워크 문제일 수 있습니다. 잠시 후 재시도하세요.');
+      }
+      setDeepData(r);
+    } catch (e: any) {
+      setAnalyzeError(`분석 요청 실패: ${e?.message || '알 수 없는 오류'}`);
+    } finally {
+      setAnalyzing(false);
+    }
   };
   const loadCrosstab = async (surveyId: string) => {
     if (!election) return; setLoadingCrosstab(true); setSelectedSurveyId(surveyId);
@@ -568,6 +582,11 @@ export default function SurveysPage() {
               )}
             </div>
           </div>
+          {analyzeError && (
+            <div className="mb-2 text-xs bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 p-2 rounded">
+              {analyzeError}
+            </div>
+          )}
           {aiStrategy?.text ? (
             <div className={`text-sm leading-relaxed whitespace-pre-line ${!expandedAI ? 'max-h-40 overflow-hidden' : ''}`}>
               {aiStrategy.text}

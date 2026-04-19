@@ -82,19 +82,27 @@ class ApiClient {
       headers,
     });
 
-    // 401 → 토큰 갱신 시도
-    if (res.status === 401 && this.refreshToken) {
-      const refreshed = await this.tryRefresh();
-      if (refreshed) {
-        headers['Authorization'] = `Bearer ${this.accessToken}`;
-        const retry = await fetch(`${API_BASE}${path}`, { ...options, headers });
-        if (!retry.ok) throw await this.parseError(retry);
-        return retry.json();
-      } else {
-        this.clearTokens();
-        window.location.href = '/login';
-        throw new Error('Session expired');
+    // 401: 잘못된/만료된 토큰 → refresh 시도 → 실패 시 /login 리다이렉트
+    // 403 "Not authenticated": FastAPI HTTPBearer가 헤더 없을 때 반환 → 로그인 필요
+    // 403 "권한 없음": 로그인은 되어 있는데 엔드포인트 접근 불가 → 에러만 throw (리다이렉트 X)
+    const isUnauth = res.status === 401 ||
+      (res.status === 403 && !this.accessToken);
+    if (isUnauth) {
+      if (this.refreshToken) {
+        const refreshed = await this.tryRefresh();
+        if (refreshed) {
+          headers['Authorization'] = `Bearer ${this.accessToken}`;
+          const retry = await fetch(`${API_BASE}${path}`, { ...options, headers });
+          if (retry.status === 401 || retry.status === 403) {
+            this._redirectToLogin();
+            throw new Error('Session expired');
+          }
+          if (!retry.ok) throw await this.parseError(retry);
+          return retry.status === 204 ? ({} as T) : retry.json();
+        }
       }
+      this._redirectToLogin();
+      throw new Error('Session expired');
     }
 
     if (!res.ok) throw await this.parseError(res);
@@ -119,6 +127,17 @@ class ApiClient {
     } catch {
       return false;
     }
+  }
+
+  private _redirectToLogin() {
+    this.clearTokens();
+    if (typeof window === 'undefined') return;
+    // 이미 로그인/공개 페이지면 리다이렉트 skip (무한 루프 방지)
+    const path = window.location.pathname;
+    if (path === '/login' || path === '/' || path.startsWith('/apply') || path.startsWith('/signup')) return;
+    // 현재 URL을 next 파라미터로 보존 (로그인 후 되돌아올 수 있도록)
+    const next = encodeURIComponent(path + window.location.search);
+    window.location.href = `/login?expired=1&next=${next}`;
   }
 
   private async parseError(res: Response) {
