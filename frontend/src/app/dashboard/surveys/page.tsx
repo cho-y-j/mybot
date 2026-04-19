@@ -343,7 +343,8 @@ export default function SurveysPage() {
   const [deepData, setDeepData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
-  const [tab, setTab] = useState<TabType>('overview');
+  // 2026-04-19: 기본 탭을 'all'(그룹핑된 여론조사)로. 구 overview는 AI 분석 전용 요약.
+  const [tab, setTab] = useState<TabType>('all');
   const [expandedAI, setExpandedAI] = useState(false);
   const [selectedSurveyId, setSelectedSurveyId] = useState<string | null>(null);
   const [selectedCrosstabs, setSelectedCrosstabs] = useState<any>(null);
@@ -457,13 +458,13 @@ export default function SurveysPage() {
         </button>
       </div>
 
-      {/* 탭 */}
+      {/* 탭 (2026-04-19: 순서 재조정 — 여론조사가 기본, AI 분석은 뒤로) */}
       <div className="flex gap-1 bg-[var(--muted-bg)] rounded-lg p-1">
         {([
-          ['overview', '지지율 현황'],
+          ['all', `여론조사 (${grouped?.total_groups ?? 0})`],
           ['trend', '추이 분석'],
-          ['all', `전체 보기 (${surveys.length})`],
           ['crosstab', '교차 분석'],
+          ['overview', 'AI 분석'],
           ['add', '등록'],
         ] as [TabType, string][]).map(([key, label]) => (
           <button key={key} onClick={() => setTab(key)}
