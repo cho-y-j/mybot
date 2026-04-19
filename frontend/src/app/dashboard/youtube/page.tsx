@@ -134,7 +134,7 @@ export default function YouTubePage() {
                     {v.id && <span role="button" style={{cursor:'pointer'}} onClick={async (e) => { e.preventDefault(); e.stopPropagation();
                       if (!confirm('삭제하시겠습니까?')) return;
                       try { await api.deleteYoutubeItem(v.id); loadData(); } catch {}
-                    }} className="text-[9px] text-gray-400 hover:text-red-400">삭제</span>}
+                    }} className="text-[9px] text-[var(--muted)] hover:text-red-500">삭제</span>}
                   </a>
                 ))}
               </div>
@@ -157,7 +157,7 @@ export default function YouTubePage() {
                     {v.id && <span role="button" style={{cursor:'pointer'}} onClick={async (e) => { e.preventDefault(); e.stopPropagation();
                       if (!confirm('삭제하시겠습니까?')) return;
                       try { await api.deleteYoutubeItem(v.id); loadData(); } catch {}
-                    }} className="text-[9px] text-gray-400 hover:text-orange-400">삭제</span>}
+                    }} className="text-[9px] text-[var(--muted)] hover:text-orange-500">삭제</span>}
                   </a>
                 ))}
               </div>
@@ -585,7 +585,7 @@ export default function YouTubePage() {
                           e.preventDefault(); e.stopPropagation();
                           if (!window.confirm('이 영상을 삭제하시겠습니까?')) return;
                           try { await api.deleteYoutubeItem(v.id); await loadData(); } catch (err) { console.error('delete failed', err); }
-                        }} className="ml-auto text-gray-400 hover:text-red-400">삭제</span>}
+                        }} className="ml-auto text-[var(--muted)] hover:text-red-500">삭제</span>}
                       </div>
                     </div>
                   ))}
@@ -620,7 +620,7 @@ export default function YouTubePage() {
                           e.preventDefault(); e.stopPropagation();
                           if (!confirm('이 영상을 삭제하시겠습니까?')) return;
                           try { await api.deleteYoutubeItem(v.id); loadData(); } catch {}
-                        }} className="ml-auto text-gray-400 hover:text-red-400">삭제</button>}
+                        }} className="ml-auto text-[var(--muted)] hover:text-red-500">삭제</button>}
                       </div>
                     </a>
                   ))}
@@ -983,7 +983,7 @@ export default function YouTubePage() {
                       e.preventDefault(); e.stopPropagation();
                       if (!window.confirm('이 게시글을 삭제하시겠습니까?')) return;
                       try { await api.deleteCommunityItem(p.id); await loadData(); } catch (err) { console.error(err); }
-                    }} className="text-[9px] text-gray-400 hover:text-red-400 shrink-0 px-1">삭제</span>}
+                    }} className="text-[9px] text-[var(--muted)] hover:text-red-500 shrink-0 px-1">삭제</span>}
                   </a>
                 ))}
                 {filteredPosts.length === 0 && (
