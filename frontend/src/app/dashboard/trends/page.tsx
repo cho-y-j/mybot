@@ -326,17 +326,7 @@ export default function TrendsPage() {
         </>
       )}
 
-      {/* ═══ 교육 이슈 ═══ */}
-      {tab === 'issues' && (
-        <IssuesTab
-          election={election}
-          issueData={issueData}
-          onNavigateToSearch={(kw) => {
-            setTab('search');
-            handleSearch(kw);
-          }}
-        />
-      )}
+      {/* (기존 '교육 이슈' 탭은 제거됨 — '🎯 이번 주 추천'이 범용 대체) */}
 
       {/* ═══ 키워드 조회 (주제 카드) ═══ */}
       {tab === 'search' && (
