@@ -53,21 +53,54 @@ async def analyze_survey_deep(
             select(Candidate).where(Candidate.id == _my_id)
         )).scalar_one_or_none()
 
-    # 여론조사 데이터 조회 (같은 테넌트 또는 같은 지역 — 공유)
-    from sqlalchemy import or_
-    conditions = [Survey.tenant_id == tenant_id]
-    if election and election.region_sido:
-        conditions.append(Survey.region_sido == election.region_sido)
-    logger.info("survey_query_debug", tid=str(tenant_id), tid_type=str(type(tenant_id)),
-                region=election.region_sido if election else None, conditions_count=len(conditions))
-    surveys = (await db.execute(
-        select(Survey).where(or_(*conditions))
+    # 여론조사 데이터 조회 — 같은 선거(election_type + region_sido + region_sigungu)와
+    # 정확히 매칭되는 조사만. 섞임 방지 (2026-04-19 교육감에 도지사/시장 조사가 섞여
+    # "김재종·김승룡" 같은 엉뚱한 후보로 AI 분석된 버그 수정)
+    from sqlalchemy import and_
+    conditions = [
+        Survey.election_type == election.election_type,
+        Survey.region_sido == election.region_sido,
+    ]
+    if election.region_sigungu:
+        conditions.append(Survey.region_sigungu == election.region_sigungu)
+    else:
+        # 시도급 선거(교육감/도지사): 시군구 없는 조사만 매칭
+        conditions.append(Survey.region_sigungu.is_(None))
+    logger.info("survey_query_debug",
+                etype=election.election_type,
+                sido=election.region_sido,
+                sigungu=election.region_sigungu)
+    all_matched = (await db.execute(
+        select(Survey).where(and_(*conditions))
         .order_by(Survey.survey_date.desc())
     )).scalars().all()
-    logger.info("survey_query_result", count=len(surveys))
+
+    # 우리 후보가 실제로 등장하는 조사만 (추이/교차 분석 대상)
+    our_name = our.name if our else None
+    if our_name:
+        surveys = [
+            s for s in all_matched
+            if isinstance(s.results, dict) and our_name in s.results
+        ]
+    else:
+        surveys = list(all_matched)
+    logger.info("survey_query_result",
+                matched_election=len(all_matched),
+                with_our_candidate=len(surveys),
+                our_name=our_name)
 
     if not surveys:
-        return {"error": "여론조사 데이터 없음", "sections": {}}
+        return {
+            "error": (
+                f"'{our_name}' 후보가 포함된 여론조사가 없습니다. "
+                f"같은 선거 조사 {len(all_matched)}건 중 0건."
+                if our_name else
+                f"해당 선거(election_type={election.election_type}, {election.region_sido})에 등록된 여론조사 없음."
+            ),
+            "sections": {},
+            "total_surveys": 0,
+            "matched_election": len(all_matched),
+        }
 
     # 교차분석 데이터
     survey_ids = [s.id for s in surveys]
@@ -84,7 +117,7 @@ async def analyze_survey_deep(
         ).order_by(SurveyQuestion.question_number)
     )).scalars().all()
 
-    our_name = our.name if our else None
+    # our_name은 위에서 이미 정의됨
 
     # ── 분석 1: 교차분석 테이블 ──
     crosstab_analysis = _analyze_crosstabs(crosstabs, our_name)
@@ -353,10 +386,9 @@ async def _generate_survey_ai(
 
     our_name = our.name if our else "미설정"
 
-    # 최근 여론조사 요약 (교육감 후보만)
+    # 최근 여론조사: 우리 후보가 포함된 조사 중 최신 (상위 호출자가 이미 필터)
     latest = surveys[0] if surveys else None
     raw_results = latest.results if latest and isinstance(latest.results, dict) else {}
-    # 중첩 구조 펼치기 + 숫자만
     latest_results = {}
     for k, v in raw_results.items():
         if isinstance(v, (int, float)):
@@ -366,43 +398,76 @@ async def _generate_survey_ai(
                 if isinstance(sv, (int, float)):
                     latest_results[sk] = sv
 
+    # 우리 후보 순위 / 격차 (사실 기반)
+    ranked = sorted(
+        [(n, v) for n, v in latest_results.items() if isinstance(v, (int, float))],
+        key=lambda x: -x[1]
+    )
+    our_val = next((v for n, v in ranked if n == our_name), None)
+    our_rank = next((i + 1 for i, (n, _) in enumerate(ranked) if n == our_name), None)
+    top_name, top_val = ranked[0] if ranked else (None, None)
+    gap_to_top = (our_val - top_val) if (our_val is not None and top_val is not None) else None
+
     # 강약 세그먼트 요약
-    strengths = (strength_weakness or {}).get("strengths", [])[:3]
-    weaknesses = (strength_weakness or {}).get("weaknesses", [])[:3]
+    strengths = (strength_weakness or {}).get("strengths", [])[:5]
+    weaknesses = (strength_weakness or {}).get("weaknesses", [])[:5]
+
+    # 모든 조사 요약 (AI가 추세를 직접 읽도록)
+    all_surveys_lines = []
+    for s in surveys[:10]:  # 최신 10건
+        r = s.results if isinstance(s.results, dict) else {}
+        nums = {k: v for k, v in r.items() if isinstance(v, (int, float))}
+        rv = nums.get(our_name)
+        top = sorted(nums.items(), key=lambda x: -x[1])[:3]
+        top_str = ", ".join(f"{n} {v}%" for n, v in top)
+        all_surveys_lines.append(
+            f"- {s.survey_date} ({s.survey_org}, n={s.sample_size or '?'}): "
+            f"{our_name} {rv if rv is not None else 'N/A'}% | Top3: {top_str}"
+        )
 
     factsheet = f"""
 ## 여론조사 심층 분석 팩트시트
 
-### 선거: {election.name} | 우리 후보: {our_name}
+### 선거: {election.name} ({election.election_type} · {election.region_sido}{' · '+election.region_sigungu if election.region_sigungu else ''})
+### 우리 후보: {our_name}
+### 분석 대상 조사: {len(surveys)}건 (우리 후보 포함된 조사만)
 
-### 최근 여론조사 ({latest.survey_org if latest else '없음'}, {latest.survey_date if latest else ''})
-{chr(10).join(f'- {k}: {v}%' for k, v in sorted(latest_results.items(), key=lambda x: -(x[1] if isinstance(x[1], (int,float)) else 0)))}
+### 최근 여론조사 ({latest.survey_org if latest else '없음'}, {latest.survey_date if latest else ''}, n={latest.sample_size if latest else '?'})
+{chr(10).join(f'- {k}: {v}%' for k, v in ranked)}
+→ 우리 후보 순위: {our_rank if our_rank else 'N/A'}위 / {len(ranked)}명, 1위({top_name}) 대비 {gap_to_top:+.1f}%p
 
-### 총 여론조사 {len(surveys)}건 분석
+### 조사별 추이 (최신 → 과거)
+{chr(10).join(all_surveys_lines) if all_surveys_lines else '- 데이터 없음'}
 
-### 강점 세그먼트 (우리가 우세)
-{chr(10).join(f'- [{s["dimension"]}] {s["segment"]}: {our_name} {s["our_rate"]}% vs {s["rival_name"]} {s["rival_rate"]}% (+{s["gap"]}%p)' for s in strengths) if strengths else '- 교차분석 데이터 없음'}
+### 강점 세그먼트 (우리가 +3%p 이상 우세)
+{chr(10).join(f'- [{s["dimension"]}] {s["segment"]}: {our_name} {s["our_rate"]}% vs {s["rival_name"]} {s["rival_rate"]}% (+{s["gap"]}%p)' for s in strengths) if strengths else '- 해당 없음'}
 
-### 약점 세그먼트 (우리가 열세)
-{chr(10).join(f'- [{s["dimension"]}] {s["segment"]}: {our_name} {s["our_rate"]}% vs {s["rival_name"]} {s["rival_rate"]}% ({s["gap"]}%p)' for s in weaknesses) if weaknesses else '- 교차분석 데이터 없음'}
+### 약점 세그먼트 (우리가 -3%p 이상 열세)
+{chr(10).join(f'- [{s["dimension"]}] {s["segment"]}: {our_name} {s["our_rate"]}% vs {s["rival_name"]} {s["rival_rate"]}% ({s["gap"]}%p)' for s in weaknesses) if weaknesses else '- 해당 없음'}
 
-### 추세: {(trend_analysis.get('momentum') or {}).get('direction', '데이터 부족')} ({(trend_analysis.get('momentum') or {}).get('change', 0):+.1f}%p)
-### 부동층: {(undecided_analysis or {}).get('avg_undecided', 0):.1f}%
+### 추세 분석: {(trend_analysis.get('momentum') or {}).get('direction', '데이터 부족 — 조사 4건 미만')} {f"({(trend_analysis.get('momentum') or {}).get('change', 0):+.1f}%p)" if (trend_analysis.get('momentum') or {}).get('direction') else ''}
+### 부동층 평균: {(undecided_analysis or {}).get('avg_undecided', 0):.1f}%
 """
 
-    prompt = f"""당신은 선거 여론조사 분석 전문가입니다. 아래 데이터를 바탕으로 {our_name} 후보의 전략을 분석하세요.
+    prompt = f"""당신은 한국 선거 여론조사 분석 전문가입니다. 아래는 **{election.name}** ({election.region_sido}) 선거의 {our_name} 후보 관련 실제 여론조사 데이터입니다.
 
 {factsheet}
 
-다음 형식으로 한국어 분석 (1500자 이내):
-1. 현재 지지율 진단 (순위, 격차, 추세)
-2. 강점 세그먼트 확대 전략 (어디서 더 얻을 수 있나)
-3. 약점 세그먼트 만회 전략 (어디서 잃고 있나)
-4. 부동층 대응 전략
-5. 핵심 타겟 3개와 구체적 메시지
-6. 불편한 진실 (불리한 데이터)
+**중요 지침**:
+- 위 팩트시트에 등장하지 않는 후보 이름·수치·경쟁자·날짜를 절대 추측해서 쓰지 말 것
+- 위 데이터만 근거로 분석. 다른 선거(도지사/시장/국회의원) 조사가 아님을 인지
+- 조사가 적으면 적다고 정직하게 말할 것
+- "데이터 부족"이어도 보이는 데이터로 할 수 있는 분석은 할 것
 
-객관적이고 구체적으로 작성하세요."""
+다음 6개 항목으로 한국어 분석 (1500자 이내, 각 항목은 2~4문장):
+1. **현재 지지율 진단** — 위 '최근 여론조사' 기준 순위·격차·추세
+2. **강점 세그먼트 확대 전략** — 위 강점 데이터 기반
+3. **약점 세그먼트 만회 전략** — 위 약점 데이터 기반
+4. **부동층 대응 전략** — {(undecided_analysis or {}).get('avg_undecided', 0):.1f}% 기준
+5. **핵심 타겟 3개와 구체적 메시지**
+6. **불편한 진실** — 불리한 데이터를 솔직하게
+
+객관적이고 구체적으로. 수치는 반드시 위 팩트시트에서 인용."""
 
     ai_text = ""
     ai_generated = False
