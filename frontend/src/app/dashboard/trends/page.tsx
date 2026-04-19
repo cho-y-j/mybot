@@ -5,8 +5,9 @@ import { api } from '@/services/api';
 import { SearchTrendLine, CANDIDATE_COLORS } from '@/components/charts';
 import IssuesTab from '@/components/trends/IssuesTab';
 import TopicCard from '@/components/trends/TopicCard';
+import RecommendedTopicsPanel from '@/components/trends/RecommendedTopicsPanel';
 
-type TabType = 'candidates' | 'realtime' | 'issues' | 'search';
+type TabType = 'recommended' | 'candidates' | 'realtime' | 'search';
 
 export default function TrendsPage() {
   const { election, candidates, ourCandidate, loading: elLoading } = useElection();
@@ -15,7 +16,7 @@ export default function TrendsPage() {
   const [realtime, setRealtime] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [collecting, setCollecting] = useState(false);
-  const [tab, setTab] = useState<TabType>('candidates');
+  const [tab, setTab] = useState<TabType>('recommended');
   const [searchKeyword, setSearchKeyword] = useState('');
   const [searchResult, setSearchResult] = useState<any>(null);
   const [searching, setSearching] = useState(false);
@@ -161,14 +162,10 @@ export default function TrendsPage() {
       {/* 탭 */}
       <div className="flex gap-1 bg-[var(--muted-bg)] rounded-lg p-1">
         {([
-          ['candidates', '후보 검색량'],
+          ['recommended', '🎯 이번 주 추천'],
           ['realtime', '실시간 급상승'],
-          ['issues', election.election_type === 'superintendent' ? '교육 이슈' :
-                     election.election_type === 'mayor' ? '시정 이슈' :
-                     election.election_type === 'governor' ? '도정 이슈' :
-                     election.election_type === 'congressional' ? '정책 이슈' :
-                     election.election_type === 'council' ? '지역 이슈' : '관련 이슈'],
           ['search', '키워드 조회'],
+          ['candidates', '후보 검색량'],
         ] as [TabType, string][]).map(([key, label]) => (
           <button key={key} onClick={() => setTab(key)}
             className={`flex-1 py-2 text-sm rounded-md transition ${tab === key ? 'bg-[var(--card-bg)] shadow font-semibold' : 'text-[var(--muted)]'}`}>
@@ -176,6 +173,14 @@ export default function TrendsPage() {
           </button>
         ))}
       </div>
+
+      {/* ═══ 🎯 이번 주 추천 주제 (기본 탭, 푸시 모델) ═══ */}
+      {tab === 'recommended' && (
+        <RecommendedTopicsPanel
+          electionId={election.id}
+          onPickTopic={(kw) => openTopicCard(kw)}
+        />
+      )}
 
       {/* ═══ 실시간 급상승 (AI 관련도 기반 주제 선정) ═══ */}
       {tab === 'realtime' && (

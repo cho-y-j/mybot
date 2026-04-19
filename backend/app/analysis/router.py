@@ -689,6 +689,23 @@ async def get_youtube_data(
     return await _get_youtube(db, user["tenant_id"], election_id, days)
 
 
+@router.get("/{election_id}/topic-recommendations")
+async def get_topic_recommendations(
+    election_id: UUID,
+    user: CurrentUser,
+    force: bool = Query(False, description="True면 캐시 무시하고 새로 생성"),
+    db: AsyncSession = Depends(get_db),
+):
+    """이번 주 AI 추천 주제 10개. 24시간 캐시. 담당자가 페이지 진입 즉시 볼 수 있도록 푸시."""
+    from app.analysis.topic_recommender import recommend_weekly_topics
+    try:
+        return await recommend_weekly_topics(db, user["tenant_id"], str(election_id), force=force)
+    except Exception as e:
+        import traceback
+        structlog.get_logger().error("topic_reco_error", error=str(e), tb=traceback.format_exc()[:500])
+        return {"error": f"추천 생성 실패: {str(e)[:120]}", "topics": []}
+
+
 @router.get("/{election_id}/topic-card")
 async def get_topic_card(
     election_id: UUID,

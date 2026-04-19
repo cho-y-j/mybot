@@ -531,6 +531,10 @@ class ApiClient {
     return this.request<any>(`/analysis/${electionId}/trending-topics`);
   }
 
+  getTopicRecommendations(electionId: string, force: boolean = false) {
+    return this.request<any>(`/analysis/${electionId}/topic-recommendations${force ? '?force=true' : ''}`);
+  }
+
   getSurveyDeepAnalysis(electionId: string, opts?: { force?: boolean; cacheOnly?: boolean }) {
     const params = new URLSearchParams();
     if (opts?.force) params.set('force', 'true');
