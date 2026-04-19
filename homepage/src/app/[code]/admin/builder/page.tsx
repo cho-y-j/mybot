@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { IconifyIcon } from "@/components/ui/iconify-icon";
 
 /* ─── Types ─── */
 interface Block {
@@ -127,32 +128,33 @@ interface SiteSettings {
 }
 
 /* ─── Constants ─── */
+// icon 필드는 Iconify icon name (solar 시리즈) — <IconifyIcon icon={...} /> 로 렌더
 const BLOCK_TYPES: Record<string, { label: string; icon: string; defaultTitle: string }> = {
-  hero: { label: "메인 배너", icon: "🖼", defaultTitle: "" },
-  intro: { label: "후보 소개", icon: "📝", defaultTitle: "후보 소개" },
-  career: { label: "학력/경력", icon: "📋", defaultTitle: "학력·경력" },
-  goals: { label: "핵심 공약", icon: "🎯", defaultTitle: "핵심 공약" },
-  gallery: { label: "활동 사진", icon: "📸", defaultTitle: "활동 사진" },
-  schedule: { label: "선거 일정", icon: "📅", defaultTitle: "선거 일정" },
-  news: { label: "보도자료", icon: "📰", defaultTitle: "보도자료" },
-  videos: { label: "홍보 영상", icon: "🎬", defaultTitle: "홍보 영상" },
-  blog: { label: "블로그", icon: "📓", defaultTitle: "블로그" },
-  donation: { label: "후원 안내", icon: "💝", defaultTitle: "후원 안내" },
-  contacts: { label: "후원/연락", icon: "📞", defaultTitle: "후원·연락처" },
-  links: { label: "관련 링크", icon: "🔗", defaultTitle: "관련 링크" },
+  hero: { label: "메인 배너", icon: "solar:gallery-wide-linear", defaultTitle: "" },
+  intro: { label: "후보 소개", icon: "solar:document-text-linear", defaultTitle: "후보 소개" },
+  career: { label: "학력/경력", icon: "solar:clipboard-list-linear", defaultTitle: "학력·경력" },
+  goals: { label: "핵심 공약", icon: "solar:target-linear", defaultTitle: "핵심 공약" },
+  gallery: { label: "활동 사진", icon: "solar:camera-linear", defaultTitle: "활동 사진" },
+  schedule: { label: "선거 일정", icon: "solar:calendar-linear", defaultTitle: "선거 일정" },
+  news: { label: "보도자료", icon: "solar:book-2-linear", defaultTitle: "보도자료" },
+  videos: { label: "홍보 영상", icon: "solar:videocamera-record-linear", defaultTitle: "홍보 영상" },
+  blog: { label: "블로그", icon: "solar:notebook-linear", defaultTitle: "블로그" },
+  donation: { label: "후원 안내", icon: "solar:hand-heart-linear", defaultTitle: "후원 안내" },
+  contacts: { label: "후원/연락", icon: "solar:phone-linear", defaultTitle: "후원·연락처" },
+  links: { label: "관련 링크", icon: "solar:link-linear", defaultTitle: "관련 링크" },
 };
 
 const BLOCK_TYPE_KEYS = Object.keys(BLOCK_TYPES);
 
 /* ─── Shared editor styles ─── */
 const inputClass =
-  "w-full rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-none transition-colors focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 placeholder:text-zinc-600";
+  "w-full rounded-lg border border-white/10 bg-[var(--card-bg)] px-3 py-2 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 placeholder:text-[var(--muted)]";
 const labelClass =
-  "mb-1 block text-xs font-medium text-zinc-400 uppercase tracking-wider";
+  "mb-1 block text-xs font-medium text-[var(--muted)] uppercase tracking-wider";
 const btnPrimary =
   "rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-all hover:bg-blue-500 active:scale-[0.98] disabled:opacity-50";
 const btnSecondary =
-  "rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-700";
+  "rounded-lg border border-white/10 bg-[var(--card-bg)] px-3 py-2 text-sm text-[var(--foreground)] transition-colors hover:bg-[var(--muted-bg)]";
 
 /* ─── Helper: API fetch with JSON ─── */
 async function apiFetch<T = unknown>(
@@ -488,10 +490,10 @@ export default function BuilderPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-100">
+      <div className="flex min-h-screen items-center justify-center bg-[var(--muted-bg)]">
         <div className="flex flex-col items-center gap-3">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-blue-600" />
-          <p className="text-sm text-gray-500">페이지 빌더 로딩 중...</p>
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-[var(--card-border)] border-t-blue-600" />
+          <p className="text-sm text-[var(--muted)]">페이지 빌더 로딩 중...</p>
         </div>
       </div>
     );
@@ -499,7 +501,7 @@ export default function BuilderPage() {
 
   return (
     <div
-      className="min-h-screen bg-white text-gray-900"
+      className="min-h-screen bg-white text-[var(--foreground)]"
       style={
         {
           "--primary": primaryColor,
@@ -508,11 +510,11 @@ export default function BuilderPage() {
       }
     >
       {/* ── Admin Top Bar ── */}
-      <div className="fixed top-0 left-0 right-0 z-[100] flex h-12 items-center justify-between bg-zinc-900/95 px-4 backdrop-blur-sm border-b border-white/10 shadow-lg">
+      <div className="fixed top-0 left-0 right-0 z-[100] flex h-12 items-center justify-between bg-[var(--background)]/95 px-4 backdrop-blur-sm border-b border-white/10 shadow-lg">
         <div className="flex items-center gap-3">
           <button
             onClick={() => router.push(`/${code}/admin`)}
-            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm text-zinc-400 transition-colors hover:bg-white/10 hover:text-white"
+            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm text-[var(--muted)] transition-colors hover:bg-white/10 hover:text-white"
           >
             <span>&#8592;</span>
             <span>관리자</span>
@@ -529,7 +531,7 @@ export default function BuilderPage() {
             className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm transition-colors ${
               showSiteInfo
                 ? "bg-blue-600 text-white"
-                : "bg-white/10 text-zinc-300 hover:bg-white/20 hover:text-white"
+                : "bg-white/10 text-[var(--foreground)] hover:bg-white/20 hover:text-white"
             }`}
           >
             &#9881; 사이트 정보
@@ -538,7 +540,7 @@ export default function BuilderPage() {
             href={`/${code}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-sm text-zinc-300 transition-colors hover:bg-white/20 hover:text-white"
+            className="flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-sm text-[var(--foreground)] transition-colors hover:bg-white/20 hover:text-white"
           >
             사이트 보기
             <span className="text-xs">&#8599;</span>
@@ -575,10 +577,10 @@ export default function BuilderPage() {
           {blocks.length === 0 && (
             <div className="mx-auto max-w-2xl px-6 py-20 text-center">
               <div className="text-5xl mb-4">&#128230;</div>
-              <p className="text-lg font-semibold text-gray-400">
+              <p className="text-lg font-semibold text-[var(--muted)]">
                 아직 블록이 없습니다
               </p>
-              <p className="mt-2 text-sm text-gray-400">
+              <p className="mt-2 text-sm text-[var(--muted)]">
                 위의 + 버튼을 눌러 섹션을 추가하세요
               </p>
             </div>
@@ -640,16 +642,16 @@ export default function BuilderPage() {
           return (
             <>
               {/* Desktop: fixed right panel */}
-              <div className="hidden lg:block fixed top-12 right-0 w-[420px] h-[calc(100vh-3rem)] bg-zinc-900 border-l border-white/10 shadow-2xl z-40 animate-in overflow-y-auto">
+              <div className="hidden lg:block fixed top-12 right-0 w-[420px] h-[calc(100vh-3rem)] bg-[var(--background)] border-l border-white/10 shadow-2xl z-40 animate-in overflow-y-auto">
                 <div className="p-5">
                   <div className="mb-4 flex items-center justify-between">
                     <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                      <span>{BLOCK_TYPES[editBlock.type]?.icon}</span>
+                      <IconifyIcon icon={BLOCK_TYPES[editBlock.type]?.icon || "solar:widget-linear"} width="18" height="18" />
                       {BLOCK_TYPES[editBlock.type]?.label || editBlock.type} 편집
                     </h3>
                     <button
                       onClick={() => setEditingBlockType(null)}
-                      className="rounded-lg p-1 text-zinc-500 hover:bg-white/10 hover:text-white transition-colors"
+                      className="rounded-lg p-1 text-[var(--muted)] hover:bg-white/10 hover:text-white transition-colors"
                     >
                       <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -697,20 +699,20 @@ export default function BuilderPage() {
                   onClick={() => setEditingBlockType(null)}
                 />
                 {/* Sheet */}
-                <div className="relative bg-zinc-900 rounded-t-2xl border-t border-white/10 shadow-2xl max-h-[70vh] overflow-y-auto animate-in">
+                <div className="relative bg-[var(--background)] rounded-t-2xl border-t border-white/10 shadow-2xl max-h-[70vh] overflow-y-auto animate-in">
                   {/* Handle */}
-                  <div className="sticky top-0 bg-zinc-900 pt-2 pb-1 flex justify-center rounded-t-2xl z-10">
-                    <div className="w-10 h-1 rounded-full bg-zinc-600" />
+                  <div className="sticky top-0 bg-[var(--background)] pt-2 pb-1 flex justify-center rounded-t-2xl z-10">
+                    <div className="w-10 h-1 rounded-full bg-[var(--muted-bg)]" />
                   </div>
                   <div className="px-5 pb-8">
                     <div className="mb-4 flex items-center justify-between">
                       <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                        <span>{BLOCK_TYPES[editBlock.type]?.icon}</span>
+                        <IconifyIcon icon={BLOCK_TYPES[editBlock.type]?.icon || "solar:widget-linear"} width="18" height="18" />
                         {BLOCK_TYPES[editBlock.type]?.label || editBlock.type} 편집
                       </h3>
                       <button
                         onClick={() => setEditingBlockType(null)}
-                        className="rounded-lg p-1 text-zinc-500 hover:bg-white/10 hover:text-white transition-colors"
+                        className="rounded-lg p-1 text-[var(--muted)] hover:bg-white/10 hover:text-white transition-colors"
                       >
                         <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -757,7 +759,7 @@ export default function BuilderPage() {
 
       {/* ── Save toast ── */}
       {(saving || saveMessage) && (
-        <div className="fixed bottom-6 right-6 z-[110] rounded-xl bg-zinc-900 px-5 py-3 text-sm text-white shadow-2xl border border-white/10 flex items-center gap-2">
+        <div className="fixed bottom-6 right-6 z-[110] rounded-xl bg-[var(--background)] px-5 py-3 text-sm text-white shadow-2xl border border-white/10 flex items-center gap-2">
           {saving ? (
             <>
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
@@ -858,21 +860,22 @@ function SectionWrapper({
     >
       {/* Hover toolbar */}
       <div
-        className={`absolute top-2 right-2 z-50 flex items-center gap-1 rounded-lg bg-zinc-900/90 px-2 py-1 shadow-lg backdrop-blur-sm border border-white/10 transition-opacity duration-150 ${
+        className={`absolute top-2 right-2 z-50 flex items-center gap-1 rounded-lg bg-[var(--background)]/90 px-2 py-1 shadow-lg backdrop-blur-sm border border-white/10 transition-opacity duration-150 ${
           isHovered || isEditing ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
       >
         {/* Drag handle */}
         <span
-          className="cursor-grab text-zinc-500 hover:text-white text-sm px-1 active:cursor-grabbing"
+          className="cursor-grab text-[var(--muted)] hover:text-white text-sm px-1 active:cursor-grabbing"
           title="드래그하여 순서 변경"
         >
           &#9776;
         </span>
         <div className="w-px h-4 bg-white/10" />
         {/* Section name */}
-        <span className="text-xs font-medium text-zinc-400 px-1">
-          {info?.icon} {info?.label || block.type}
+        <span className="text-xs font-medium text-[var(--muted)] px-1 flex items-center gap-1">
+          {info?.icon && <IconifyIcon icon={info.icon} width="14" height="14" />}
+          {info?.label || block.type}
         </span>
         <div className="w-px h-4 bg-white/10" />
         {/* Visibility toggle */}
@@ -883,7 +886,7 @@ function SectionWrapper({
           }}
           className={`rounded p-1 text-xs transition-colors ${
             block.visible
-              ? "text-zinc-400 hover:text-white hover:bg-white/10"
+              ? "text-[var(--muted)] hover:text-white hover:bg-white/10"
               : "text-red-400 hover:text-red-300 hover:bg-white/10"
           }`}
           title={block.visible ? "섹션 숨기기" : "섹션 보이기"}
@@ -911,7 +914,7 @@ function SectionWrapper({
             e.stopPropagation();
             onDelete();
           }}
-          className="rounded p-1 text-xs text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+          className="rounded p-1 text-xs text-[var(--muted)] hover:text-red-400 hover:bg-red-500/10 transition-colors"
           title="삭제"
         >
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -999,7 +1002,7 @@ function SectionPreview({
       return <LinksPreview block={block} />;
     default:
       return (
-        <div className="py-12 text-center text-gray-400">
+        <div className="py-12 text-center text-[var(--muted)]">
           알 수 없는 블록: {block.type}
         </div>
       );
@@ -1010,12 +1013,14 @@ function SectionPreview({
 function EmptySection({ label, icon }: { label: string; icon: string }) {
   return (
     <div className="mx-auto max-w-4xl px-6 py-16 text-center">
-      <div className="rounded-2xl border-2 border-dashed border-gray-200 py-12 px-6">
-        <span className="text-3xl">{icon}</span>
-        <p className="mt-3 text-sm font-medium text-gray-400">
+      <div className="rounded-2xl border-2 border-dashed border-[var(--card-border)] py-12 px-6">
+        <div className="flex justify-center text-[var(--muted)]">
+          <IconifyIcon icon={icon} width="36" height="36" />
+        </div>
+        <p className="mt-3 text-sm font-medium text-[var(--muted)]">
           {label} 데이터가 없습니다
         </p>
-        <p className="mt-1 text-xs text-gray-300">
+        <p className="mt-1 text-xs text-[var(--muted)]">
           편집 버튼을 클릭하여 추가하세요
         </p>
       </div>
@@ -1168,18 +1173,18 @@ function IntroPreview({
   candidateName: string;
 }) {
   if (!settings.introText && profiles.length === 0) {
-    return <EmptySection label="소개" icon="📝" />;
+    return <EmptySection label="소개" icon="solar:document-text-linear" />;
   }
 
   return (
     <section className="mx-auto max-w-4xl px-6 py-16 sm:py-20">
       <div className="mb-10 text-center">
-        <h2 className="text-2xl font-bold sm:text-3xl text-gray-900">
+        <h2 className="text-2xl font-bold sm:text-3xl text-[var(--foreground)]">
           {block.title || BLOCK_TYPES.intro.defaultTitle}
         </h2>
       </div>
       {settings.introText && (
-        <div className="mx-auto mb-12 max-w-2xl text-center text-gray-600 leading-relaxed text-base sm:text-lg">
+        <div className="mx-auto mb-12 max-w-2xl text-center text-[var(--muted)] leading-relaxed text-base sm:text-lg">
           {settings.introText.split("\n").map((line, i) => (
             <p key={i} className={i > 0 ? "mt-3" : ""}>
               {line}
@@ -1198,7 +1203,7 @@ function IntroPreview({
             />
           </div>
           <div className="mt-4 text-center">
-            <p className="text-xl font-bold text-gray-900">{candidateName}</p>
+            <p className="text-xl font-bold text-[var(--foreground)]">{candidateName}</p>
             {settings.partyName && (
               <p
                 className="text-sm font-medium"
@@ -1236,20 +1241,20 @@ function CareerPreview({
     .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
 
   if (education.length === 0 && career.length === 0) {
-    return <EmptySection label="이력" icon="📋" />;
+    return <EmptySection label="이력" icon="solar:clipboard-list-linear" />;
   }
 
   return (
     <section className="mx-auto max-w-4xl px-6 py-16 sm:py-20">
       <div className="mb-10 text-center">
-        <h2 className="text-2xl font-bold sm:text-3xl text-gray-900">
+        <h2 className="text-2xl font-bold sm:text-3xl text-[var(--foreground)]">
           {block.title || BLOCK_TYPES.career.defaultTitle}
         </h2>
       </div>
       <div className="grid gap-10 sm:grid-cols-2">
         {education.length > 0 && (
-          <div className="rounded-2xl bg-gray-50 p-6">
-            <h3 className="mb-5 flex items-center gap-2 text-lg font-bold text-gray-900">
+          <div className="rounded-2xl bg-[var(--muted-bg)] p-6">
+            <h3 className="mb-5 flex items-center gap-2 text-lg font-bold text-[var(--foreground)]">
               <svg
                 className="h-5 w-5"
                 style={{ color: "var(--primary)" }}
@@ -1274,8 +1279,8 @@ function CareerPreview({
           </div>
         )}
         {career.length > 0 && (
-          <div className="rounded-2xl bg-gray-50 p-6">
-            <h3 className="mb-5 flex items-center gap-2 text-lg font-bold text-gray-900">
+          <div className="rounded-2xl bg-[var(--muted-bg)] p-6">
+            <h3 className="mb-5 flex items-center gap-2 text-lg font-bold text-[var(--foreground)]">
               <svg
                 className="h-5 w-5"
                 style={{ color: "var(--primary)" }}
@@ -1307,7 +1312,7 @@ function CareerPreview({
 function TimelineItem({ item }: { item: ProfileItem }) {
   return (
     <li className="relative pl-7 pb-5 last:pb-0">
-      <span className="absolute left-[5px] top-0 h-full w-0.5 bg-gray-200" />
+      <span className="absolute left-[5px] top-0 h-full w-0.5 bg-[var(--card-border)]" />
       <span
         className="absolute left-0 top-1 h-3 w-3 rounded-full border-2 z-10"
         style={{
@@ -1316,7 +1321,7 @@ function TimelineItem({ item }: { item: ProfileItem }) {
         }}
       />
       <div className="flex items-center gap-2">
-        <p className="text-sm font-medium text-gray-800 sm:text-base leading-snug">
+        <p className="text-sm font-medium text-[var(--foreground)] sm:text-base leading-snug">
           {item.title}
         </p>
         {item.isCurrent && (
@@ -1337,7 +1342,7 @@ function TimelineItem({ item }: { item: ProfileItem }) {
    ═══════════════════════════════════════════════ */
 function GoalsPreview({ block, pledges }: { block: Block; pledges: PledgeItem[] }) {
   if (pledges.length === 0) {
-    return <EmptySection label="핵심 목표" icon="🎯" />;
+    return <EmptySection label="핵심 목표" icon="solar:target-linear" />;
   }
 
   const sorted = [...pledges].sort(
@@ -1345,14 +1350,14 @@ function GoalsPreview({ block, pledges }: { block: Block; pledges: PledgeItem[] 
   );
 
   return (
-    <section className="bg-gray-50 py-16 sm:py-20">
+    <section className="bg-[var(--muted-bg)] py-16 sm:py-20">
       <div className="mx-auto max-w-4xl px-6">
         <div className="mb-4 text-center">
-          <h2 className="text-2xl font-bold sm:text-3xl text-gray-900">
+          <h2 className="text-2xl font-bold sm:text-3xl text-[var(--foreground)]">
             {block.title || BLOCK_TYPES.goals.defaultTitle}
           </h2>
         </div>
-        <p className="mb-10 text-center text-sm text-gray-500">
+        <p className="mb-10 text-center text-sm text-[var(--muted)]">
           지역 발전과 주민 행복을 위한 핵심 공약입니다
         </p>
         <div className="space-y-4">
@@ -1381,11 +1386,11 @@ function GoalsPreview({ block, pledges }: { block: Block; pledges: PledgeItem[] 
                     {number}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <h3 className="text-lg font-bold text-gray-900 leading-snug">
+                    <h3 className="text-lg font-bold text-[var(--foreground)] leading-snug">
                       {pledge.title}
                     </h3>
                     {pledge.description && (
-                      <p className="mt-2 text-sm leading-relaxed text-gray-600">
+                      <p className="mt-2 text-sm leading-relaxed text-[var(--muted)]">
                         {pledge.description}
                       </p>
                     )}
@@ -1398,7 +1403,7 @@ function GoalsPreview({ block, pledges }: { block: Block; pledges: PledgeItem[] 
                     {parsed.items.length > 0 && (
                       <ul className="mt-3 space-y-1 border-t border-gray-100 pt-3">
                         {parsed.items.map((detail, i) => (
-                          <li key={i} className="flex items-start gap-2 text-sm text-gray-600">
+                          <li key={i} className="flex items-start gap-2 text-sm text-[var(--muted)]">
                             <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ backgroundColor: "var(--primary)" }} />
                             {detail}
                           </li>
@@ -1421,7 +1426,7 @@ function GoalsPreview({ block, pledges }: { block: Block; pledges: PledgeItem[] 
    ═══════════════════════════════════════════════ */
 function GalleryPreview({ block, gallery }: { block: Block; gallery: GalleryItem[] }) {
   if (gallery.length === 0) {
-    return <EmptySection label="사진첩" icon="📸" />;
+    return <EmptySection label="사진첩" icon="solar:camera-linear" />;
   }
 
   const sorted = [...gallery].sort(
@@ -1431,7 +1436,7 @@ function GalleryPreview({ block, gallery }: { block: Block; gallery: GalleryItem
   return (
     <section className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
       <div className="mb-10 text-center">
-        <h2 className="text-2xl font-bold sm:text-3xl text-gray-900">
+        <h2 className="text-2xl font-bold sm:text-3xl text-[var(--foreground)]">
           {block.title || BLOCK_TYPES.gallery.defaultTitle}
         </h2>
       </div>
@@ -1439,7 +1444,7 @@ function GalleryPreview({ block, gallery }: { block: Block; gallery: GalleryItem
         {sorted.map((img) => (
           <div
             key={img.id}
-            className="relative aspect-square overflow-hidden rounded-xl bg-gray-100"
+            className="relative aspect-square overflow-hidden rounded-xl bg-[var(--muted-bg)]"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -1464,7 +1469,7 @@ function SchedulePreview({ block, schedules }: { block: Block; schedules: Schedu
   const [calMonth, setCalMonth] = useState(new Date().getMonth());
 
   if (schedules.length === 0) {
-    return <EmptySection label="일정" icon="📅" />;
+    return <EmptySection label="일정" icon="solar:calendar-linear" />;
   }
 
   const colors = (block.content as { colors?: Record<string, string> } | null)?.colors || {};
@@ -1503,23 +1508,23 @@ function SchedulePreview({ block, schedules }: { block: Block; schedules: Schedu
   return (
     <section className="mx-auto max-w-3xl px-6 py-16 sm:py-20">
       <div className="mb-6 text-center">
-        <h2 className="text-2xl font-bold sm:text-3xl text-gray-900">{block.title || BLOCK_TYPES.schedule.defaultTitle}</h2>
+        <h2 className="text-2xl font-bold sm:text-3xl text-[var(--foreground)]">{block.title || BLOCK_TYPES.schedule.defaultTitle}</h2>
       </div>
 
       {/* View toggle */}
       <div className="mb-6 flex justify-center gap-2">
-        <button onClick={() => setSchedView("calendar")} className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${schedView === "calendar" ? "text-white" : "bg-gray-100 text-gray-600"}`} style={schedView === "calendar" ? { backgroundColor: "var(--primary)" } : undefined}>달력</button>
-        <button onClick={() => setSchedView("list")} className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${schedView === "list" ? "text-white" : "bg-gray-100 text-gray-600"}`} style={schedView === "list" ? { backgroundColor: "var(--primary)" } : undefined}>목록</button>
+        <button onClick={() => setSchedView("calendar")} className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${schedView === "calendar" ? "text-white" : "bg-[var(--muted-bg)] text-[var(--muted)]"}`} style={schedView === "calendar" ? { backgroundColor: "var(--primary)" } : undefined}>달력</button>
+        <button onClick={() => setSchedView("list")} className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${schedView === "list" ? "text-white" : "bg-[var(--muted-bg)] text-[var(--muted)]"}`} style={schedView === "list" ? { backgroundColor: "var(--primary)" } : undefined}>목록</button>
       </div>
 
       {schedView === "calendar" ? (
-        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="rounded-2xl border border-[var(--card-border)] bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between mb-4">
-            <button onClick={prevMonth} className="rounded-lg p-1 hover:bg-gray-100"><svg className="h-5 w-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg></button>
-            <span className="text-lg font-bold text-gray-900">{calYear}년 {calMonth + 1}월</span>
-            <button onClick={nextMonth} className="rounded-lg p-1 hover:bg-gray-100"><svg className="h-5 w-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg></button>
+            <button onClick={prevMonth} className="rounded-lg p-1 hover:bg-[var(--muted-bg)]"><svg className="h-5 w-5 text-[var(--muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg></button>
+            <span className="text-lg font-bold text-[var(--foreground)]">{calYear}년 {calMonth + 1}월</span>
+            <button onClick={nextMonth} className="rounded-lg p-1 hover:bg-[var(--muted-bg)]"><svg className="h-5 w-5 text-[var(--muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg></button>
           </div>
-          <div className="grid grid-cols-7 text-center text-xs font-medium text-gray-400 mb-1">
+          <div className="grid grid-cols-7 text-center text-xs font-medium text-[var(--muted)] mb-1">
             {["일","월","화","수","목","금","토"].map(d => <div key={d} className="py-1">{d}</div>)}
           </div>
           <div className="grid grid-cols-7 gap-px">
@@ -1528,12 +1533,12 @@ function SchedulePreview({ block, schedules }: { block: Block; schedules: Schedu
               const day = i + 1;
               const items = dayMap[day] || [];
               return (
-                <div key={day} className={`min-h-[48px] rounded-lg p-1 text-xs ${isToday(day) ? "bg-blue-50 ring-1 ring-blue-300" : "hover:bg-gray-50"}`}>
-                  <div className={`font-medium ${isToday(day) ? "text-blue-600" : "text-gray-700"}`}>{day}</div>
+                <div key={day} className={`min-h-[48px] rounded-lg p-1 text-xs ${isToday(day) ? "bg-blue-50 ring-1 ring-blue-300" : "hover:bg-[var(--muted-bg)]"}`}>
+                  <div className={`font-medium ${isToday(day) ? "text-blue-600" : "text-[var(--foreground)]"}`}>{day}</div>
                   {items.slice(0, 2).map((it) => (
                     <div key={it.id} className="mt-0.5 truncate rounded px-1 py-0.5 text-[9px] font-medium text-white" style={{ backgroundColor: colors[String(it.id)] || "var(--primary)" }}>{it.title}</div>
                   ))}
-                  {items.length > 2 && <div className="text-[9px] text-gray-400 mt-0.5">+{items.length - 2}</div>}
+                  {items.length > 2 && <div className="text-[9px] text-[var(--muted)] mt-0.5">+{items.length - 2}</div>}
                 </div>
               );
             })}
@@ -1552,14 +1557,14 @@ function SchedulePreview({ block, schedules }: { block: Block; schedules: Schedu
                   <span className="text-[10px] font-medium uppercase tracking-wider">{d.getMonth() + 1}월</span>
                 </div>
                 <div className="min-w-0 flex-1">
-                  <h3 className="font-bold text-gray-900">{item.title}</h3>
-                  <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-500">
+                  <h3 className="font-bold text-[var(--foreground)]">{item.title}</h3>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-[var(--muted)]">
                     <span>{formatDate(item.date)}</span>
                     {item.time && <span>{item.time}</span>}
                     {item.location && <span>{item.location}</span>}
                   </div>
                 </div>
-                {past && <span className="flex-shrink-0 rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-500">종료</span>}
+                {past && <span className="flex-shrink-0 rounded-full bg-[var(--muted-bg)] px-2.5 py-0.5 text-xs font-medium text-[var(--muted)]">종료</span>}
               </div>
             );
           })}
@@ -1574,13 +1579,13 @@ function SchedulePreview({ block, schedules }: { block: Block; schedules: Schedu
    ═══════════════════════════════════════════════ */
 function NewsPreview({ block, news }: { block: Block; news: NewsItem[] }) {
   if (news.length === 0) {
-    return <EmptySection label="관련기사" icon="📰" />;
+    return <EmptySection label="관련기사" icon="solar:book-2-linear" />;
   }
 
   return (
     <section className="mx-auto max-w-4xl px-6 py-16 sm:py-20">
       <div className="mb-10 text-center">
-        <h2 className="text-2xl font-bold sm:text-3xl text-gray-900">
+        <h2 className="text-2xl font-bold sm:text-3xl text-[var(--foreground)]">
           {block.title || BLOCK_TYPES.news.defaultTitle}
         </h2>
       </div>
@@ -1591,12 +1596,12 @@ function NewsPreview({ block, news }: { block: Block; news: NewsItem[] }) {
             className="flex items-center gap-4 rounded-xl border border-gray-100 bg-white p-5"
           >
             <div className="min-w-0 flex-1">
-              <h3 className="line-clamp-2 font-bold text-gray-900">
+              <h3 className="line-clamp-2 font-bold text-[var(--foreground)]">
                 {item.title}
               </h3>
-              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-400">
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--muted)]">
                 {item.source && (
-                  <span className="font-medium text-gray-500">
+                  <span className="font-medium text-[var(--muted)]">
                     {item.source}
                   </span>
                 )}
@@ -1607,7 +1612,7 @@ function NewsPreview({ block, news }: { block: Block; news: NewsItem[] }) {
             </div>
             {item.url && (
               <svg
-                className="h-5 w-5 flex-shrink-0 text-gray-300"
+                className="h-5 w-5 flex-shrink-0 text-[var(--muted)]"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -1632,7 +1637,7 @@ function NewsPreview({ block, news }: { block: Block; news: NewsItem[] }) {
    ═══════════════════════════════════════════════ */
 function VideosPreview({ block, videos }: { block: Block; videos: VideoItem[] }) {
   if (videos.length === 0) {
-    return <EmptySection label="영상" icon="🎬" />;
+    return <EmptySection label="영상" icon="solar:videocamera-record-linear" />;
   }
 
   const sorted = [...videos].sort(
@@ -1640,10 +1645,10 @@ function VideosPreview({ block, videos }: { block: Block; videos: VideoItem[] })
   );
 
   return (
-    <section className="bg-gray-50 py-16 sm:py-20">
+    <section className="bg-[var(--muted-bg)] py-16 sm:py-20">
       <div className="mx-auto max-w-4xl px-6">
         <div className="mb-10 text-center">
-          <h2 className="text-2xl font-bold sm:text-3xl text-gray-900">
+          <h2 className="text-2xl font-bold sm:text-3xl text-[var(--foreground)]">
             {block.title || BLOCK_TYPES.videos.defaultTitle}
           </h2>
         </div>
@@ -1653,7 +1658,7 @@ function VideosPreview({ block, videos }: { block: Block; videos: VideoItem[] })
               key={video.id}
               className="overflow-hidden rounded-2xl bg-white shadow-sm"
             >
-              <div className="relative aspect-video overflow-hidden bg-gray-200">
+              <div className="relative aspect-video overflow-hidden bg-[var(--card-border)]">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={`https://img.youtube.com/vi/${video.videoId}/hqdefault.jpg`}
@@ -1678,7 +1683,7 @@ function VideosPreview({ block, videos }: { block: Block; videos: VideoItem[] })
               </div>
               {video.title && (
                 <div className="p-4">
-                  <p className="font-semibold text-gray-900 line-clamp-2">
+                  <p className="font-semibold text-[var(--foreground)] line-clamp-2">
                     {video.title}
                   </p>
                 </div>
@@ -1709,15 +1714,15 @@ function BlogPreview({ block }: { block: Block }) {
   }, [code]);
 
   return (
-    <section className="py-16 px-6 bg-gray-50 dark:bg-gray-900">
+    <section className="py-16 px-6 bg-[var(--muted-bg)] dark:bg-gray-900">
       <div className="max-w-5xl mx-auto">
-        <h2 className="text-3xl font-bold text-center mb-10 text-gray-900 dark:text-white">
+        <h2 className="text-3xl font-bold text-center mb-10 text-[var(--foreground)] dark:text-white">
           {block.title || "블로그"}
         </h2>
         {loading ? (
-          <p className="text-center text-gray-500">불러오는 중...</p>
+          <p className="text-center text-[var(--muted)]">불러오는 중...</p>
         ) : items.length === 0 ? (
-          <div className="text-center py-12 text-gray-500">
+          <div className="text-center py-12 text-[var(--muted)]">
             <p>등록된 블로그가 없거나 최신 글을 가져올 수 없습니다.</p>
             <p className="text-sm mt-2">빌더에서 네이버 블로그/티스토리/브런치 URL을 등록하세요.</p>
           </div>
@@ -1729,16 +1734,16 @@ function BlogPreview({ block }: { block: Block }) {
                 href={p.url}
                 target="_blank"
                 rel="noreferrer"
-                className="block rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 hover:shadow-lg transition-shadow"
+                className="block rounded-xl border border-[var(--card-border)] dark:border-gray-700 bg-white dark:bg-gray-800 p-4 hover:shadow-lg transition-shadow"
               >
                 {p.platform && (
                   <span className="inline-block text-[10px] font-bold px-2 py-0.5 rounded bg-green-500/10 text-green-600 mb-2">
                     {p.platform === "naver_blog" ? "네이버 블로그" : p.platform === "tistory" ? "티스토리" : p.platform === "brunch" ? "브런치" : p.platform}
                   </span>
                 )}
-                <h3 className="font-semibold text-sm line-clamp-3 text-gray-900 dark:text-white">{p.title}</h3>
+                <h3 className="font-semibold text-sm line-clamp-3 text-[var(--foreground)] dark:text-white">{p.title}</h3>
                 {p.published_at && (
-                  <div className="text-xs text-gray-500 mt-2">
+                  <div className="text-xs text-[var(--muted)] mt-2">
                     {new Date(p.published_at).toLocaleDateString("ko")}
                   </div>
                 )}
@@ -1757,17 +1762,17 @@ function BlogPreview({ block }: { block: Block }) {
 function DonationPreview({ block }: { block: Block }) {
   const content = block.content as { imageUrl?: string; description?: string } | null;
   if (!content?.imageUrl) {
-    return <EmptySection label="후원 안내" icon="💝" />;
+    return <EmptySection label="후원 안내" icon="solar:hand-heart-linear" />;
   }
   return (
-    <section id="donation" className="bg-gray-50 py-16 sm:py-20">
+    <section id="donation" className="bg-[var(--muted-bg)] py-16 sm:py-20">
       <div className="mx-auto max-w-3xl px-6">
         <div className="mb-10 text-center">
-          <h2 className="text-2xl font-bold sm:text-3xl text-gray-900">
+          <h2 className="text-2xl font-bold sm:text-3xl text-[var(--foreground)]">
             {block.title || BLOCK_TYPES.donation.defaultTitle}
           </h2>
           {content.description && (
-            <p className="mt-3 text-sm text-gray-600 whitespace-pre-line">{content.description}</p>
+            <p className="mt-3 text-sm text-[var(--muted)] whitespace-pre-line">{content.description}</p>
           )}
         </div>
         <div className="rounded-2xl bg-white p-4 shadow-sm border border-gray-100">
@@ -1784,7 +1789,7 @@ function DonationPreview({ block }: { block: Block }) {
    ═══════════════════════════════════════════════ */
 function ContactsPreview({ block, contacts }: { block: Block; contacts: ContactItem[] }) {
   if (contacts.length === 0) {
-    return <EmptySection label="연락처" icon="📞" />;
+    return <EmptySection label="연락처" icon="solar:phone-linear" />;
   }
 
   const sorted = [...contacts].sort(
@@ -1804,7 +1809,7 @@ function ContactsPreview({ block, contacts }: { block: Block; contacts: ContactI
   return (
     <section className="mx-auto max-w-3xl px-6 py-16 sm:py-20">
       <div className="mb-10 text-center">
-        <h2 className="text-2xl font-bold sm:text-3xl text-gray-900">
+        <h2 className="text-2xl font-bold sm:text-3xl text-[var(--foreground)]">
           {block.title || BLOCK_TYPES.contacts.defaultTitle}
         </h2>
       </div>
@@ -1815,22 +1820,22 @@ function ContactsPreview({ block, contacts }: { block: Block; contacts: ContactI
             className="flex items-center gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm"
           >
             <div
-              className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl text-white text-lg"
+              className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl text-white"
               style={{ backgroundColor: "var(--primary)" }}
             >
-              {contact.type === "phone"
-                ? "📞"
-                : contact.type === "email"
-                  ? "✉️"
-                  : "🔗"}
+              <IconifyIcon
+                icon={contact.type === "phone" ? "solar:phone-linear" : contact.type === "email" ? "solar:letter-linear" : "solar:link-linear"}
+                width="22"
+                height="22"
+              />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">
+              <p className="text-xs font-medium text-[var(--muted)] uppercase tracking-wider">
                 {contact.label ??
                   typeLabels[contact.type] ??
                   contact.type}
               </p>
-              <p className="truncate font-bold text-gray-900 mt-0.5">
+              <p className="truncate font-bold text-[var(--foreground)] mt-0.5">
                 {contact.value}
               </p>
             </div>
@@ -1849,13 +1854,13 @@ function LinksPreview({ block }: { block: Block }) {
   const links = content?.links || [];
 
   if (links.length === 0) {
-    return <EmptySection label="링크" icon="🔗" />;
+    return <EmptySection label="링크" icon="solar:link-linear" />;
   }
 
   return (
     <section className="mx-auto max-w-3xl px-6 py-16 sm:py-20">
       <div className="mb-10 text-center">
-        <h2 className="text-2xl font-bold sm:text-3xl text-gray-900">{block.title || BLOCK_TYPES.links.defaultTitle}</h2>
+        <h2 className="text-2xl font-bold sm:text-3xl text-[var(--foreground)]">{block.title || BLOCK_TYPES.links.defaultTitle}</h2>
       </div>
       <div className="space-y-3">
         {links.map((link, i) => (
@@ -1864,9 +1869,9 @@ function LinksPreview({ block }: { block: Block }) {
             className="flex items-center gap-4 rounded-xl border border-gray-100 bg-white p-5 shadow-sm"
           >
             <div className="min-w-0 flex-1">
-              <h3 className="font-bold text-gray-900">{link.title}</h3>
+              <h3 className="font-bold text-[var(--foreground)]">{link.title}</h3>
               {link.description && (
-                <p className="mt-1 text-sm text-gray-500">{link.description}</p>
+                <p className="mt-1 text-sm text-[var(--muted)]">{link.description}</p>
               )}
               {link.url && (
                 <p className="mt-1 text-xs text-blue-500 truncate">
@@ -1875,7 +1880,7 @@ function LinksPreview({ block }: { block: Block }) {
               )}
             </div>
             <svg
-              className="h-5 w-5 flex-shrink-0 text-gray-300"
+              className="h-5 w-5 flex-shrink-0 text-[var(--muted)]"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -1926,13 +1931,13 @@ function AddBlockButton({
 
   return (
     <div className="relative flex items-center justify-center py-1" ref={menuRef}>
-      <div className="absolute inset-x-0 top-1/2 h-px bg-gray-100" />
+      <div className="absolute inset-x-0 top-1/2 h-px bg-[var(--muted-bg)]" />
       <button
         onClick={() => setShowAddMenu(isOpen ? null : index)}
         className={`relative z-10 flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-all ${
           isOpen
             ? "bg-blue-600 text-white shadow-lg"
-            : "bg-white text-gray-400 hover:text-gray-600 border border-gray-200 shadow-sm hover:shadow"
+            : "bg-white text-[var(--muted)] hover:text-[var(--muted)] border border-[var(--card-border)] shadow-sm hover:shadow"
         }`}
       >
         <span className="text-sm leading-none">{isOpen ? "×" : "+"}</span>
@@ -1940,8 +1945,8 @@ function AddBlockButton({
       </button>
 
       {isOpen && (
-        <div className="absolute top-full z-[60] mt-2 w-64 rounded-xl border border-gray-200 bg-white p-2 shadow-xl">
-          <p className="mb-2 px-2 text-xs font-medium text-gray-400">
+        <div className="absolute top-full z-[60] mt-2 w-64 rounded-xl border border-[var(--card-border)] bg-white p-2 shadow-xl">
+          <p className="mb-2 px-2 text-xs font-medium text-[var(--muted)]">
             블록 유형 선택
           </p>
           <div className="grid grid-cols-2 gap-1">
@@ -1957,8 +1962,8 @@ function AddBlockButton({
                   disabled={alreadyExists}
                   className={`flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
                     alreadyExists
-                      ? "cursor-not-allowed text-gray-300"
-                      : "text-gray-700 hover:bg-gray-100"
+                      ? "cursor-not-allowed text-[var(--muted)]"
+                      : "text-[var(--foreground)] hover:bg-[var(--muted-bg)]"
                   }`}
                   title={
                     alreadyExists
@@ -1966,7 +1971,7 @@ function AddBlockButton({
                       : `${info.label} 블록 추가`
                   }
                 >
-                  <span className="text-base">{info.icon}</span>
+                  <IconifyIcon icon={info.icon} width="18" height="18" />
                   <span>{info.label}</span>
                 </button>
               );
@@ -2020,7 +2025,7 @@ function BlockTitleEditor({
           {saved ? "저장됨" : "적용"}
         </button>
       </div>
-      <p className="mt-1 text-xs text-zinc-600">
+      <p className="mt-1 text-xs text-[var(--muted)]">
         비워두면 기본값 &ldquo;{defaultTitle}&rdquo;이 사용됩니다
       </p>
     </div>
@@ -2074,8 +2079,8 @@ function SectionEditor({
   }
 
   const visibilityToggle = (
-    <div className="mb-3 flex items-center justify-between rounded-lg border border-white/10 bg-zinc-800/50 px-3 py-2.5">
-      <span className="text-xs text-zinc-400">공개 사이트에 표시</span>
+    <div className="mb-3 flex items-center justify-between rounded-lg border border-white/10 bg-[var(--card-bg)]/50 px-3 py-2.5">
+      <span className="text-xs text-[var(--muted)]">공개 사이트에 표시</span>
       <button
         onClick={handleToggleVisibility}
         className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
@@ -2226,7 +2231,7 @@ function SectionEditor({
       break;
     default:
       editor = (
-        <p className="text-sm text-zinc-500">알 수 없는 블록 유형입니다.</p>
+        <p className="text-sm text-[var(--muted)]">알 수 없는 블록 유형입니다.</p>
       );
   }
 
@@ -2277,7 +2282,7 @@ function SiteInfoPanel({
   }
 
   return (
-    <div className="fixed top-12 left-0 right-0 z-[90] bg-zinc-900 border-b border-white/10 shadow-2xl animate-in">
+    <div className="fixed top-12 left-0 right-0 z-[90] bg-[var(--background)] border-b border-white/10 shadow-2xl animate-in">
       <div className="mx-auto max-w-5xl px-4 py-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-bold text-white flex items-center gap-2">
@@ -2287,7 +2292,7 @@ function SiteInfoPanel({
             <button onClick={save} className={btnPrimary}>
               {saved ? "저장됨 ✓" : "저장"}
             </button>
-            <button onClick={onClose} className="rounded-lg p-1 text-zinc-500 hover:bg-white/10 hover:text-white transition-colors">
+            <button onClick={onClose} className="rounded-lg p-1 text-[var(--muted)] hover:bg-white/10 hover:text-white transition-colors">
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
@@ -2296,8 +2301,8 @@ function SiteInfoPanel({
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* 공유 썸네일 */}
-          <div className="rounded-lg border border-white/10 bg-zinc-800/50 p-3 space-y-2">
-            <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">공유 썸네일 (SNS 미리보기)</p>
+          <div className="rounded-lg border border-white/10 bg-[var(--card-bg)]/50 p-3 space-y-2">
+            <p className="text-xs font-bold text-[var(--muted)] uppercase tracking-wider">공유 썸네일 (SNS 미리보기)</p>
             <input
               ref={ogFileRef}
               type="file"
@@ -2348,14 +2353,14 @@ function SiteInfoPanel({
                   setShowOgLibrary(!showOgLibrary);
                 }}
               >
-                {showOgLibrary ? "닫기" : "📁 라이브러리"}
+                {showOgLibrary ? "닫기" : "라이브러리"}
               </button>
             </div>
             {showOgLibrary && (
-              <div className="rounded-lg border border-white/10 bg-zinc-800/50 p-2 max-h-48 overflow-y-auto">
-                <p className="text-[10px] text-zinc-500 mb-1.5">이전에 업로드한 이미지를 선택하세요</p>
+              <div className="rounded-lg border border-white/10 bg-[var(--card-bg)]/50 p-2 max-h-48 overflow-y-auto">
+                <p className="text-[10px] text-[var(--muted)] mb-1.5">이전에 업로드한 이미지를 선택하세요</p>
                 {ogLibraryFiles.length === 0 && (
-                  <p className="text-xs text-zinc-600 text-center py-4">업로드한 이미지가 없습니다</p>
+                  <p className="text-xs text-[var(--muted)] text-center py-4">업로드한 이미지가 없습니다</p>
                 )}
                 <div className="grid grid-cols-4 gap-1.5">
                   {ogLibraryFiles.map((f) => (
@@ -2406,12 +2411,12 @@ function SiteInfoPanel({
                 </button>
               </div>
             )}
-            <p className="text-[10px] text-zinc-600">카카오톡, 페이스북 등에 공유 시 표시되는 이미지</p>
+            <p className="text-[10px] text-[var(--muted)]">카카오톡, 페이스북 등에 공유 시 표시되는 이미지</p>
           </div>
 
           {/* OG 제목/설명 */}
-          <div className="rounded-lg border border-white/10 bg-zinc-800/50 p-3 space-y-2">
-            <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">공유 제목 / 설명</p>
+          <div className="rounded-lg border border-white/10 bg-[var(--card-bg)]/50 p-3 space-y-2">
+            <p className="text-xs font-bold text-[var(--muted)] uppercase tracking-wider">공유 제목 / 설명</p>
             <div>
               <label className={labelClass}>제목</label>
               <input
@@ -2433,8 +2438,8 @@ function SiteInfoPanel({
           </div>
 
           {/* 선거 정보 */}
-          <div className="rounded-lg border border-white/10 bg-zinc-800/50 p-3 space-y-2">
-            <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">선거 정보</p>
+          <div className="rounded-lg border border-white/10 bg-[var(--card-bg)]/50 p-3 space-y-2">
+            <p className="text-xs font-bold text-[var(--muted)] uppercase tracking-wider">선거 정보</p>
             <div>
               <label className={labelClass}>선거명</label>
               <input
@@ -2454,7 +2459,7 @@ function SiteInfoPanel({
               />
             </div>
             {form.electionDate && (
-              <p className="text-xs text-zinc-400">
+              <p className="text-xs text-[var(--muted)]">
                 {(() => {
                   const d = calcDDay(form.electionDate);
                   return d !== null ? `선거까지 ${formatDDay(d)}` : "";
@@ -2608,8 +2613,8 @@ function HeroEditor({
   return (
     <div className="space-y-3">
       {/* Color customization */}
-      <div className="rounded-lg border border-white/10 bg-zinc-800/30 p-3 space-y-3">
-        <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">색상 설정</p>
+      <div className="rounded-lg border border-white/10 bg-[var(--card-bg)]/30 p-3 space-y-3">
+        <p className="text-xs font-bold text-[var(--muted)] uppercase tracking-wider">색상 설정</p>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className={labelClass}>메인 색상</label>
@@ -2650,7 +2655,7 @@ function HeroEditor({
 
       <div>
         <label className={labelClass}>히어로 이미지</label>
-        <p className="text-[10px] text-zinc-600 mb-1.5">권장: 1600 x 900px (16:9)</p>
+        <p className="text-[10px] text-[var(--muted)] mb-1.5">권장: 1600 x 900px (16:9)</p>
         <div className="flex gap-2 items-center flex-wrap">
           <input
             ref={heroFileRef}
@@ -2694,7 +2699,7 @@ function HeroEditor({
               setShowLibrary(!showLibrary);
             }}
           >
-            {showLibrary ? "닫기" : "📁 라이브러리"}
+            {showLibrary ? "닫기" : "라이브러리"}
           </button>
           {form.heroImageUrl && (
             <button
@@ -2712,10 +2717,10 @@ function HeroEditor({
           </div>
         )}
         {showLibrary && (
-          <div className="mt-2 rounded-lg border border-white/10 bg-zinc-800/50 p-2 max-h-48 overflow-y-auto">
-            <p className="text-[10px] text-zinc-500 mb-1.5">이전에 업로드한 이미지를 선택하세요</p>
+          <div className="mt-2 rounded-lg border border-white/10 bg-[var(--card-bg)]/50 p-2 max-h-48 overflow-y-auto">
+            <p className="text-[10px] text-[var(--muted)] mb-1.5">이전에 업로드한 이미지를 선택하세요</p>
             {libraryFiles.length === 0 && (
-              <p className="text-xs text-zinc-600 text-center py-4">업로드한 이미지가 없습니다</p>
+              <p className="text-xs text-[var(--muted)] text-center py-4">업로드한 이미지가 없습니다</p>
             )}
             <div className="grid grid-cols-4 gap-1.5">
               {libraryFiles.map((f) => (
@@ -2777,8 +2782,8 @@ function HeroEditor({
       </div>
 
       {/* Font size controls */}
-      <div className="rounded-lg border border-white/10 bg-zinc-800/30 p-3 space-y-3">
-        <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">글씨 크기 (px)</p>
+      <div className="rounded-lg border border-white/10 bg-[var(--card-bg)]/30 p-3 space-y-3">
+        <p className="text-xs font-bold text-[var(--muted)] uppercase tracking-wider">글씨 크기 (px)</p>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className={labelClass}>당명</label>
@@ -2806,8 +2811,8 @@ function HeroEditor({
       </div>
 
       {/* Button customization */}
-      <div className="rounded-lg border border-white/10 bg-zinc-800/30 p-3 space-y-3">
-        <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">버튼 설정</p>
+      <div className="rounded-lg border border-white/10 bg-[var(--card-bg)]/30 p-3 space-y-3">
+        <p className="text-xs font-bold text-[var(--muted)] uppercase tracking-wider">버튼 설정</p>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className={labelClass}>버튼1 텍스트</label>
@@ -2946,7 +2951,7 @@ function IntroEditor({
               setShowProfileLibrary(!showProfileLibrary);
             }}
           >
-            {showProfileLibrary ? "닫기" : "📁 라이브러리"}
+            {showProfileLibrary ? "닫기" : "라이브러리"}
           </button>
           {form.profileImageUrl && (
             <button className="text-xs text-red-400 hover:text-red-300" onClick={() => { updateField("profileImageUrl", ""); setProfilePreviewUrl(null); }}>삭제</button>
@@ -2959,10 +2964,10 @@ function IntroEditor({
           </div>
         )}
         {showProfileLibrary && (
-          <div className="mt-2 rounded-lg border border-white/10 bg-zinc-800/50 p-2 max-h-48 overflow-y-auto">
-            <p className="text-[10px] text-zinc-500 mb-1.5">이전에 업로드한 이미지를 선택하세요</p>
+          <div className="mt-2 rounded-lg border border-white/10 bg-[var(--card-bg)]/50 p-2 max-h-48 overflow-y-auto">
+            <p className="text-[10px] text-[var(--muted)] mb-1.5">이전에 업로드한 이미지를 선택하세요</p>
             {profileLibraryFiles.length === 0 && (
-              <p className="text-xs text-zinc-600 text-center py-4">업로드한 이미지가 없습니다</p>
+              <p className="text-xs text-[var(--muted)] text-center py-4">업로드한 이미지가 없습니다</p>
             )}
             <div className="grid grid-cols-4 gap-1.5">
               {profileLibraryFiles.map((f) => (
@@ -3101,7 +3106,7 @@ function CareerEditor({
               return (
                 <div
                   key={item.id}
-                  className="rounded-lg border border-blue-500/30 bg-zinc-800/80 p-3 space-y-2"
+                  className="rounded-lg border border-blue-500/30 bg-[var(--card-bg)]/80 p-3 space-y-2"
                 >
                   <p className="text-xs font-medium text-blue-400">항목 수정</p>
                   <div className="flex gap-2">
@@ -3120,7 +3125,7 @@ function CareerEditor({
                       placeholder="내용 입력"
                     />
                   </div>
-                  <label className="flex items-center gap-2 text-sm text-zinc-400 cursor-pointer">
+                  <label className="flex items-center gap-2 text-sm text-[var(--muted)] cursor-pointer">
                     <input
                       type="checkbox"
                       checked={editForm.isCurrent}
@@ -3162,9 +3167,9 @@ function CareerEditor({
                 }}
                 onDragEnd={() => { setDragIdx(null); setDragOverIdx(null); }}
                 className={`flex items-center gap-2 rounded-lg border px-3 py-2 cursor-grab transition-all ${
-                  dragIdx === idx ? "opacity-40 border-blue-500/30 bg-zinc-800/30" :
+                  dragIdx === idx ? "opacity-40 border-blue-500/30 bg-[var(--card-bg)]/30" :
                   dragOverIdx === idx ? "border-blue-400/50 bg-blue-900/20" :
-                  "border-white/5 bg-zinc-800/50"
+                  "border-white/5 bg-[var(--card-bg)]/50"
                 }`}
               >
                 {/* Reorder buttons */}
@@ -3172,7 +3177,7 @@ function CareerEditor({
                   <button
                     onClick={() => swapOrder(idx, "up")}
                     disabled={idx === 0}
-                    className="text-zinc-600 hover:text-zinc-300 disabled:opacity-20 transition-colors"
+                    className="text-[var(--muted)] hover:text-[var(--foreground)] disabled:opacity-20 transition-colors"
                     title="위로"
                   >
                     <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -3182,7 +3187,7 @@ function CareerEditor({
                   <button
                     onClick={() => swapOrder(idx, "down")}
                     disabled={idx === items.length - 1}
-                    className="text-zinc-600 hover:text-zinc-300 disabled:opacity-20 transition-colors"
+                    className="text-[var(--muted)] hover:text-[var(--foreground)] disabled:opacity-20 transition-colors"
                     title="아래로"
                   >
                     <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -3200,7 +3205,7 @@ function CareerEditor({
                 >
                   {item.type === "education" ? "학력" : "경력"}
                 </span>
-                <span className="flex-1 text-sm text-zinc-200 truncate">
+                <span className="flex-1 text-sm text-[var(--foreground)] truncate">
                   {item.title}
                 </span>
                 {item.isCurrent && (
@@ -3211,7 +3216,7 @@ function CareerEditor({
                 {/* Edit button */}
                 <button
                   onClick={() => startEdit(item)}
-                  className="text-zinc-600 hover:text-blue-400 transition-colors"
+                  className="text-[var(--muted)] hover:text-blue-400 transition-colors"
                   title="수정"
                 >
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -3221,7 +3226,7 @@ function CareerEditor({
                 {/* Delete button */}
                 <button
                   onClick={() => item.id && removeItem(item.id)}
-                  className="text-zinc-600 hover:text-red-400 transition-colors"
+                  className="text-[var(--muted)] hover:text-red-400 transition-colors"
                 >
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -3233,8 +3238,8 @@ function CareerEditor({
         </div>
       )}
 
-      <div className="rounded-lg border border-white/10 bg-zinc-800/30 p-3 space-y-2">
-        <p className="text-xs font-medium text-zinc-500">새 항목 추가</p>
+      <div className="rounded-lg border border-white/10 bg-[var(--card-bg)]/30 p-3 space-y-2">
+        <p className="text-xs font-medium text-[var(--muted)]">새 항목 추가</p>
         <div className="flex gap-2">
           <select
             className={`${inputClass} w-24`}
@@ -3253,7 +3258,7 @@ function CareerEditor({
           />
         </div>
         <div className="flex items-center justify-between">
-          <label className="flex items-center gap-2 text-sm text-zinc-400 cursor-pointer">
+          <label className="flex items-center gap-2 text-sm text-[var(--muted)] cursor-pointer">
             <input
               type="checkbox"
               checked={newItem.isCurrent}
@@ -3323,7 +3328,7 @@ function GoalsEditor({
       body: JSON.stringify({
         title: newTitle,
         description: newDesc || null,
-        icon: "🎯",
+        icon: "",  // 기본 아이콘 없음 (이모지 금지 — 사용자가 필요 시 별도 설정)
         details: [],
       }),
     });
@@ -3431,7 +3436,7 @@ function GoalsEditor({
               return (
                 <div
                   key={item.id || idx}
-                  className="rounded-lg border border-blue-500/30 bg-zinc-800/80 p-3 space-y-2"
+                  className="rounded-lg border border-blue-500/30 bg-[var(--card-bg)]/80 p-3 space-y-2"
                 >
                   <p className="text-xs font-medium text-blue-400">공약 수정</p>
                   <input
@@ -3490,14 +3495,14 @@ function GoalsEditor({
                           setShowPledgeLibrary(!showPledgeLibrary);
                         }}
                       >
-                        {showPledgeLibrary ? "닫기" : "📁 라이브러리"}
+                        {showPledgeLibrary ? "닫기" : "라이브러리"}
                       </button>
                     </div>
                     {showPledgeLibrary && (
-                      <div className="mt-1 rounded-lg border border-white/10 bg-zinc-800/50 p-2 max-h-48 overflow-y-auto">
-                        <p className="text-[10px] text-zinc-500 mb-1.5">이전에 업로드한 이미지를 선택하세요</p>
+                      <div className="mt-1 rounded-lg border border-white/10 bg-[var(--card-bg)]/50 p-2 max-h-48 overflow-y-auto">
+                        <p className="text-[10px] text-[var(--muted)] mb-1.5">이전에 업로드한 이미지를 선택하세요</p>
                         {pledgeLibraryFiles.length === 0 && (
-                          <p className="text-xs text-zinc-600 text-center py-4">업로드한 이미지가 없습니다</p>
+                          <p className="text-xs text-[var(--muted)] text-center py-4">업로드한 이미지가 없습니다</p>
                         )}
                         <div className="grid grid-cols-4 gap-1.5">
                           {pledgeLibraryFiles.map((f) => (
@@ -3553,9 +3558,9 @@ function GoalsEditor({
                 }}
                 onDragEnd={() => { setDragIdx(null); setDragOverIdx(null); }}
                 className={`flex items-center gap-2 rounded-lg border px-3 py-2 cursor-grab transition-all ${
-                  dragIdx === idx ? "opacity-40 border-blue-500/30 bg-zinc-800/30" :
+                  dragIdx === idx ? "opacity-40 border-blue-500/30 bg-[var(--card-bg)]/30" :
                   dragOverIdx === idx ? "border-blue-400/50 bg-blue-900/20" :
-                  "border-white/5 bg-zinc-800/50"
+                  "border-white/5 bg-[var(--card-bg)]/50"
                 }`}
               >
                 {/* Reorder buttons */}
@@ -3563,7 +3568,7 @@ function GoalsEditor({
                   <button
                     onClick={() => swapOrder(idx, "up")}
                     disabled={idx === 0}
-                    className="text-zinc-600 hover:text-zinc-300 disabled:opacity-20 transition-colors"
+                    className="text-[var(--muted)] hover:text-[var(--foreground)] disabled:opacity-20 transition-colors"
                     title="위로"
                   >
                     <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -3573,7 +3578,7 @@ function GoalsEditor({
                   <button
                     onClick={() => swapOrder(idx, "down")}
                     disabled={idx === items.length - 1}
-                    className="text-zinc-600 hover:text-zinc-300 disabled:opacity-20 transition-colors"
+                    className="text-[var(--muted)] hover:text-[var(--foreground)] disabled:opacity-20 transition-colors"
                     title="아래로"
                   >
                     <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -3582,7 +3587,7 @@ function GoalsEditor({
                   </button>
                 </div>
 
-                <span className="text-zinc-500 text-xs font-bold">
+                <span className="text-[var(--muted)] text-xs font-bold">
                   {String(idx + 1).padStart(2, "0")}
                 </span>
                 {parsed.imageUrl && (
@@ -3590,11 +3595,11 @@ function GoalsEditor({
                   <img src={parsed.imageUrl} alt="" className="h-8 w-8 rounded object-cover flex-shrink-0" />
                 )}
                 <div className="flex-1 min-w-0">
-                  <span className="text-sm text-zinc-200 truncate block">
+                  <span className="text-sm text-[var(--foreground)] truncate block">
                     {item.title}
                   </span>
                   {item.description && (
-                    <span className="text-xs text-zinc-500 truncate block">
+                    <span className="text-xs text-[var(--muted)] truncate block">
                       {item.description}
                     </span>
                   )}
@@ -3602,7 +3607,7 @@ function GoalsEditor({
                 {/* Edit button */}
                 <button
                   onClick={() => startEdit(item)}
-                  className="text-zinc-600 hover:text-blue-400 transition-colors"
+                  className="text-[var(--muted)] hover:text-blue-400 transition-colors"
                   title="수정"
                 >
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -3612,7 +3617,7 @@ function GoalsEditor({
                 {/* Delete button */}
                 <button
                   onClick={() => item.id && removeItem(item.id)}
-                  className="text-zinc-600 hover:text-red-400 transition-colors"
+                  className="text-[var(--muted)] hover:text-red-400 transition-colors"
                   title="삭제"
                 >
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -3625,8 +3630,8 @@ function GoalsEditor({
         </div>
       )}
 
-      <div className="rounded-lg border border-white/10 bg-zinc-800/30 p-3 space-y-2">
-        <p className="text-xs font-medium text-zinc-500">새 공약 추가</p>
+      <div className="rounded-lg border border-white/10 bg-[var(--card-bg)]/30 p-3 space-y-2">
+        <p className="text-xs font-medium text-[var(--muted)]">새 공약 추가</p>
         <input
           className={inputClass}
           value={newTitle}
@@ -3837,7 +3842,7 @@ function GalleryEditor({
 
       {/* Gallery edit form (inline) */}
       {editingGalleryId && (
-        <div className="rounded-lg border border-blue-500/30 bg-zinc-800/80 p-3 space-y-2">
+        <div className="rounded-lg border border-blue-500/30 bg-[var(--card-bg)]/80 p-3 space-y-2">
           <p className="text-xs font-medium text-blue-400">사진 정보 수정</p>
           <input
             className={inputClass}
@@ -3867,8 +3872,8 @@ function GalleryEditor({
         </div>
       )}
 
-      <div className="rounded-lg border border-white/10 bg-zinc-800/30 p-3 space-y-3">
-        <p className="text-xs font-medium text-zinc-500">새 사진 추가</p>
+      <div className="rounded-lg border border-white/10 bg-[var(--card-bg)]/30 p-3 space-y-3">
+        <p className="text-xs font-medium text-[var(--muted)]">새 사진 추가</p>
 
         {/* 이미지 업로드 — 선택하면 바로 업로드+추가 */}
         <input
@@ -3938,14 +3943,14 @@ function GalleryEditor({
               setShowGalleryLibrary(!showGalleryLibrary);
             }}
           >
-            {showGalleryLibrary ? "닫기" : "📁 라이브러리"}
+            {showGalleryLibrary ? "닫기" : "라이브러리"}
           </button>
         </div>
         {showGalleryLibrary && (
-          <div className="rounded-lg border border-white/10 bg-zinc-800/50 p-2 max-h-48 overflow-y-auto">
-            <p className="text-[10px] text-zinc-500 mb-1.5">이전에 업로드한 이미지를 선택하세요</p>
+          <div className="rounded-lg border border-white/10 bg-[var(--card-bg)]/50 p-2 max-h-48 overflow-y-auto">
+            <p className="text-[10px] text-[var(--muted)] mb-1.5">이전에 업로드한 이미지를 선택하세요</p>
             {galleryLibraryFiles.length === 0 && (
-              <p className="text-xs text-zinc-600 text-center py-4">업로드한 이미지가 없습니다</p>
+              <p className="text-xs text-[var(--muted)] text-center py-4">업로드한 이미지가 없습니다</p>
             )}
             <div className="grid grid-cols-4 gap-1.5">
               {galleryLibraryFiles.map((f) => (
@@ -3986,7 +3991,7 @@ function GalleryEditor({
 
         {/* 카테고리 선택 */}
         <div className="flex items-center gap-2">
-          <span className="text-xs text-zinc-500">카테고리:</span>
+          <span className="text-xs text-[var(--muted)]">카테고리:</span>
           <select
             className={`${inputClass} flex-1`}
             value={newCat}
@@ -4002,7 +4007,7 @@ function GalleryEditor({
 
         {/* URL로도 추가 가능 */}
         <details className="text-xs">
-          <summary className="text-zinc-500 cursor-pointer hover:text-zinc-300">URL로 추가하기</summary>
+          <summary className="text-[var(--muted)] cursor-pointer hover:text-[var(--foreground)]">URL로 추가하기</summary>
           <div className="mt-2 space-y-2">
             <input
               className={inputClass}
@@ -4182,7 +4187,7 @@ function ScheduleEditor({
               return (
                 <div
                   key={item.id}
-                  className="rounded-lg border border-blue-500/30 bg-zinc-800/80 p-3 space-y-2"
+                  className="rounded-lg border border-blue-500/30 bg-[var(--card-bg)]/80 p-3 space-y-2"
                 >
                   <p className="text-xs font-medium text-blue-400">일정 수정</p>
                   <input
@@ -4233,33 +4238,33 @@ function ScheduleEditor({
                 onDrop={() => { if (dragIdx !== null && dragIdx !== idx) swapOrder(dragIdx, idx); setDragIdx(null); setDragOverIdx(null); }}
                 onDragEnd={() => { setDragIdx(null); setDragOverIdx(null); }}
                 className={`flex items-center gap-2 rounded-lg border px-3 py-2 transition-all ${
-                  dragOverIdx === idx ? "border-blue-500/50 bg-blue-500/5" : "border-white/5 bg-zinc-800/50"
+                  dragOverIdx === idx ? "border-blue-500/50 bg-blue-500/5" : "border-white/5 bg-[var(--card-bg)]/50"
                 } ${dragIdx === idx ? "opacity-40" : ""}`}
               >
                 {/* Drag handle */}
-                <span className="cursor-grab text-zinc-600 hover:text-zinc-400 active:cursor-grabbing text-sm">☰</span>
+                <span className="cursor-grab text-[var(--muted)] hover:text-[var(--muted)] active:cursor-grabbing text-sm">☰</span>
                 {/* Up/Down buttons */}
                 <div className="flex flex-col gap-0.5">
-                  <button onClick={() => idx > 0 && swapOrder(idx, idx - 1)} disabled={idx === 0} className="text-zinc-600 hover:text-white disabled:opacity-20 text-[10px]">▲</button>
-                  <button onClick={() => idx < items.length - 1 && swapOrder(idx, idx + 1)} disabled={idx === items.length - 1} className="text-zinc-600 hover:text-white disabled:opacity-20 text-[10px]">▼</button>
+                  <button onClick={() => idx > 0 && swapOrder(idx, idx - 1)} disabled={idx === 0} className="text-[var(--muted)] hover:text-white disabled:opacity-20 text-[10px]">▲</button>
+                  <button onClick={() => idx < items.length - 1 && swapOrder(idx, idx + 1)} disabled={idx === items.length - 1} className="text-[var(--muted)] hover:text-white disabled:opacity-20 text-[10px]">▼</button>
                 </div>
                 {/* Color indicator */}
                 <div
                   className="h-3 w-3 rounded-full flex-shrink-0 border border-white/10"
                   style={{ backgroundColor: itemColor || "#71717a" }}
                 />
-                <span className="text-xs text-zinc-500">{typeof item.date === "string" ? item.date.slice(0, 10) : item.date}</span>
-                <span className="flex-1 text-sm text-zinc-200 truncate">
+                <span className="text-xs text-[var(--muted)]">{typeof item.date === "string" ? item.date.slice(0, 10) : item.date}</span>
+                <span className="flex-1 text-sm text-[var(--foreground)] truncate">
                   {item.title}
                 </span>
                 {item.location && (
-                  <span className="text-xs text-zinc-500 truncate max-w-[80px]">
+                  <span className="text-xs text-[var(--muted)] truncate max-w-[80px]">
                     {item.location}
                   </span>
                 )}
                 {/* Color picker dropdown */}
                 <select
-                  className="bg-zinc-700 text-xs text-zinc-300 rounded px-1 py-0.5 border border-white/10 w-14"
+                  className="bg-[var(--muted-bg)] text-xs text-[var(--foreground)] rounded px-1 py-0.5 border border-white/10 w-14"
                   value={itemColor}
                   onChange={(e) => item.id && updateColor(item.id, e.target.value)}
                 >
@@ -4272,7 +4277,7 @@ function ScheduleEditor({
                 {/* Edit button */}
                 <button
                   onClick={() => startEdit(item)}
-                  className="text-zinc-600 hover:text-blue-400 transition-colors"
+                  className="text-[var(--muted)] hover:text-blue-400 transition-colors"
                   title="수정"
                 >
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -4281,7 +4286,7 @@ function ScheduleEditor({
                 </button>
                 <button
                   onClick={() => item.id && removeItem(item.id)}
-                  className="text-zinc-600 hover:text-red-400 transition-colors"
+                  className="text-[var(--muted)] hover:text-red-400 transition-colors"
                 >
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -4293,8 +4298,8 @@ function ScheduleEditor({
         </div>
       )}
 
-      <div className="rounded-lg border border-white/10 bg-zinc-800/30 p-3 space-y-2">
-        <p className="text-xs font-medium text-zinc-500">새 일정 추가</p>
+      <div className="rounded-lg border border-white/10 bg-[var(--card-bg)]/30 p-3 space-y-2">
+        <p className="text-xs font-medium text-[var(--muted)]">새 일정 추가</p>
         <input
           className={inputClass}
           value={form.title}
@@ -4323,7 +4328,7 @@ function ScheduleEditor({
         />
         {/* Color selection */}
         <div className="flex items-center gap-2">
-          <span className="text-xs text-zinc-500">색상:</span>
+          <span className="text-xs text-[var(--muted)]">색상:</span>
           <div className="flex gap-1.5">
             {SCHEDULE_COLORS.map((c) => (
               <button
@@ -4489,7 +4494,7 @@ function NewsEditor({
   return (
     <div className="space-y-3">
       {/* Show count config */}
-      <div className="flex items-center gap-3 rounded-lg border border-white/10 bg-zinc-800/30 px-3 py-2">
+      <div className="flex items-center gap-3 rounded-lg border border-white/10 bg-[var(--card-bg)]/30 px-3 py-2">
         <label className={labelClass}>공개 사이트 노출 갯수</label>
         <input
           type="number"
@@ -4519,7 +4524,7 @@ function NewsEditor({
               return (
                 <div
                   key={item.id}
-                  className="rounded-lg border border-blue-500/30 bg-zinc-800/80 p-3 space-y-2"
+                  className="rounded-lg border border-blue-500/30 bg-[var(--card-bg)]/80 p-3 space-y-2"
                 >
                   <p className="text-xs font-medium text-blue-400">기사 수정</p>
                   <input
@@ -4587,11 +4592,11 @@ function NewsEditor({
                 className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 transition-all ${
                   !isAi ? "cursor-grab" : ""
                 } ${
-                  newsDragIdx === idx ? "opacity-40 border-blue-500/30 bg-zinc-800/30" :
+                  newsDragIdx === idx ? "opacity-40 border-blue-500/30 bg-[var(--card-bg)]/30" :
                   newsDragOverIdx === idx ? "border-blue-400/50 bg-blue-900/20" :
-                  isHidden ? "border-white/5 bg-zinc-900/30 opacity-50" :
+                  isHidden ? "border-white/5 bg-[var(--background)]/30 opacity-50" :
                   isAi ? "border-violet-500/20 bg-violet-900/10" :
-                  "border-white/5 bg-zinc-800/50"
+                  "border-white/5 bg-[var(--card-bg)]/50"
                 }`}
               >
                 {/* Reorder buttons — manual only */}
@@ -4600,7 +4605,7 @@ function NewsEditor({
                     <button
                       onClick={() => swapOrder(idx, "up")}
                       disabled={idx === 0}
-                      className="text-zinc-600 hover:text-white disabled:opacity-30 transition-colors"
+                      className="text-[var(--muted)] hover:text-white disabled:opacity-30 transition-colors"
                       title="위로"
                     >
                       <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -4610,7 +4615,7 @@ function NewsEditor({
                     <button
                       onClick={() => swapOrder(idx, "down")}
                       disabled={idx === items.length - 1}
-                      className="text-zinc-600 hover:text-white disabled:opacity-30 transition-colors"
+                      className="text-[var(--muted)] hover:text-white disabled:opacity-30 transition-colors"
                       title="아래로"
                     >
                       <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -4624,18 +4629,18 @@ function NewsEditor({
                     AI
                   </span>
                 )}
-                <span className={`flex-1 text-sm truncate ${isHidden ? "text-zinc-500 line-through" : "text-zinc-200"}`}>
+                <span className={`flex-1 text-sm truncate ${isHidden ? "text-[var(--muted)] line-through" : "text-[var(--foreground)]"}`}>
                   {item.title}
                 </span>
                 {item.source && (
-                  <span className="text-xs text-zinc-500 whitespace-nowrap">{item.source}</span>
+                  <span className="text-xs text-[var(--muted)] whitespace-nowrap">{item.source}</span>
                 )}
                 {/* AI: hide 토글만 / Manual: 수정 + 삭제 */}
                 {isAi ? (
                   <button
                     onClick={() => toggleAiHide(item)}
                     className={`transition-colors ${
-                      isHidden ? "text-zinc-500 hover:text-green-400" : "text-zinc-400 hover:text-amber-400"
+                      isHidden ? "text-[var(--muted)] hover:text-green-400" : "text-[var(--muted)] hover:text-amber-400"
                     }`}
                     title={isHidden ? "공개 사이트에 다시 표시" : "공개 사이트에서 숨기기"}
                   >
@@ -4654,7 +4659,7 @@ function NewsEditor({
                   <>
                     <button
                       onClick={() => startEdit(item)}
-                      className="text-zinc-600 hover:text-blue-400 transition-colors"
+                      className="text-[var(--muted)] hover:text-blue-400 transition-colors"
                       title="수정"
                     >
                       <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -4663,7 +4668,7 @@ function NewsEditor({
                     </button>
                     <button
                       onClick={() => item.id && removeItem(item.id)}
-                      className="text-zinc-600 hover:text-red-400 transition-colors"
+                      className="text-[var(--muted)] hover:text-red-400 transition-colors"
                       title="삭제"
                     >
                       <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -4678,8 +4683,8 @@ function NewsEditor({
         </div>
       )}
 
-      <div className="rounded-lg border border-white/10 bg-zinc-800/30 p-3 space-y-2">
-        <p className="text-xs font-medium text-zinc-500">새 기사 추가</p>
+      <div className="rounded-lg border border-white/10 bg-[var(--card-bg)]/30 p-3 space-y-2">
+        <p className="text-xs font-medium text-[var(--muted)]">새 기사 추가</p>
         <input
           className={inputClass}
           value={form.title}
@@ -4866,7 +4871,7 @@ function VideosEditor({
       </div>
 
       {/* 공개 사이트 표시 갯수 */}
-      <div className="flex items-center gap-3 rounded-lg border border-white/10 bg-zinc-800/30 px-3 py-2">
+      <div className="flex items-center gap-3 rounded-lg border border-white/10 bg-[var(--card-bg)]/30 px-3 py-2">
         <label className={labelClass}>공개 사이트 노출 갯수</label>
         <input
           type="number"
@@ -4885,30 +4890,30 @@ function VideosEditor({
       <div>
         <label className={`${labelClass} block mb-1.5`}>등록된 YouTube 채널</label>
         {loading ? (
-          <p className="text-xs text-zinc-500 py-3 text-center">불러오는 중...</p>
+          <p className="text-xs text-[var(--muted)] py-3 text-center">불러오는 중...</p>
         ) : channels.length === 0 ? (
-          <p className="text-xs text-zinc-500 py-3 text-center">등록된 채널이 없습니다</p>
+          <p className="text-xs text-[var(--muted)] py-3 text-center">등록된 채널이 없습니다</p>
         ) : (
           <div className="space-y-1.5">
             {channels.map((c) => (
               <div
                 key={c.id}
                 className={`flex items-center gap-2 rounded-lg border border-white/5 px-3 py-2 ${
-                  c.isActive ? "bg-zinc-800/50" : "bg-zinc-900/30 opacity-50"
+                  c.isActive ? "bg-[var(--card-bg)]/50" : "bg-[var(--background)]/30 opacity-50"
                 }`}
               >
                 <a
                   href={c.channelUrl || "#"}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex-1 text-sm text-zinc-200 truncate hover:text-blue-400"
+                  className="flex-1 text-sm text-[var(--foreground)] truncate hover:text-blue-400"
                   title={c.channelUrl || c.channelId || ""}
                 >
                   {c.channelUrl || c.channelId || "(URL 없음)"}
                 </a>
                 <button
                   onClick={() => toggleActive(c)}
-                  className={c.isActive ? "text-zinc-400 hover:text-amber-400" : "text-zinc-500 hover:text-green-400"}
+                  className={c.isActive ? "text-[var(--muted)] hover:text-amber-400" : "text-[var(--muted)] hover:text-green-400"}
                   title={c.isActive ? "공개 사이트에서 숨기기" : "공개 사이트에 다시 표시"}
                 >
                   {c.isActive ? (
@@ -4924,7 +4929,7 @@ function VideosEditor({
                 </button>
                 <button
                   onClick={() => deleteChannel(c.id)}
-                  className="text-zinc-600 hover:text-red-400"
+                  className="text-[var(--muted)] hover:text-red-400"
                   title="삭제"
                 >
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -4938,8 +4943,8 @@ function VideosEditor({
       </div>
 
       {/* 채널 수동 추가 */}
-      <div className="rounded-lg border border-white/10 bg-zinc-800/30 p-3 space-y-2">
-        <p className="text-xs font-medium text-zinc-400">채널 추가</p>
+      <div className="rounded-lg border border-white/10 bg-[var(--card-bg)]/30 p-3 space-y-2">
+        <p className="text-xs font-medium text-[var(--muted)]">채널 추가</p>
         <input
           className={inputClass}
           value={newUrl}
@@ -4948,7 +4953,7 @@ function VideosEditor({
           onKeyDown={(e) => e.key === "Enter" && !adding && addChannel()}
         />
         <div className="flex items-center justify-between gap-2">
-          <p className="text-[10px] text-zinc-500 flex-1">
+          <p className="text-[10px] text-[var(--muted)] flex-1">
             채널 URL 또는 핸들(@) 지원. YouTube Data API로 자동 조회됩니다.
           </p>
           <button onClick={addChannel} disabled={adding || !newUrl.trim()} className={btnPrimary}>
@@ -4959,23 +4964,23 @@ function VideosEditor({
 
       {/* 개별 영상 수동 추가 (본인 채널 외 — 뉴스 영상 등 직접 핀) */}
       <div className="rounded-lg border border-blue-500/20 bg-blue-900/10 p-3 space-y-2">
-        <p className="text-xs font-medium text-blue-200">개별 영상 추가 <span className="text-zinc-500 font-normal">(본인 채널 외 뉴스·인터뷰 영상 등)</span></p>
+        <p className="text-xs font-medium text-blue-200">개별 영상 추가 <span className="text-[var(--muted)] font-normal">(본인 채널 외 뉴스·인터뷰 영상 등)</span></p>
         {manualItems.length > 0 && (
           <div className="space-y-1 max-h-40 overflow-y-auto">
             {manualItems.map((v) => (
-              <div key={v.id} className="flex items-center gap-2 rounded border border-white/5 bg-zinc-800/40 px-2 py-1.5">
+              <div key={v.id} className="flex items-center gap-2 rounded border border-white/5 bg-[var(--card-bg)]/40 px-2 py-1.5">
                 <a
                   href={`https://www.youtube.com/watch?v=${v.videoId}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex-1 text-xs text-zinc-200 truncate hover:text-blue-400"
+                  className="flex-1 text-xs text-[var(--foreground)] truncate hover:text-blue-400"
                   title={v.title || v.videoId}
                 >
                   {v.title || v.videoId}
                 </a>
                 <button
                   onClick={() => v.id && removeManualVideo(v.id)}
-                  className="text-zinc-600 hover:text-red-400"
+                  className="text-[var(--muted)] hover:text-red-400"
                   title="삭제"
                 >
                   <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -5000,7 +5005,7 @@ function VideosEditor({
           onKeyDown={(e) => e.key === "Enter" && addManualVideo()}
         />
         <div className="flex items-center justify-between gap-2">
-          <p className="text-[10px] text-zinc-500 flex-1">
+          <p className="text-[10px] text-[var(--muted)] flex-1">
             뉴스 유튜브 같은 외부 영상을 직접 고정. 채널 목록과 별도로 공개 사이트에 상단 노출됩니다.
           </p>
           <button onClick={addManualVideo} disabled={!newVideoUrl.trim()} className={btnPrimary}>
@@ -5022,15 +5027,15 @@ function VideosEditor({
                 href={`https://www.youtube.com/watch?v=${v.video_id}`}
                 target="_blank"
                 rel="noreferrer"
-                className="flex gap-2 rounded-lg border border-white/5 bg-zinc-800/30 p-2 hover:border-red-500/30 transition-colors"
+                className="flex gap-2 rounded-lg border border-white/5 bg-[var(--card-bg)]/30 p-2 hover:border-red-500/30 transition-colors"
               >
                 {v.thumbnail && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={v.thumbnail} alt="" className="w-16 h-10 object-cover rounded flex-shrink-0" />
                 )}
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs text-zinc-200 line-clamp-2 leading-tight">{v.title}</div>
-                  <div className="text-[10px] text-zinc-500 mt-0.5">{v.channel || ""}</div>
+                  <div className="text-xs text-[var(--foreground)] line-clamp-2 leading-tight">{v.title}</div>
+                  <div className="text-[10px] text-[var(--muted)] mt-0.5">{v.channel || ""}</div>
                 </div>
               </a>
             ))}
@@ -5142,7 +5147,7 @@ function BlogEditor({
         네이버 블로그·티스토리·브런치 지원. 해당하는 플랫폼만 추가하세요.
       </div>
 
-      <div className="flex items-center gap-3 rounded-lg border border-white/10 bg-zinc-800/30 px-3 py-2">
+      <div className="flex items-center gap-3 rounded-lg border border-white/10 bg-[var(--card-bg)]/30 px-3 py-2">
         <label className={labelClass}>공개 사이트 노출 갯수</label>
         <input
           type="number" min={1} max={30}
@@ -5158,16 +5163,16 @@ function BlogEditor({
       <div>
         <label className={`${labelClass} block mb-1.5`}>등록된 블로그</label>
         {loading ? (
-          <p className="text-xs text-zinc-500 py-3 text-center">불러오는 중...</p>
+          <p className="text-xs text-[var(--muted)] py-3 text-center">불러오는 중...</p>
         ) : channels.length === 0 ? (
-          <p className="text-xs text-zinc-500 py-3 text-center">등록된 블로그가 없습니다</p>
+          <p className="text-xs text-[var(--muted)] py-3 text-center">등록된 블로그가 없습니다</p>
         ) : (
           <div className="space-y-1.5">
             {channels.map((c) => (
               <div
                 key={c.id}
                 className={`flex items-center gap-2 rounded-lg border border-white/5 px-3 py-2 ${
-                  c.isActive ? "bg-zinc-800/50" : "bg-zinc-900/30 opacity-50"
+                  c.isActive ? "bg-[var(--card-bg)]/50" : "bg-[var(--background)]/30 opacity-50"
                 }`}
               >
                 <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-green-500/20 text-green-300 whitespace-nowrap">
@@ -5175,14 +5180,14 @@ function BlogEditor({
                 </span>
                 <a
                   href={c.channelUrl || "#"} target="_blank" rel="noreferrer"
-                  className="flex-1 text-sm text-zinc-200 truncate hover:text-green-400"
+                  className="flex-1 text-sm text-[var(--foreground)] truncate hover:text-green-400"
                   title={c.channelUrl || ""}
                 >
                   {c.channelUrl}
                 </a>
                 <button
                   onClick={() => toggleActive(c)}
-                  className={c.isActive ? "text-zinc-400 hover:text-amber-400" : "text-zinc-500 hover:text-green-400"}
+                  className={c.isActive ? "text-[var(--muted)] hover:text-amber-400" : "text-[var(--muted)] hover:text-green-400"}
                   title={c.isActive ? "숨기기" : "보이기"}
                 >
                   {c.isActive ? (
@@ -5198,7 +5203,7 @@ function BlogEditor({
                 </button>
                 <button
                   onClick={() => deleteChannel(c.id)}
-                  className="text-zinc-600 hover:text-red-400"
+                  className="text-[var(--muted)] hover:text-red-400"
                   title="삭제"
                 >
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -5211,8 +5216,8 @@ function BlogEditor({
         )}
       </div>
 
-      <div className="rounded-lg border border-white/10 bg-zinc-800/30 p-3 space-y-2">
-        <p className="text-xs font-medium text-zinc-400">블로그 추가</p>
+      <div className="rounded-lg border border-white/10 bg-[var(--card-bg)]/30 p-3 space-y-2">
+        <p className="text-xs font-medium text-[var(--muted)]">블로그 추가</p>
         <div className="flex gap-2">
           <select
             className={`${inputClass} w-32`}
@@ -5236,7 +5241,7 @@ function BlogEditor({
           />
         </div>
         <div className="flex items-center justify-between gap-2">
-          <p className="text-[10px] text-zinc-500 flex-1">
+          <p className="text-[10px] text-[var(--muted)] flex-1">
             플랫폼 선택 + 블로그 URL 붙여넣기. RSS로 최신 글 자동 수집됩니다.
           </p>
           <button onClick={addChannel} disabled={adding || !newUrl.trim()} className={btnPrimary}>
@@ -5254,7 +5259,7 @@ function BlogEditor({
             {feed.slice(0, 10).map((p, i) => (
               <a
                 key={i} href={p.url} target="_blank" rel="noreferrer"
-                className="flex gap-2 rounded-lg border border-white/5 bg-zinc-800/30 p-2 hover:border-green-500/30 transition-colors"
+                className="flex gap-2 rounded-lg border border-white/5 bg-[var(--card-bg)]/30 p-2 hover:border-green-500/30 transition-colors"
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5 mb-0.5">
@@ -5264,12 +5269,12 @@ function BlogEditor({
                       </span>
                     )}
                     {p.published_at && (
-                      <span className="text-[10px] text-zinc-500">
+                      <span className="text-[10px] text-[var(--muted)]">
                         {new Date(p.published_at).toLocaleDateString("ko")}
                       </span>
                     )}
                   </div>
-                  <div className="text-xs text-zinc-200 line-clamp-2 leading-tight">{p.title}</div>
+                  <div className="text-xs text-[var(--foreground)] line-clamp-2 leading-tight">{p.title}</div>
                 </div>
               </a>
             ))}
@@ -5357,7 +5362,7 @@ function DonationEditor({
               setShowLibrary(!showLibrary);
             }}
           >
-            {showLibrary ? "닫기" : "📁 라이브러리"}
+            {showLibrary ? "닫기" : "라이브러리"}
           </button>
           {form.imageUrl && (
             <button
@@ -5375,7 +5380,7 @@ function DonationEditor({
           </div>
         )}
         {showLibrary && (
-          <div className="mt-2 rounded-lg border border-white/10 bg-zinc-800/50 p-2 max-h-48 overflow-y-auto">
+          <div className="mt-2 rounded-lg border border-white/10 bg-[var(--card-bg)]/50 p-2 max-h-48 overflow-y-auto">
             <div className="grid grid-cols-4 gap-1.5">
               {libraryFiles.map((f) => (
                 <button
@@ -5513,7 +5518,7 @@ function ContactsEditor({
               return (
                 <div
                   key={item.id}
-                  className="rounded-lg border border-blue-500/30 bg-zinc-800/80 p-3 space-y-2"
+                  className="rounded-lg border border-blue-500/30 bg-[var(--card-bg)]/80 p-3 space-y-2"
                 >
                   <p className="text-xs font-medium text-blue-400">연락처 수정</p>
                   <div className="flex gap-2">
@@ -5583,9 +5588,9 @@ function ContactsEditor({
                 }}
                 onDragEnd={() => { setCtDragIdx(null); setCtDragOverIdx(null); }}
                 className={`flex items-center gap-2 rounded-lg border px-3 py-2 cursor-grab transition-all ${
-                  ctDragIdx === idx ? "opacity-40 border-blue-500/30 bg-zinc-800/30" :
+                  ctDragIdx === idx ? "opacity-40 border-blue-500/30 bg-[var(--card-bg)]/30" :
                   ctDragOverIdx === idx ? "border-blue-400/50 bg-blue-900/20" :
-                  "border-white/5 bg-zinc-800/50"
+                  "border-white/5 bg-[var(--card-bg)]/50"
                 }`}
               >
                 {/* Reorder buttons */}
@@ -5593,7 +5598,7 @@ function ContactsEditor({
                   <button
                     onClick={() => swapOrder(idx, "up")}
                     disabled={idx === 0}
-                    className="text-zinc-600 hover:text-white disabled:opacity-30 transition-colors"
+                    className="text-[var(--muted)] hover:text-white disabled:opacity-30 transition-colors"
                     title="위로"
                   >
                     <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -5603,7 +5608,7 @@ function ContactsEditor({
                   <button
                     onClick={() => swapOrder(idx, "down")}
                     disabled={idx === items.length - 1}
-                    className="text-zinc-600 hover:text-white disabled:opacity-30 transition-colors"
+                    className="text-[var(--muted)] hover:text-white disabled:opacity-30 transition-colors"
                     title="아래로"
                   >
                     <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -5611,16 +5616,16 @@ function ContactsEditor({
                     </svg>
                   </button>
                 </div>
-                <span className="rounded bg-zinc-700 px-1.5 py-0.5 text-[10px] font-bold text-zinc-300">
+                <span className="rounded bg-[var(--muted-bg)] px-1.5 py-0.5 text-[10px] font-bold text-[var(--foreground)]">
                   {item.type}
                 </span>
-                <span className="flex-1 text-sm text-zinc-200 truncate">
+                <span className="flex-1 text-sm text-[var(--foreground)] truncate">
                   {item.value}
                 </span>
                 {/* Edit button */}
                 <button
                   onClick={() => startEdit(item)}
-                  className="text-zinc-600 hover:text-blue-400 transition-colors"
+                  className="text-[var(--muted)] hover:text-blue-400 transition-colors"
                   title="수정"
                 >
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -5629,7 +5634,7 @@ function ContactsEditor({
                 </button>
                 <button
                   onClick={() => item.id && removeItem(item.id)}
-                  className="text-zinc-600 hover:text-red-400 transition-colors"
+                  className="text-[var(--muted)] hover:text-red-400 transition-colors"
                 >
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -5641,8 +5646,8 @@ function ContactsEditor({
         </div>
       )}
 
-      <div className="rounded-lg border border-white/10 bg-zinc-800/30 p-3 space-y-2">
-        <p className="text-xs font-medium text-zinc-500">새 연락처 추가</p>
+      <div className="rounded-lg border border-white/10 bg-[var(--card-bg)]/30 p-3 space-y-2">
+        <p className="text-xs font-medium text-[var(--muted)]">새 연락처 추가</p>
         <div className="flex gap-2">
           <select
             className={`${inputClass} w-28`}
@@ -5752,9 +5757,9 @@ function LinksEditor({
               }}
               onDragEnd={() => { setLinkDragIdx(null); setLinkDragOverIdx(null); }}
               className={`flex items-center gap-2 rounded-lg border px-3 py-2 cursor-grab transition-all ${
-                linkDragIdx === idx ? "opacity-40 border-blue-500/30 bg-zinc-800/30" :
+                linkDragIdx === idx ? "opacity-40 border-blue-500/30 bg-[var(--card-bg)]/30" :
                 linkDragOverIdx === idx ? "border-blue-400/50 bg-blue-900/20" :
-                "border-white/5 bg-zinc-800/50"
+                "border-white/5 bg-[var(--card-bg)]/50"
               }`}
             >
               {/* Reorder buttons */}
@@ -5762,7 +5767,7 @@ function LinksEditor({
                 <button
                   onClick={() => swapOrder(idx, "up")}
                   disabled={idx === 0}
-                  className="text-zinc-600 hover:text-zinc-300 disabled:opacity-20 transition-colors"
+                  className="text-[var(--muted)] hover:text-[var(--foreground)] disabled:opacity-20 transition-colors"
                   title="위로"
                 >
                   <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -5772,7 +5777,7 @@ function LinksEditor({
                 <button
                   onClick={() => swapOrder(idx, "down")}
                   disabled={idx === links.length - 1}
-                  className="text-zinc-600 hover:text-zinc-300 disabled:opacity-20 transition-colors"
+                  className="text-[var(--muted)] hover:text-[var(--foreground)] disabled:opacity-20 transition-colors"
                   title="아래로"
                 >
                   <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -5781,16 +5786,16 @@ function LinksEditor({
                 </button>
               </div>
               <div className="flex-1 min-w-0">
-                <span className="text-sm text-zinc-200 truncate block">
+                <span className="text-sm text-[var(--foreground)] truncate block">
                   {link.title}
                 </span>
-                <span className="text-xs text-zinc-500 truncate block">
+                <span className="text-xs text-[var(--muted)] truncate block">
                   {link.url}
                 </span>
               </div>
               <button
                 onClick={() => removeLink(idx)}
-                className="text-zinc-600 hover:text-red-400 transition-colors"
+                className="text-[var(--muted)] hover:text-red-400 transition-colors"
               >
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -5801,8 +5806,8 @@ function LinksEditor({
         </div>
       )}
 
-      <div className="rounded-lg border border-white/10 bg-zinc-800/30 p-3 space-y-2">
-        <p className="text-xs font-medium text-zinc-500">새 링크 추가</p>
+      <div className="rounded-lg border border-white/10 bg-[var(--card-bg)]/30 p-3 space-y-2">
+        <p className="text-xs font-medium text-[var(--muted)]">새 링크 추가</p>
         <input
           className={inputClass}
           value={form.title}

@@ -24,11 +24,47 @@
 
   body {
     font-family: 'Paperlogy', 'Pretendard', system-ui, sans-serif;
+    color: var(--foreground);
+    background: var(--background);
   }
 
   /* SVG 아이콘 절제 — mybot 과 동일한 룰 */
   svg { opacity: 0.75; }
   button:hover svg, a:hover svg { opacity: 1; }
+}
+
+/* CSS 변수 — Airtable 라이트 팔레트 (admin layout과 일치, mybot 라이트 기본과도 호환).
+   공개 홈페이지는 --primary 가 고객 테마로 동적 주입됨 (기존 유지). */
+:root {
+  --background: #f8fafc;          /* airtable-bg */
+  --foreground: #181d26;          /* airtable-navy */
+  --card-bg: #ffffff;             /* airtable-surface */
+  --card-border: #e0e2e6;         /* airtable-border */
+  --input-bg: #ffffff;
+  --input-border: #e0e2e6;
+  --muted: rgba(24,29,38,0.62);   /* airtable textWeak */
+  --muted-bg: #f8fafc;
+  /* --primary는 고객 테마로 동적 주입됨 */
+}
+
+/* .dark 클래스가 붙은 영역만 다크 모드 (현재 admin은 라이트 고정, 향후 옵션 여지) */
+.dark {
+  --background: #0b0e1a;
+  --foreground: #e2e8f0;
+  --card-bg: #1a1d2e;
+  --card-border: rgba(255,255,255,0.06);
+  --input-bg: rgba(255,255,255,0.04);
+  --input-border: rgba(255,255,255,0.10);
+  --muted: #94a3b8;
+  --muted-bg: rgba(255,255,255,0.04);
+}
+
+/* 공용 카드 유틸 — mybot과 동일 */
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 0.75rem;
+  padding: 1rem;
 }
 
 @layer utilities {

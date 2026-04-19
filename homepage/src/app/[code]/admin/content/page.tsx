@@ -23,12 +23,12 @@ type TabKey = (typeof TABS)[number]["key"];
 
 /* ─── Shared styles ─── */
 const inputClass =
-  "w-full rounded-xl border border-white/10 bg-zinc-800 px-3 py-2.5 text-sm text-zinc-100 outline-none transition-colors focus:border-accent/50 focus:ring-1 focus:ring-accent/50";
-const labelClass = "mb-1.5 block text-sm font-medium text-zinc-400";
+  "w-full rounded-xl border border-white/10 bg-[var(--card-bg)] px-3 py-2.5 text-sm text-[var(--foreground)] outline-none transition-colors focus:border-accent/50 focus:ring-1 focus:ring-accent/50";
+const labelClass = "mb-1.5 block text-sm font-medium text-[var(--muted)]";
 const btnPrimary =
   "rounded-xl bg-accent px-5 py-2.5 text-sm font-semibold text-zinc-950 transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50";
 const btnSecondary =
-  "rounded-xl border border-white/10 bg-zinc-800 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-700";
+  "rounded-xl border border-white/10 bg-[var(--card-bg)] px-4 py-2 text-sm text-[var(--foreground)] transition-colors hover:bg-[var(--muted-bg)]";
 
 /* ─── 이미지 업로드 컴포넌트 ─── */
 function ImageUploadField({
@@ -77,13 +77,13 @@ function ImageUploadField({
           type="button"
           onClick={() => fileRef.current?.click()}
           disabled={uploading}
-          className="shrink-0 rounded-xl bg-zinc-700 px-4 py-2.5 text-sm text-zinc-200 hover:bg-zinc-600 disabled:opacity-50"
+          className="shrink-0 rounded-xl bg-[var(--muted-bg)] px-4 py-2.5 text-sm text-[var(--foreground)] hover:bg-[var(--muted-bg)] disabled:opacity-50"
         >
           {uploading ? "업로드 중..." : "파일 선택"}
         </button>
         <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
       </div>
-      <p className="mt-1 text-xs text-zinc-600">{description}</p>
+      <p className="mt-1 text-xs text-[var(--muted)]">{description}</p>
       {value && (
         <div className="mt-2 flex items-center gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -114,10 +114,10 @@ export default function ContentPage() {
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-bold text-zinc-100">콘텐츠 관리</h1>
+      <h1 className="mb-6 text-2xl font-bold text-[var(--foreground)]">콘텐츠 관리</h1>
 
       {/* Tabs — 그룹별 구분 */}
-      <div className="mb-6 flex gap-1 overflow-x-auto rounded-2xl border border-white/5 bg-zinc-900/50 p-1.5">
+      <div className="mb-6 flex gap-1 overflow-x-auto rounded-2xl border border-white/5 bg-[var(--background)]/50 p-1.5">
         {TABS.map((tab, i) => (
           <div key={tab.key} className="flex items-center">
             {i > 0 && TABS[i - 1].group !== tab.group && (
@@ -128,7 +128,7 @@ export default function ContentPage() {
               className={`flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-sm transition-all ${
                 activeTab === tab.key
                   ? "bg-accent/10 font-medium text-accent"
-                  : "text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
+                  : "text-[var(--muted)] hover:bg-white/5 hover:text-[var(--foreground)]"
               }`}
             >
               <IconifyIcon icon={tab.icon} width="16" height="16" />
@@ -139,7 +139,7 @@ export default function ContentPage() {
       </div>
 
       {/* Tab content */}
-      <div className="rounded-2xl border border-white/5 bg-zinc-900/50 p-5">
+      <div className="rounded-2xl border border-white/5 bg-[var(--background)]/50 p-5">
         {activeTab === "settings" && <SettingsTab />}
         {activeTab === "profile" && <ProfileTab />}
         {activeTab === "pledges" && <PledgesTab />}
@@ -158,7 +158,7 @@ export default function ContentPage() {
 /* ─── Placeholder ─── */
 function PlaceholderTab({ label }: { label: string }) {
   return (
-    <div className="flex flex-col items-center justify-center py-20 text-zinc-500">
+    <div className="flex flex-col items-center justify-center py-20 text-[var(--muted)]">
       <IconifyIcon icon="solar:inbox-bold" width="48" height="48" />
       <p className="mt-4 text-lg font-medium">{label} 관리</p>
       <p className="mt-1 text-sm">준비 중입니다</p>
@@ -229,11 +229,11 @@ function SettingsTab() {
 
   return (
     <form onSubmit={handleSave} className="max-w-2xl space-y-5">
-      <h2 className="text-lg font-semibold text-zinc-200">사이트 기본설정</h2>
+      <h2 className="text-lg font-semibold text-[var(--foreground)]">사이트 기본설정</h2>
 
       {/* 이미지 설정 */}
-      <div className="rounded-xl border border-white/10 bg-zinc-800/30 p-4 space-y-5">
-        <p className="text-sm font-medium text-zinc-300">이미지 설정</p>
+      <div className="rounded-xl border border-white/10 bg-[var(--card-bg)]/30 p-4 space-y-5">
+        <p className="text-sm font-medium text-[var(--foreground)]">이미지 설정</p>
 
         {/* 히어로 배경 이미지 */}
         <ImageUploadField
@@ -455,7 +455,7 @@ function ProfileTab() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-zinc-200">프로필 관리</h2>
+        <h2 className="text-lg font-semibold text-[var(--foreground)]">프로필 관리</h2>
         <button onClick={() => setAdding(true)} className={btnPrimary}>
           <span className="flex items-center gap-1.5">
             <IconifyIcon icon="solar:add-circle-bold" width="16" height="16" />
@@ -466,7 +466,7 @@ function ProfileTab() {
 
       {/* Add form */}
       {adding && (
-        <div className="rounded-xl border border-white/10 bg-zinc-800/50 p-4 space-y-3">
+        <div className="rounded-xl border border-white/10 bg-[var(--card-bg)]/50 p-4 space-y-3">
           <div className="flex gap-3">
             <select
               value={newType}
@@ -483,7 +483,7 @@ function ProfileTab() {
               placeholder="내용을 입력하세요"
             />
           </div>
-          <label className="flex items-center gap-2 text-sm text-zinc-400">
+          <label className="flex items-center gap-2 text-sm text-[var(--muted)]">
             <input
               type="checkbox"
               checked={newIsCurrent}
@@ -501,8 +501,8 @@ function ProfileTab() {
 
       {/* Edit modal inline */}
       {editing && (
-        <div className="rounded-xl border border-accent/20 bg-zinc-800/50 p-4 space-y-3">
-          <p className="text-sm font-medium text-zinc-300">수정</p>
+        <div className="rounded-xl border border-accent/20 bg-[var(--card-bg)]/50 p-4 space-y-3">
+          <p className="text-sm font-medium text-[var(--foreground)]">수정</p>
           <div className="flex gap-3">
             <select
               value={editing.type}
@@ -518,7 +518,7 @@ function ProfileTab() {
               onChange={(e) => setEditing({ ...editing, title: e.target.value })}
             />
           </div>
-          <label className="flex items-center gap-2 text-sm text-zinc-400">
+          <label className="flex items-center gap-2 text-sm text-[var(--muted)]">
             <input
               type="checkbox"
               checked={editing.isCurrent}
@@ -536,12 +536,12 @@ function ProfileTab() {
 
       {/* Education list */}
       <div>
-        <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-zinc-300">
+        <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--foreground)]">
           <IconifyIcon icon="solar:square-academic-cap-bold" width="18" height="18" />
           학력
         </h3>
         {educationItems.length === 0 ? (
-          <p className="text-sm text-zinc-600">등록된 학력이 없습니다</p>
+          <p className="text-sm text-[var(--muted)]">등록된 학력이 없습니다</p>
         ) : (
           <div className="space-y-2">
             {educationItems.map((item) => (
@@ -553,12 +553,12 @@ function ProfileTab() {
 
       {/* Career list */}
       <div>
-        <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-zinc-300">
+        <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--foreground)]">
           <IconifyIcon icon="solar:case-bold" width="18" height="18" />
           경력
         </h3>
         {careerItems.length === 0 ? (
-          <p className="text-sm text-zinc-600">등록된 경력이 없습니다</p>
+          <p className="text-sm text-[var(--muted)]">등록된 경력이 없습니다</p>
         ) : (
           <div className="space-y-2">
             {careerItems.map((item) => (
@@ -581,9 +581,9 @@ function ProfileRow({
   onDelete: (id: number) => void;
 }) {
   return (
-    <div className="flex items-center justify-between rounded-xl border border-white/5 bg-zinc-800/30 px-4 py-3">
+    <div className="flex items-center justify-between rounded-xl border border-white/5 bg-[var(--card-bg)]/30 px-4 py-3">
       <div className="flex items-center gap-2">
-        <span className="text-sm text-zinc-200">{item.title}</span>
+        <span className="text-sm text-[var(--foreground)]">{item.title}</span>
         {item.isCurrent && (
           <span className="rounded-full bg-green-500/10 px-2 py-0.5 text-[10px] font-medium text-green-400">
             현재
@@ -593,13 +593,13 @@ function ProfileRow({
       <div className="flex gap-1.5">
         <button
           onClick={() => onEdit(item)}
-          className="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200"
+          className="rounded-lg p-1.5 text-[var(--muted)] transition-colors hover:bg-white/5 hover:text-[var(--foreground)]"
         >
           <IconifyIcon icon="solar:pen-bold" width="16" height="16" />
         </button>
         <button
           onClick={() => onDelete(item.id)}
-          className="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-red-500/10 hover:text-red-400"
+          className="rounded-lg p-1.5 text-[var(--muted)] transition-colors hover:bg-red-500/10 hover:text-red-400"
         >
           <IconifyIcon icon="solar:trash-bin-trash-bold" width="16" height="16" />
         </button>
@@ -680,7 +680,7 @@ function PledgesTab() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-zinc-200">공약 관리</h2>
+        <h2 className="text-lg font-semibold text-[var(--foreground)]">공약 관리</h2>
         <button onClick={() => { resetForm(); setAdding(true); }} className={btnPrimary}>
           <span className="flex items-center gap-1.5">
             <IconifyIcon icon="solar:add-circle-bold" width="16" height="16" />
@@ -691,8 +691,8 @@ function PledgesTab() {
 
       {/* Add / Edit form */}
       {(adding || editing) && (
-        <div className="rounded-xl border border-white/10 bg-zinc-800/50 p-4 space-y-3">
-          <p className="text-sm font-medium text-zinc-300">{editing ? "공약 수정" : "공약 추가"}</p>
+        <div className="rounded-xl border border-white/10 bg-[var(--card-bg)]/50 p-4 space-y-3">
+          <p className="text-sm font-medium text-[var(--foreground)]">{editing ? "공약 수정" : "공약 추가"}</p>
           <div>
             <label className={labelClass}>제목</label>
             <input
@@ -728,7 +728,7 @@ function PledgesTab() {
               onChange={(e) => setForm({ ...form, details: e.target.value })}
               placeholder={"세부 항목 1\n세부 항목 2\n세부 항목 3"}
             />
-            <p className="mt-1 text-xs text-zinc-600">한 줄에 하나씩 입력하면 공개 사이트에서 목록으로 표시됩니다</p>
+            <p className="mt-1 text-xs text-[var(--muted)]">한 줄에 하나씩 입력하면 공개 사이트에서 목록으로 표시됩니다</p>
           </div>
           <div className="flex gap-2">
             <button onClick={editing ? handleUpdate : handleAdd} className={btnPrimary}>
@@ -741,18 +741,18 @@ function PledgesTab() {
 
       {/* Pledges list */}
       {pledges.length === 0 ? (
-        <p className="py-12 text-center text-sm text-zinc-600">등록된 공약이 없습니다</p>
+        <p className="py-12 text-center text-sm text-[var(--muted)]">등록된 공약이 없습니다</p>
       ) : (
         <div className="space-y-3">
           {pledges.map((p) => (
             <div
               key={p.id}
-              className="rounded-xl border border-white/5 bg-zinc-800/30 p-4"
+              className="rounded-xl border border-white/5 bg-[var(--card-bg)]/30 p-4"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
-                    <h3 className="font-medium text-zinc-200">{p.title}</h3>
+                    <h3 className="font-medium text-[var(--foreground)]">{p.title}</h3>
                     {p.category && (
                       <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-medium text-blue-400">
                         {p.category}
@@ -760,19 +760,19 @@ function PledgesTab() {
                     )}
                   </div>
                   {p.description && (
-                    <p className="mt-1 text-sm text-zinc-500 line-clamp-2">{p.description}</p>
+                    <p className="mt-1 text-sm text-[var(--muted)] line-clamp-2">{p.description}</p>
                   )}
                 </div>
                 <div className="flex shrink-0 gap-1.5">
                   <button
                     onClick={() => startEdit(p)}
-                    className="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200"
+                    className="rounded-lg p-1.5 text-[var(--muted)] transition-colors hover:bg-white/5 hover:text-[var(--foreground)]"
                   >
                     <IconifyIcon icon="solar:pen-bold" width="16" height="16" />
                   </button>
                   <button
                     onClick={() => handleDelete(p.id)}
-                    className="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-red-500/10 hover:text-red-400"
+                    className="rounded-lg p-1.5 text-[var(--muted)] transition-colors hover:bg-red-500/10 hover:text-red-400"
                   >
                     <IconifyIcon icon="solar:trash-bin-trash-bold" width="16" height="16" />
                   </button>
@@ -867,14 +867,14 @@ function VideosTab() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-zinc-200">영상 관리</h2>
+        <h2 className="text-lg font-semibold text-[var(--foreground)]">영상 관리</h2>
         <button onClick={() => { resetForm(); setAdding(true); }} className={btnPrimary}>
           <span className="flex items-center gap-1.5"><IconifyIcon icon="solar:add-circle-bold" width="16" height="16" />추가</span>
         </button>
       </div>
       {(adding || editingId !== null) && (
-        <div className="rounded-xl border border-white/10 bg-zinc-800/50 p-4 space-y-3">
-          <p className="text-sm font-medium text-zinc-300">{editingId !== null ? "영상 수정" : "영상 추가"}</p>
+        <div className="rounded-xl border border-white/10 bg-[var(--card-bg)]/50 p-4 space-y-3">
+          <p className="text-sm font-medium text-[var(--foreground)]">{editingId !== null ? "영상 수정" : "영상 추가"}</p>
           <div><label className={labelClass}>YouTube URL 또는 영상 ID</label>
             <input className={inputClass} value={url} onChange={e => setUrl(e.target.value)} placeholder="https://youtube.com/watch?v=..." /></div>
           <div><label className={labelClass}>제목 (선택)</label>
@@ -886,7 +886,7 @@ function VideosTab() {
         </div>
       )}
       {videos.length === 0 ? (
-        <p className="py-12 text-center text-sm text-zinc-600">등록된 영상이 없습니다</p>
+        <p className="py-12 text-center text-sm text-[var(--muted)]">등록된 영상이 없습니다</p>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
           {videos.map((v, idx) => (
@@ -899,7 +899,7 @@ function VideosTab() {
               onDragEnd={() => { dragIdx.current = null; setDragOverIdx(null); }}
               className={`rounded-xl border overflow-hidden transition-all ${
                 dragOverIdx === idx ? "border-accent/50 ring-1 ring-accent/30" : "border-white/5"
-              } ${dragIdx.current === idx ? "opacity-50" : ""} bg-zinc-800/30`}
+              } ${dragIdx.current === idx ? "opacity-50" : ""} bg-[var(--card-bg)]/30`}
             >
               <div className="relative">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -909,13 +909,13 @@ function VideosTab() {
                 </div>
               </div>
               <div className="flex items-center justify-between p-3">
-                <span className="text-sm text-zinc-200 truncate">{v.title || v.videoId}</span>
+                <span className="text-sm text-[var(--foreground)] truncate">{v.title || v.videoId}</span>
                 <div className="flex gap-1.5">
                   <button onClick={() => startEdit(v)}
-                    className="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200">
+                    className="rounded-lg p-1.5 text-[var(--muted)] transition-colors hover:bg-white/5 hover:text-[var(--foreground)]">
                     <IconifyIcon icon="solar:pen-bold" width="16" height="16" />
                   </button>
-                  <button onClick={() => handleDelete(v.id)} className="rounded-lg p-1.5 text-zinc-400 hover:bg-red-500/10 hover:text-red-400">
+                  <button onClick={() => handleDelete(v.id)} className="rounded-lg p-1.5 text-[var(--muted)] hover:bg-red-500/10 hover:text-red-400">
                     <IconifyIcon icon="solar:trash-bin-trash-bold" width="16" height="16" />
                   </button>
                 </div>
@@ -1002,14 +1002,14 @@ function NewsTab() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-zinc-200">기사 관리</h2>
+        <h2 className="text-lg font-semibold text-[var(--foreground)]">기사 관리</h2>
         <button onClick={() => { resetForm(); setAdding(true); }} className={btnPrimary}>
           <span className="flex items-center gap-1.5"><IconifyIcon icon="solar:add-circle-bold" width="16" height="16" />추가</span>
         </button>
       </div>
       {(adding || editingId !== null) && (
-        <div className="rounded-xl border border-white/10 bg-zinc-800/50 p-4 space-y-3">
-          <p className="text-sm font-medium text-zinc-300">{editingId !== null ? "기사 수정" : "기사 추가"}</p>
+        <div className="rounded-xl border border-white/10 bg-[var(--card-bg)]/50 p-4 space-y-3">
+          <p className="text-sm font-medium text-[var(--foreground)]">{editingId !== null ? "기사 수정" : "기사 추가"}</p>
           <div><label className={labelClass}>기사 제목</label>
             <input className={inputClass} value={form.title} onChange={e => setForm({...form, title: e.target.value})} placeholder="기사 제목" /></div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -1027,7 +1027,7 @@ function NewsTab() {
         </div>
       )}
       {news.length === 0 ? (
-        <p className="py-12 text-center text-sm text-zinc-600">등록된 기사가 없습니다</p>
+        <p className="py-12 text-center text-sm text-[var(--muted)]">등록된 기사가 없습니다</p>
       ) : (
         <div className="space-y-2">
           {news.map((n, idx) => (
@@ -1040,21 +1040,21 @@ function NewsTab() {
               onDragEnd={() => { dragIdx.current = null; setDragOverIdx(null); }}
               className={`flex items-center justify-between rounded-xl border px-4 py-3 transition-all ${
                 dragOverIdx === idx ? "border-accent/50 ring-1 ring-accent/30" : "border-white/5"
-              } ${dragIdx.current === idx ? "opacity-50" : ""} bg-zinc-800/30`}
+              } ${dragIdx.current === idx ? "opacity-50" : ""} bg-[var(--card-bg)]/30`}
             >
               <div className="flex items-center gap-3 min-w-0 flex-1">
-                <span className="cursor-grab active:cursor-grabbing text-zinc-500 hover:text-zinc-300">&#9776;</span>
+                <span className="cursor-grab active:cursor-grabbing text-[var(--muted)] hover:text-[var(--foreground)]">&#9776;</span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-zinc-200 truncate">{n.title}</p>
-                  <p className="text-xs text-zinc-500">{n.source}{n.publishedDate ? ` · ${new Date(n.publishedDate).toLocaleDateString("ko-KR")}` : ""}</p>
+                  <p className="text-sm font-medium text-[var(--foreground)] truncate">{n.title}</p>
+                  <p className="text-xs text-[var(--muted)]">{n.source}{n.publishedDate ? ` · ${new Date(n.publishedDate).toLocaleDateString("ko-KR")}` : ""}</p>
                 </div>
               </div>
               <div className="flex gap-1.5 ml-2">
                 <button onClick={() => startEdit(n)}
-                  className="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200">
+                  className="rounded-lg p-1.5 text-[var(--muted)] transition-colors hover:bg-white/5 hover:text-[var(--foreground)]">
                   <IconifyIcon icon="solar:pen-bold" width="16" height="16" />
                 </button>
-                <button onClick={() => handleDelete(n.id)} className="rounded-lg p-1.5 text-zinc-400 hover:bg-red-500/10 hover:text-red-400">
+                <button onClick={() => handleDelete(n.id)} className="rounded-lg p-1.5 text-[var(--muted)] hover:bg-red-500/10 hover:text-red-400">
                   <IconifyIcon icon="solar:trash-bin-trash-bold" width="16" height="16" />
                 </button>
               </div>
@@ -1160,7 +1160,7 @@ function GalleryTab() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-zinc-200">사진첩 관리</h2>
+        <h2 className="text-lg font-semibold text-[var(--foreground)]">사진첩 관리</h2>
         <button onClick={() => { resetForm(); setAdding(true); }} className={btnPrimary}>
           <span className="flex items-center gap-1.5"><IconifyIcon icon="solar:add-circle-bold" width="16" height="16" />추가</span>
         </button>
@@ -1168,8 +1168,8 @@ function GalleryTab() {
 
       {/* 추가 / 수정 폼 */}
       {(adding || editingId !== null) && (
-        <div className="rounded-xl border border-white/10 bg-zinc-800/50 p-4 space-y-4">
-          <p className="text-sm font-medium text-zinc-300">{editingId !== null ? "사진 수정" : "사진 추가"}</p>
+        <div className="rounded-xl border border-white/10 bg-[var(--card-bg)]/50 p-4 space-y-4">
+          <p className="text-sm font-medium text-[var(--foreground)]">{editingId !== null ? "사진 수정" : "사진 추가"}</p>
           <div className="space-y-3">
             {/* 이미지 업로드 */}
             <div>
@@ -1211,7 +1211,7 @@ function GalleryTab() {
             {/* 미리보기 */}
             {(previewUrl || form.url) && (
               <div className="rounded-lg border border-white/5 p-2">
-                <p className="mb-1 text-xs text-zinc-500">미리보기</p>
+                <p className="mb-1 text-xs text-[var(--muted)]">미리보기</p>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={previewUrl || form.url} alt="미리보기" className="max-h-40 rounded-lg object-cover" />
               </div>
@@ -1239,7 +1239,7 @@ function GalleryTab() {
         <div className="flex gap-1.5 overflow-x-auto">
           {categories.map(cat => (
             <button key={cat} onClick={() => setFilterCat(cat)}
-              className={`shrink-0 rounded-full px-3 py-1.5 text-xs transition-colors ${filterCat === cat ? "bg-accent/10 text-accent font-medium" : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"}`}>
+              className={`shrink-0 rounded-full px-3 py-1.5 text-xs transition-colors ${filterCat === cat ? "bg-accent/10 text-accent font-medium" : "bg-[var(--card-bg)] text-[var(--muted)] hover:bg-[var(--muted-bg)]"}`}>
               {catLabels[cat] || cat} ({cat === "all" ? items.length : items.filter(g => g.category === cat).length})
             </button>
           ))}
@@ -1248,10 +1248,10 @@ function GalleryTab() {
 
       {/* 사진 그리드 */}
       {filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-zinc-500">
+        <div className="flex flex-col items-center justify-center py-16 text-[var(--muted)]">
           <IconifyIcon icon="solar:gallery-bold" width="48" height="48" />
           <p className="mt-4 text-sm">등록된 사진이 없습니다</p>
-          <p className="mt-1 text-xs text-zinc-600">이미지를 업로드하여 추가해보세요</p>
+          <p className="mt-1 text-xs text-[var(--muted)]">이미지를 업로드하여 추가해보세요</p>
         </div>
       ) : (
         <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
@@ -1270,10 +1270,10 @@ function GalleryTab() {
               {g.category === "blog" ? (
                 /* 블로그 링크 카드 */
                 <a href={g.url} target="_blank" rel="noopener noreferrer"
-                  className="flex aspect-square flex-col items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-750 transition-colors">
+                  className="flex aspect-square flex-col items-center justify-center gap-2 bg-[var(--card-bg)] hover:bg-zinc-750 transition-colors">
                   <IconifyIcon icon="solar:link-bold" width="32" height="32" />
-                  <span className="px-2 text-center text-xs text-zinc-300 line-clamp-2">{g.altText || "블로그 게시글"}</span>
-                  <span className="text-[10px] text-zinc-500 truncate max-w-[90%]">{g.url.replace(/https?:\/\//, "").split("/")[0]}</span>
+                  <span className="px-2 text-center text-xs text-[var(--foreground)] line-clamp-2">{g.altText || "블로그 게시글"}</span>
+                  <span className="text-[10px] text-[var(--muted)] truncate max-w-[90%]">{g.url.replace(/https?:\/\//, "").split("/")[0]}</span>
                 </a>
               ) : (
                 /* 이미지 카드 */
@@ -1292,7 +1292,7 @@ function GalleryTab() {
               {/* Action buttons */}
               <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button onClick={() => startEdit(g)}
-                  className="rounded-full bg-zinc-900/90 p-1.5 text-white shadow-lg hover:bg-zinc-700">
+                  className="rounded-full bg-[var(--background)]/90 p-1.5 text-white shadow-lg hover:bg-[var(--muted-bg)]">
                   <IconifyIcon icon="solar:pen-bold" width="14" height="14" />
                 </button>
                 <button onClick={() => handleDelete(g.id)}
@@ -1364,14 +1364,14 @@ function ScheduleTab() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-zinc-200">일정 관리</h2>
+        <h2 className="text-lg font-semibold text-[var(--foreground)]">일정 관리</h2>
         <button onClick={() => { resetForm(); setAdding(true); }} className={btnPrimary}>
           <span className="flex items-center gap-1.5"><IconifyIcon icon="solar:add-circle-bold" width="16" height="16" />추가</span>
         </button>
       </div>
       {(adding || editingId !== null) && (
-        <div className="rounded-xl border border-white/10 bg-zinc-800/50 p-4 space-y-3">
-          <p className="text-sm font-medium text-zinc-300">{editingId !== null ? "일정 수정" : "일정 추가"}</p>
+        <div className="rounded-xl border border-white/10 bg-[var(--card-bg)]/50 p-4 space-y-3">
+          <p className="text-sm font-medium text-[var(--foreground)]">{editingId !== null ? "일정 수정" : "일정 추가"}</p>
           <div><label className={labelClass}>일정 제목</label>
             <input className={inputClass} value={form.title} onChange={e => setForm({...form, title: e.target.value})} placeholder="일정 제목" /></div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -1389,23 +1389,23 @@ function ScheduleTab() {
         </div>
       )}
       {items.length === 0 ? (
-        <p className="py-12 text-center text-sm text-zinc-600">등록된 일정이 없습니다</p>
+        <p className="py-12 text-center text-sm text-[var(--muted)]">등록된 일정이 없습니다</p>
       ) : (
         <div className="space-y-2">
           {items.map(s => (
-            <div key={s.id} className="flex items-center justify-between rounded-xl border border-white/5 bg-zinc-800/30 px-4 py-3">
+            <div key={s.id} className="flex items-center justify-between rounded-xl border border-white/5 bg-[var(--card-bg)]/30 px-4 py-3">
               <div>
-                <p className="text-sm font-medium text-zinc-200">{s.title}</p>
-                <p className="text-xs text-zinc-500">
+                <p className="text-sm font-medium text-[var(--foreground)]">{s.title}</p>
+                <p className="text-xs text-[var(--muted)]">
                   {new Date(s.date).toLocaleDateString("ko-KR")}{s.time ? ` ${s.time}` : ""}{s.location ? ` · ${s.location}` : ""}
                 </p>
               </div>
               <div className="flex gap-1.5">
                 <button onClick={() => startEdit(s)}
-                  className="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200">
+                  className="rounded-lg p-1.5 text-[var(--muted)] transition-colors hover:bg-white/5 hover:text-[var(--foreground)]">
                   <IconifyIcon icon="solar:pen-bold" width="16" height="16" />
                 </button>
-                <button onClick={() => handleDelete(s.id)} className="rounded-lg p-1.5 text-zinc-400 hover:bg-red-500/10 hover:text-red-400">
+                <button onClick={() => handleDelete(s.id)} className="rounded-lg p-1.5 text-[var(--muted)] hover:bg-red-500/10 hover:text-red-400">
                   <IconifyIcon icon="solar:trash-bin-trash-bold" width="16" height="16" />
                 </button>
               </div>
@@ -1497,7 +1497,7 @@ function DonationTab() {
   return (
     <div className="space-y-6 max-w-2xl">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-zinc-200">후원 안내</h2>
+        <h2 className="text-lg font-semibold text-[var(--foreground)]">후원 안내</h2>
         <button onClick={save} className={btnPrimary}>
           {saved ? "저장됨 ✓" : "저장"}
         </button>
@@ -1540,7 +1540,7 @@ function DonationTab() {
         </button>
         {(previewUrl || form.imageUrl) && (
           <div className="mt-3 rounded-xl border border-white/5 p-2">
-            <p className="mb-1 text-xs text-zinc-500">미리보기</p>
+            <p className="mb-1 text-xs text-[var(--muted)]">미리보기</p>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={previewUrl || form.imageUrl} alt="후원 이미지" className="max-h-80 rounded-lg" />
           </div>
@@ -1621,7 +1621,7 @@ function ContactsTab() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-zinc-200">연락처 관리</h2>
+        <h2 className="text-lg font-semibold text-[var(--foreground)]">연락처 관리</h2>
         <button onClick={() => { resetForm(); setAdding(true); }} className={btnPrimary}>
           <span className="flex items-center gap-1.5">
             <IconifyIcon icon="solar:add-circle-bold" width="16" height="16" />
@@ -1632,8 +1632,8 @@ function ContactsTab() {
 
       {/* Add / Edit form */}
       {(adding || editing) && (
-        <div className="rounded-xl border border-white/10 bg-zinc-800/50 p-4 space-y-3">
-          <p className="text-sm font-medium text-zinc-300">{editing ? "연락처 수정" : "연락처 추가"}</p>
+        <div className="rounded-xl border border-white/10 bg-[var(--card-bg)]/50 p-4 space-y-3">
+          <p className="text-sm font-medium text-[var(--foreground)]">{editing ? "연락처 수정" : "연락처 추가"}</p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className={labelClass}>유형</label>
@@ -1677,33 +1677,33 @@ function ContactsTab() {
 
       {/* Contacts list */}
       {contacts.length === 0 ? (
-        <p className="py-12 text-center text-sm text-zinc-600">등록된 연락처가 없습니다</p>
+        <p className="py-12 text-center text-sm text-[var(--muted)]">등록된 연락처가 없습니다</p>
       ) : (
         <div className="space-y-2">
           {contacts.map((c) => (
             <div
               key={c.id}
-              className="flex items-center justify-between rounded-xl border border-white/5 bg-zinc-800/30 px-4 py-3"
+              className="flex items-center justify-between rounded-xl border border-white/5 bg-[var(--card-bg)]/30 px-4 py-3"
             >
               <div className="flex items-center gap-3">
-                <span className="rounded-lg bg-zinc-700/50 px-2 py-1 text-xs font-medium text-zinc-300">
+                <span className="rounded-lg bg-[var(--muted-bg)]/50 px-2 py-1 text-xs font-medium text-[var(--foreground)]">
                   {getTypeLabel(c.type)}
                 </span>
                 <div>
-                  {c.label && <span className="mr-2 text-sm text-zinc-400">{c.label}</span>}
-                  <span className="text-sm text-zinc-200">{c.value}</span>
+                  {c.label && <span className="mr-2 text-sm text-[var(--muted)]">{c.label}</span>}
+                  <span className="text-sm text-[var(--foreground)]">{c.value}</span>
                 </div>
               </div>
               <div className="flex gap-1.5">
                 <button
                   onClick={() => startEdit(c)}
-                  className="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200"
+                  className="rounded-lg p-1.5 text-[var(--muted)] transition-colors hover:bg-white/5 hover:text-[var(--foreground)]"
                 >
                   <IconifyIcon icon="solar:pen-bold" width="16" height="16" />
                 </button>
                 <button
                   onClick={() => handleDelete(c.id)}
-                  className="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-red-500/10 hover:text-red-400"
+                  className="rounded-lg p-1.5 text-[var(--muted)] transition-colors hover:bg-red-500/10 hover:text-red-400"
                 >
                   <IconifyIcon icon="solar:trash-bin-trash-bold" width="16" height="16" />
                 </button>

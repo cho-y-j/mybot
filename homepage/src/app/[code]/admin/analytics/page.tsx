@@ -131,10 +131,10 @@ export default function AnalyticsPage() {
       <div className="flex min-h-[60vh] items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="relative h-12 w-12">
-            <div className="absolute inset-0 rounded-full border-2 border-zinc-800" />
+            <div className="absolute inset-0 rounded-full border-2 border-[var(--card-border)]" />
             <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-emerald-500" />
           </div>
-          <p className="text-sm text-zinc-500">분석 데이터를 불러오는 중...</p>
+          <p className="text-sm text-[var(--muted)]">분석 데이터를 불러오는 중...</p>
         </div>
       </div>
     );

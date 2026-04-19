@@ -345,6 +345,17 @@ async def get_dong_results(
         .order_by(ElectionResultDong.region_sigungu, ElectionResultDong.eup_myeon_dong, ElectionResultDong.vote_rate.desc())
     )).scalars().all()
 
+    # 진영 분류 도우미 (민주 계열=진보, 국힘 계열=보수)
+    def _party_to_camp(p: str | None) -> str:
+        if not p:
+            return ""
+        import re as __re
+        if __re.search(r"(더불어민주당|민주당|새정치민주연합|열린우리당|통합민주당|민주노동당|진보당|정의당|녹색당|조국혁신당|개혁|민중)", p):
+            return "진보"
+        if __re.search(r"(국민의힘|한나라당|새누리당|미래통합당|자유한국당|새천년민주당|민주자유당|신한국당|한국당)", p):
+            return "보수"
+        return ""
+
     # 그룹: sigungu -> dong -> [후보 list]
     from collections import defaultdict
     grouped = defaultdict(lambda: defaultdict(list))
@@ -352,6 +363,7 @@ async def get_dong_results(
         grouped[r.region_sigungu][r.eup_myeon_dong].append({
             "candidate_name": r.candidate_name,
             "party": r.party,
+            "party_camp": _party_to_camp(r.party),  # 진영 정보 추가 (프론트 색상용)
             "votes": r.votes,
             "vote_rate": r.vote_rate,
             "is_winner": r.is_winner,
@@ -365,6 +377,14 @@ async def get_dong_results(
         return m.group(1) if m else (name or "")
     sorted_sgg = sorted(grouped.keys(), key=lambda x: (_parent_city(x), x))
 
+    # tier 계산 (진영별, 5단계)
+    def _camp_tier(prog: float, cons: float) -> str:
+        gap = abs(prog - cons)
+        dom = "진보" if prog >= cons else "보수"
+        if gap >= 20: return f"{dom}강세"
+        if gap >= 5:  return f"{dom}우세"
+        return "경합"
+
     sigungu_list = []
     for sgg in sorted_sgg:
         dongs = grouped[sgg]
@@ -372,11 +392,22 @@ async def get_dong_results(
         for dong_name, cands in dongs.items():
             sorted_c = sorted(cands, key=lambda c: -(c["vote_rate"] or 0))
             margin = round((sorted_c[0]["vote_rate"] or 0) - (sorted_c[1]["vote_rate"] or 0), 1) if len(sorted_c) > 1 else 0
+            # 진영별 합산 득표율
+            prog_rate = sum((c["vote_rate"] or 0) for c in sorted_c if c["party_camp"] == "진보")
+            cons_rate = sum((c["vote_rate"] or 0) for c in sorted_c if c["party_camp"] == "보수")
+            tier = _camp_tier(prog_rate, cons_rate)
+            dominant = "진보" if prog_rate >= cons_rate else "보수"
             dong_list.append({
                 "name": dong_name,
                 "candidates": sorted_c,
                 "winner": sorted_c[0] if sorted_c else None,
                 "margin": margin,
+                # 진영 정보 (프론트 색상/tier 렌더용)
+                "progressive_rate": round(prog_rate, 1),
+                "conservative_rate": round(cons_rate, 1),
+                "camp_gap": round(abs(prog_rate - cons_rate), 1),
+                "camp_tier": tier,
+                "camp_dominant": dominant,
             })
         sigungu_list.append({
             "sigungu": sgg,
