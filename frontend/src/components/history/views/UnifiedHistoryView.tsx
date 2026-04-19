@@ -38,8 +38,8 @@ export default function UnifiedHistoryView({ data, electionId, onRefresh }: Prop
   const region = data.region || '';
   const layout = data.layout || 'mayor';
 
-  // 교육감은 기본 진영 모드, 나머지는 정당 모드
-  const [mode, setMode] = useState<ViewMode>(layout === 'superintendent' ? 'camp' : 'party');
+  // 모든 선거 유형 기본 '진영(보수/진보)' 모드 — 보편적 색 표현 통일
+  const [mode, setMode] = useState<ViewMode>('camp');
   const [tab, setTab] = useState<Tab>('strength');
   const [selectedDistrict, setSelectedDistrict] = useState<string | null>(null);
 
