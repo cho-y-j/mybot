@@ -523,6 +523,14 @@ class ApiClient {
     return this.request<any>(`/analysis/${electionId}/dong-results${q ? '?' + q : ''}`);
   }
 
+  getTopicCard(electionId: string, keyword: string) {
+    return this.request<any>(`/analysis/${electionId}/topic-card?keyword=${encodeURIComponent(keyword)}`);
+  }
+
+  getTrendingTopics(electionId: string) {
+    return this.request<any>(`/analysis/${electionId}/trending-topics`);
+  }
+
   getSurveyDeepAnalysis(electionId: string, opts?: { force?: boolean; cacheOnly?: boolean }) {
     const params = new URLSearchParams();
     if (opts?.force) params.set('force', 'true');

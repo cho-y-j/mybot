@@ -4,6 +4,7 @@ import { useElection, getCandidateColorMap } from '@/hooks/useElection';
 import { api } from '@/services/api';
 import { SearchTrendLine, CANDIDATE_COLORS } from '@/components/charts';
 import IssuesTab from '@/components/trends/IssuesTab';
+import TopicCard from '@/components/trends/TopicCard';
 
 type TabType = 'candidates' | 'realtime' | 'issues' | 'search';
 
@@ -18,11 +19,44 @@ export default function TrendsPage() {
   const [searchKeyword, setSearchKeyword] = useState('');
   const [searchResult, setSearchResult] = useState<any>(null);
   const [searching, setSearching] = useState(false);
+  // 주제 카드 (실시간 급상승 + 키워드 조회 공용)
+  const [topicCard, setTopicCard] = useState<any>(null);
+  const [loadingTopicCard, setLoadingTopicCard] = useState(false);
+  const [trendingTopics, setTrendingTopics] = useState<any>(null);
+  const [loadingTrending, setLoadingTrending] = useState(false);
 
   useEffect(() => {
-    if (election) loadTrends();
+    if (election) {
+      loadTrends();
+      loadTrendingTopics();
+    }
     loadRealtime();
   }, [election]);
+
+  const loadTrendingTopics = async () => {
+    if (!election) return;
+    setLoadingTrending(true);
+    try {
+      const r = await api.getTrendingTopics(election.id);
+      setTrendingTopics(r);
+    } catch (e: any) {
+      console.error('trending topics error:', e);
+    } finally { setLoadingTrending(false); }
+  };
+
+  const openTopicCard = async (kw: string) => {
+    if (!election) return;
+    setTab('search');
+    setSearchKeyword(kw);
+    setLoadingTopicCard(true);
+    setTopicCard(null);
+    try {
+      const r = await api.getTopicCard(election.id, kw);
+      setTopicCard(r);
+    } catch (e: any) {
+      setTopicCard({ error: e?.message || '주제 카드 생성 실패' });
+    } finally { setLoadingTopicCard(false); }
+  };
 
   const loadTrends = async () => {
     if (!election) return;
@@ -52,17 +86,21 @@ export default function TrendsPage() {
     } finally { setCollecting(false); }
   };
 
+  // 기존 단순 검색 → 주제 카드로 통합
   const handleSearch = async (keyword?: string) => {
     const kw = (keyword || searchKeyword).trim();
     if (!kw || !election) return;
     if (keyword) setSearchKeyword(kw);
     setSearching(true);
+    setLoadingTopicCard(true);
+    setTopicCard(null);
+    setSearchResult(null);
     try {
-      const data = await api.searchKeyword(election.id, kw);
-      setSearchResult(data);
+      const data = await api.getTopicCard(election.id, kw);
+      setTopicCard(data);
     } catch (e: any) {
-      setSearchResult({ error: e?.message || '검색 실패' });
-    } finally { setSearching(false); }
+      setTopicCard({ error: e?.message || '주제 카드 생성 실패' });
+    } finally { setSearching(false); setLoadingTopicCard(false); }
   };
 
   if (elLoading || loading) return <div className="flex items-center justify-center h-64"><div className="animate-spin h-8 w-8 border-4 border-primary-500 border-t-transparent rounded-full" /></div>;
@@ -139,65 +177,98 @@ export default function TrendsPage() {
         ))}
       </div>
 
-      {/* ═══ 실시간 급상승 ═══ */}
+      {/* ═══ 실시간 급상승 (AI 관련도 기반 주제 선정) ═══ */}
       {tab === 'realtime' && (
         <>
           <div className="flex items-center justify-between">
-            <h3 className="font-bold">실시간 급상승 검색어</h3>
-            <button onClick={loadRealtime} className="text-xs text-[var(--muted)] hover:text-[var(--foreground)]">새로고침</button>
+            <div>
+              <h3 className="font-bold">실시간 급상승 + 우리 선거 관련도</h3>
+              <p className="text-xs text-[var(--muted)] mt-0.5">
+                Google 실시간 급상승 키워드를 AI가 <b>{election.election_type === 'superintendent' ? '교육감' : election.election_type === 'mayor' ? '시장' : '선거'}</b> 관점에서 관련도를 평가합니다. 관련도 높은 것부터 상단.
+              </p>
+            </div>
+            <button onClick={loadTrendingTopics} disabled={loadingTrending}
+              className="text-xs px-3 py-1.5 bg-blue-500/10 text-blue-500 rounded-lg hover:bg-blue-500/20 disabled:opacity-50">
+              {loadingTrending ? '분석중... (약 20초)' : '다시 분석'}
+            </button>
           </div>
-          {(() => {
-            const items = realtime?.trends || [];
-            const half = Math.ceil(items.length / 2);
-            const left = items.slice(0, half);
-            const right = items.slice(half);
+          {loadingTrending && !trendingTopics && (
+            <div className="card text-center py-12 text-[var(--muted)]">
+              <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-3" />
+              AI가 급상승 키워드를 분석하고 있습니다...
+            </div>
+          )}
+          {trendingTopics?.error && (
+            <div className="card bg-red-500/10 border-red-500/30 text-red-500 text-sm">
+              {trendingTopics.error}
+            </div>
+          )}
+          {trendingTopics?.trends && trendingTopics.trends.length > 0 && (() => {
+            const items = trendingTopics.trends;
+            const high = items.filter((t: any) => t.relevance_score >= 70);
+            const mid = items.filter((t: any) => t.relevance_score >= 40 && t.relevance_score < 70);
+            const low = items.filter((t: any) => t.relevance_score < 40);
+            const renderItem = (t: any, i: number) => (
+              <button
+                key={`${t.keyword}-${i}`}
+                onClick={() => openTopicCard(t.keyword)}
+                className={`w-full text-left p-3 rounded-xl border transition hover:border-blue-500/40 hover:bg-blue-500/5 ${
+                  t.relevance_score >= 85 ? 'bg-green-500/5 border-green-500/30' :
+                  t.relevance_score >= 70 ? 'bg-blue-500/5 border-blue-500/30' :
+                  t.relevance_score >= 40 ? 'bg-amber-500/5 border-amber-500/30' :
+                  'bg-[var(--card-bg)] border-[var(--card-border)]'
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <span className="text-sm font-black w-8 text-[var(--muted)] mt-0.5">{i + 1}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                      <span className="font-semibold">{t.keyword}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                        t.relevance_score >= 85 ? 'bg-green-500/20 text-green-600' :
+                        t.relevance_score >= 70 ? 'bg-blue-500/20 text-blue-600' :
+                        t.relevance_score >= 40 ? 'bg-amber-500/20 text-amber-600' :
+                        'bg-gray-500/20 text-gray-500'
+                      }`}>
+                        관련도 {t.relevance_score}
+                      </span>
+                      {t.traffic && <span className="text-[10px] text-[var(--muted)]">{t.traffic}</span>}
+                    </div>
+                    {t.relevance_reason && <p className="text-[11px] text-[var(--muted)] line-clamp-1">{t.relevance_reason}</p>}
+                    {t.news?.[0] && <p className="text-[10px] text-[var(--muted)] mt-0.5 line-clamp-1 italic">📰 {t.news[0].title}</p>}
+                  </div>
+                  <span className="text-xs text-blue-500 flex-shrink-0">주제 분석 →</span>
+                </div>
+              </button>
+            );
             return (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  {left.map((t: any, i: number) => (
-                    <div key={i} className={`p-3 rounded-xl border transition ${
-                      t.is_education_related ? 'bg-amber-500/10 border-amber-500/30' : 'bg-[var(--card-bg)] border-[var(--card-border)]'
-                    }`}>
-                      <div className="flex items-center gap-3">
-                        <span className="text-lg font-black text-[var(--muted)] w-8">{i + 1}</span>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold">{t.keyword}</span>
-                            {t.is_education_related && <span className="text-[10px] bg-amber-500/20 text-amber-500 px-1.5 py-0.5 rounded font-bold">교육</span>}
-                          </div>
-                          {t.news?.[0] && <p className="text-xs text-[var(--muted)] mt-0.5 line-clamp-1">{t.news[0].title}</p>}
-                        </div>
-                        <span className="text-xs text-[var(--muted)]">{t.traffic}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div className="space-y-2">
-                  {right.map((t: any, i: number) => (
-                    <div key={i} className={`p-3 rounded-xl border transition ${
-                      t.is_education_related ? 'bg-amber-500/10 border-amber-500/30' : 'bg-[var(--card-bg)] border-[var(--card-border)]'
-                    }`}>
-                      <div className="flex items-center gap-3">
-                        <span className="text-lg font-black text-[var(--muted)] w-8">{half + i + 1}</span>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold">{t.keyword}</span>
-                            {t.is_education_related && <span className="text-[10px] bg-amber-500/20 text-amber-500 px-1.5 py-0.5 rounded font-bold">교육</span>}
-                          </div>
-                          {t.news?.[0] && <p className="text-xs text-[var(--muted)] mt-0.5 line-clamp-1">{t.news[0].title}</p>}
-                        </div>
-                        <span className="text-xs text-[var(--muted)]">{t.traffic}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+              <div className="space-y-4">
+                {high.length > 0 && (
+                  <section>
+                    <h4 className="text-sm font-bold text-green-600 mb-2">🎯 지금 바로 활용 가능 (관련도 70+)</h4>
+                    <div className="space-y-2">{high.map(renderItem)}</div>
+                  </section>
+                )}
+                {mid.length > 0 && (
+                  <section>
+                    <h4 className="text-sm font-semibold text-amber-600 mb-2">💡 연관해서 활용 가능 (관련도 40~69)</h4>
+                    <div className="space-y-2">{mid.map((t: any, i: number) => renderItem(t, high.length + i))}</div>
+                  </section>
+                )}
+                {low.length > 0 && (
+                  <details>
+                    <summary className="text-xs text-[var(--muted)] cursor-pointer hover:text-[var(--foreground)]">
+                      🔻 선거와 무관한 급상승 ({low.length}개) 펼쳐보기
+                    </summary>
+                    <div className="space-y-2 mt-2">{low.map((t: any, i: number) => renderItem(t, high.length + mid.length + i))}</div>
+                  </details>
+                )}
               </div>
             );
           })()}
-          {(realtime?.trends || []).length === 0 && (
-            <div className="card text-center py-12 text-[var(--muted)]">실시간 데이터를 불러올 수 없습니다.</div>
-          )}
-          <div className="text-xs text-[var(--muted)] text-center">교육/선거 관련 키워드는 노란색으로 하이라이트 | 출처: Google Trends</div>
+          <div className="text-[10px] text-[var(--muted)] text-center">
+            💡 키워드 클릭 → '키워드 조회' 탭에서 상세 주제 카드 (해시태그·블로그 제목·롱테일) 자동 생성
+          </div>
         </>
       )}
 
@@ -262,28 +333,44 @@ export default function TrendsPage() {
         />
       )}
 
-      {/* ═══ 키워드 조회 ═══ */}
+      {/* ═══ 키워드 조회 (주제 카드) ═══ */}
       {tab === 'search' && (
         <>
           <div className="card">
-            <h3 className="font-bold mb-3">키워드 검색량 조회</h3>
-            <p className="text-xs text-[var(--muted)] mb-3">공약, 교육 이슈 등 키워드를 입력하면 검색량과 추천 해시태그를 확인할 수 있습니다.</p>
+            <h3 className="font-bold mb-2">📝 주제 카드 생성</h3>
+            <p className="text-xs text-[var(--muted)] mb-3">
+              키워드 입력 → AI가 <b>검색량 + 관련도 + 후보 결합 해시태그 + 롱테일 + 블로그 제목 + SNS 캡션</b>을 한 번에 생성
+            </p>
             <div className="flex gap-2">
               <input
                 className="input-field flex-1"
                 value={searchKeyword}
                 onChange={e => setSearchKeyword(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleSearch()}
-                placeholder="예: AI교육, 사교육비, 학교급식, 고교학점제..."
+                placeholder="예: AI교육, 사교육비, 늘봄학교, 학교급식..."
               />
               <button onClick={() => handleSearch()} disabled={searching}
-                className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm hover:bg-blue-700 disabled:opacity-50">
-                {searching ? '조회중...' : '검색'}
+                className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap">
+                {searching ? 'AI 분석중...' : '주제 카드 생성'}
               </button>
             </div>
           </div>
 
-          {searchResult && !searchResult.error && (() => {
+          {/* 주제 카드 */}
+          {loadingTopicCard && (
+            <div className="card text-center py-12">
+              <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-3" />
+              <p className="text-[var(--muted)] text-sm">AI가 주제 카드를 생성하고 있습니다... (약 15초)</p>
+            </div>
+          )}
+          {topicCard?.error && !loadingTopicCard && (
+            <div className="card bg-red-500/10 border-red-500/30 text-red-500 text-sm">{topicCard.error}</div>
+          )}
+          {topicCard && !topicCard.error && !loadingTopicCard && (
+            <TopicCard data={topicCard} />
+          )}
+
+          {false && searchResult && !searchResult.error && (() => {
             const r = searchResult.result || {};
             const related = searchResult.related_keywords || [];
             const pcRatio = r.total ? Math.round((r.pc / r.total) * 100) : 0;

@@ -689,6 +689,43 @@ async def get_youtube_data(
     return await _get_youtube(db, user["tenant_id"], election_id, days)
 
 
+@router.get("/{election_id}/topic-card")
+async def get_topic_card(
+    election_id: UUID,
+    keyword: str,
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """키워드 1개 → 담당자가 '블로그/SNS/쇼츠 어떻게 대응할지' 바로 결정 가능한 주제 카드.
+
+    응답: 월/주/일 검색량, 경쟁도, AI 관련도, 후보명 결합 해시태그,
+          경쟁도 낮은 롱테일, 추천 포맷, 블로그 제목 3안, 메타 설명, SNS 캡션."""
+    from app.analysis.topic_card import build_topic_card
+    try:
+        result = await build_topic_card(db, user["tenant_id"], str(election_id), keyword)
+        return result
+    except Exception as e:
+        import traceback
+        structlog.get_logger().error("topic_card_error", error=str(e), tb=traceback.format_exc()[:500])
+        return {"error": f"주제 카드 생성 실패: {str(e)[:120]}"}
+
+
+@router.get("/{election_id}/trending-topics")
+async def get_trending_topics(
+    election_id: UUID,
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """실시간 급상승 키워드 + AI 관련도 점수 (우리 선거 관점). 관련도 높은 것 상단."""
+    from app.analysis.topic_card import trending_topics_with_relevance
+    try:
+        return await trending_topics_with_relevance(db, user["tenant_id"], str(election_id))
+    except Exception as e:
+        import traceback
+        structlog.get_logger().error("trending_topics_error", error=str(e), tb=traceback.format_exc()[:500])
+        return {"trends": [], "error": f"급상승 분석 실패: {str(e)[:120]}"}
+
+
 @router.get("/realtime-trends")
 async def get_realtime_trends(user: CurrentUser):
     """실시간 급상승 검색어 (Google Trends RSS)."""
