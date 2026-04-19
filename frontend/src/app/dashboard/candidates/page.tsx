@@ -1,10 +1,13 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { useElection, getCandidateColorMap } from '@/hooks/useElection';
 import { api } from '@/services/api';
 import { CandidateNewsBar, SurveyTrendChart } from '@/components/charts';
+import ComparisonViz, { CandStats } from '@/components/candidates/ComparisonViz';
 
 export default function CandidateComparisonPage() {
+  const router = useRouter();
   const { election, candidates, candidateNames, ourCandidate, loading: elLoading } = useElection();
   const colorMap = useMemo(() => getCandidateColorMap(candidates), [candidates]);
   const [gaps, setGaps] = useState<any>(null);
@@ -184,51 +187,46 @@ export default function CandidateComparisonPage() {
         </div>
       )}
 
-      {/* ═══ 지표별 상세 비교 (메인 — 상단 이동) ═══ */}
-      {newsByCand.length > 0 && (() => {
-        // 각 지표별 최고값 계산 (1위 하이라이트)
-        const statsByCand = orderedCands.map(c => {
+      {/* ═══ 5층 시각화 (메인): 점수 + 레이더 + 갭바 + 히트맵 + AI 약점 ═══ */}
+      {(() => {
+        if (newsByCand.length === 0 && !mediaData) return null;
+        const vizStats: CandStats[] = orderedCands.map(c => {
           const d = newsByCand.find((n: any) => n.name === c.name);
           const md = (mediaData?.candidates || []).find((m: any) => m.name === c.name);
           const eff = d ? (d.positive || 0) + (d.negative || 0) : 0;
           const yt = md?.youtube || {};
-          const engRate = yt.views > 0 ? ((yt.likes + yt.comments) / yt.views * 100) : 0;
           return {
-            c,
+            id: c.id,
+            name: c.name,
+            is_our_candidate: !!c.is_our_candidate,
+            color: colorMap[c.name] || '#64748b',
             newsCount: d?.count || 0,
             posRate: eff > 0 ? Math.round((d?.positive || 0) / eff * 100) : 0,
             negCount: d?.negative || 0,
             surveyVal: latestSurvey[c.name] || 0,
             ytViews: yt.views || 0,
-            ytEng: engRate,
+            ytEngRate: yt.views > 0 ? ((yt.likes + yt.comments) / yt.views * 100) : 0,
             cmCount: md?.community?.count || 0,
             reachScore: md?.reach_score || 0,
           };
         });
-        const maxOf = (k: keyof typeof statsByCand[0]) => Math.max(...statsByCand.map(s => s[k] as number), 0);
-        const minOf = (k: keyof typeof statsByCand[0]) => Math.min(...statsByCand.filter(s => (s[k] as number) > 0).map(s => s[k] as number), Infinity);
-        const maxNews = maxOf('newsCount');
-        const maxPos = maxOf('posRate');
-        const minNeg = minOf('negCount');  // 부정은 낮을수록 좋음
-        const maxSurvey = maxOf('surveyVal');
-        const maxYt = maxOf('ytViews');
-        const maxEng = maxOf('ytEng');
-        const maxCm = maxOf('cmCount');
-        const maxReach = maxOf('reachScore');
-
-        const cellCls = (isOur: boolean, isTop: boolean) => {
-          if (isTop && isOur) return 'bg-blue-500/10 ring-1 ring-amber-500/40 text-amber-600 font-bold';
-          if (isTop) return 'bg-amber-500/10 text-amber-600 font-bold';
-          if (isOur) return 'bg-blue-500/5';
-          return '';
-        };
-
         return (
-          <div className="card overflow-x-auto">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-bold">지표별 상세 비교</h3>
-              <span className="text-xs text-[var(--muted)]">{periodLabel} · 1위 <span className="text-amber-600 font-bold">금색</span> · 우리 후보 <span className="text-blue-500 font-bold">파랑</span></span>
-            </div>
+          <ComparisonViz
+            stats={vizStats}
+            periodLabel={periodLabel}
+            onNavigate={(route) => router.push(route)}
+          />
+        );
+      })()}
+
+      {/* ═══ 상세 숫자 테이블 (접기 기본, 검증용) ═══ */}
+      {newsByCand.length > 0 && (
+        <details className="card">
+          <summary className="cursor-pointer font-semibold text-sm flex items-center gap-2 hover:text-blue-500">
+            상세 숫자 테이블 · 숫자 확인용
+            <span className="text-xs text-[var(--muted)] font-normal">(펼쳐보기)</span>
+          </summary>
+          <div className="overflow-x-auto mt-3">
             <table className="w-full text-sm min-w-[600px]">
               <thead>
                 <tr className="border-b border-[var(--card-border)]">
@@ -236,148 +234,105 @@ export default function CandidateComparisonPage() {
                   {orderedCands.map(c => (
                     <th key={c.id} className={`text-center p-2.5 font-bold ${c.is_our_candidate ? 'bg-blue-500/5' : ''}`} style={{ color: colorMap[c.name] }}>
                       {c.name}
-                      {c.is_our_candidate && <span className="block text-[9px] font-normal text-blue-500">우리 후보</span>}
+                      {c.is_our_candidate && <span className="block text-[9px] font-normal text-blue-500">우리</span>}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 <tr className="border-b border-[var(--card-border)]/50">
-                  <td className="p-2.5 font-medium text-[var(--muted)]">뉴스 건수</td>
-                  {statsByCand.map(s => (
-                    <td key={s.c.id} className={`text-center p-2.5 ${cellCls(s.c.is_our_candidate, s.newsCount > 0 && s.newsCount === maxNews)}`}>
-                      {s.newsCount}
-                    </td>
-                  ))}
-                </tr>
-                <tr className="border-b border-[var(--card-border)]/50">
-                  <td className="p-2.5 font-medium text-[var(--muted)]">긍정률</td>
-                  {statsByCand.map(s => {
-                    const d = newsByCand.find((n: any) => n.name === s.c.name);
-                    const eff = d ? (d.positive || 0) + (d.negative || 0) : 0;
-                    return (
-                      <td key={s.c.id} className={`text-center p-2.5 ${cellCls(s.c.is_our_candidate, s.posRate > 0 && s.posRate === maxPos)}`}>
-                        {eff > 0 ? `${s.posRate}%` : '-'}
-                        {d?.analysis_quality === 'low' && <span className="block text-[9px] text-amber-500 font-normal">품질 낮음</span>}
-                      </td>
-                    );
+                  <td className="p-2.5 text-[var(--muted)]">뉴스 건수</td>
+                  {orderedCands.map(c => {
+                    const d = newsByCand.find((n: any) => n.name === c.name);
+                    return <td key={c.id} className="text-center p-2.5">{d?.count || 0}</td>;
                   })}
                 </tr>
                 <tr className="border-b border-[var(--card-border)]/50">
-                  <td className="p-2.5 font-medium text-[var(--muted)]">부정 뉴스 <span className="text-[9px] text-[var(--muted)]">(낮을수록 ↑)</span></td>
-                  {statsByCand.map(s => (
-                    <td key={s.c.id} className={`text-center p-2.5 ${cellCls(s.c.is_our_candidate, s.negCount > 0 && s.negCount === minNeg && minNeg !== Infinity)}`}>
-                      {s.negCount}
-                    </td>
-                  ))}
+                  <td className="p-2.5 text-[var(--muted)]">긍정률</td>
+                  {orderedCands.map(c => {
+                    const d = newsByCand.find((n: any) => n.name === c.name);
+                    const eff = d ? (d.positive || 0) + (d.negative || 0) : 0;
+                    const r = eff > 0 ? Math.round((d?.positive || 0) / eff * 100) : 0;
+                    return <td key={c.id} className="text-center p-2.5">{eff > 0 ? `${r}%` : '-'}</td>;
+                  })}
                 </tr>
                 <tr className="border-b border-[var(--card-border)]/50">
-                  <td className="p-2.5 font-medium text-[var(--muted)]">최근 지지율 <span className="text-[9px] text-[var(--muted)]">(여론조사)</span></td>
-                  {statsByCand.map(s => (
-                    <td key={s.c.id} className={`text-center p-2.5 ${cellCls(s.c.is_our_candidate, s.surveyVal > 0 && s.surveyVal === maxSurvey)}`}>
-                      {s.surveyVal ? `${s.surveyVal}%` : '-'}
-                    </td>
-                  ))}
+                  <td className="p-2.5 text-[var(--muted)]">부정 뉴스</td>
+                  {orderedCands.map(c => {
+                    const d = newsByCand.find((n: any) => n.name === c.name);
+                    return <td key={c.id} className="text-center p-2.5">{d?.negative || 0}</td>;
+                  })}
                 </tr>
                 <tr className="border-b border-[var(--card-border)]/50">
-                  <td className="p-2.5 font-medium text-[var(--muted)]">유튜브 조회수</td>
-                  {statsByCand.map(s => (
-                    <td key={s.c.id} className={`text-center p-2.5 ${cellCls(s.c.is_our_candidate, s.ytViews > 0 && s.ytViews === maxYt)}`}>
-                      {s.ytViews ? s.ytViews.toLocaleString() : '-'}
-                    </td>
-                  ))}
+                  <td className="p-2.5 text-[var(--muted)]">최근 지지율 <span className="text-[9px]">(최신 1건)</span></td>
+                  {orderedCands.map(c => {
+                    const v = latestSurvey[c.name];
+                    return <td key={c.id} className="text-center p-2.5">{v ? `${v}%` : '-'}</td>;
+                  })}
                 </tr>
                 <tr className="border-b border-[var(--card-border)]/50">
-                  <td className="p-2.5 font-medium text-[var(--muted)]">유튜브 참여율</td>
-                  {statsByCand.map(s => (
-                    <td key={s.c.id} className={`text-center p-2.5 ${cellCls(s.c.is_our_candidate, s.ytEng > 0 && s.ytEng === maxEng)}`}>
-                      {s.ytEng > 0 ? `${s.ytEng.toFixed(2)}%` : '-'}
-                    </td>
-                  ))}
+                  <td className="p-2.5 text-[var(--muted)]">유튜브 조회</td>
+                  {orderedCands.map(c => {
+                    const md = (mediaData?.candidates || []).find((m: any) => m.name === c.name);
+                    return <td key={c.id} className="text-center p-2.5">{md?.youtube?.views ? md.youtube.views.toLocaleString() : '-'}</td>;
+                  })}
                 </tr>
                 <tr className="border-b border-[var(--card-border)]/50">
-                  <td className="p-2.5 font-medium text-[var(--muted)]">커뮤니티 언급</td>
-                  {statsByCand.map(s => (
-                    <td key={s.c.id} className={`text-center p-2.5 ${cellCls(s.c.is_our_candidate, s.cmCount > 0 && s.cmCount === maxCm)}`}>
-                      {s.cmCount}
-                    </td>
-                  ))}
+                  <td className="p-2.5 text-[var(--muted)]">유튜브 참여율</td>
+                  {orderedCands.map(c => {
+                    const md = (mediaData?.candidates || []).find((m: any) => m.name === c.name);
+                    const yt = md?.youtube || {};
+                    const e = yt.views > 0 ? ((yt.likes + yt.comments) / yt.views * 100).toFixed(2) : null;
+                    return <td key={c.id} className="text-center p-2.5">{e ? `${e}%` : '-'}</td>;
+                  })}
+                </tr>
+                <tr className="border-b border-[var(--card-border)]/50">
+                  <td className="p-2.5 text-[var(--muted)]">커뮤니티 언급</td>
+                  {orderedCands.map(c => {
+                    const md = (mediaData?.candidates || []).find((m: any) => m.name === c.name);
+                    return <td key={c.id} className="text-center p-2.5">{md?.community?.count || 0}</td>;
+                  })}
                 </tr>
                 <tr>
-                  <td className="p-2.5 font-bold">도달 점수</td>
-                  {statsByCand.map(s => (
-                    <td key={s.c.id} className={`text-center p-2.5 font-black ${cellCls(s.c.is_our_candidate, s.reachScore > 0 && s.reachScore === maxReach)}`}>
-                      {s.reachScore ? s.reachScore.toLocaleString() : '-'}
-                    </td>
-                  ))}
+                  <td className="p-2.5 text-[var(--muted)] font-semibold">도달 점수</td>
+                  {orderedCands.map(c => {
+                    const md = (mediaData?.candidates || []).find((m: any) => m.name === c.name);
+                    return <td key={c.id} className="text-center p-2.5 font-bold text-blue-500">{md?.reach_score ? md.reach_score.toLocaleString() : '-'}</td>;
+                  })}
                 </tr>
               </tbody>
             </table>
             <p className="text-[10px] text-[var(--muted)] mt-2">
-              * 뉴스·유튜브·커뮤니티는 {periodLabel} 수집 기준. 여론조사는 최신 1건 기준.
+              * 뉴스/유튜브/커뮤니티는 {periodLabel}. 여론조사는 최신 1건 기준(기간 무관).
             </p>
           </div>
-        );
-      })()}
+        </details>
+      )}
 
-      {/* Candidate Profile Cards — 시각 요약 */}
-      <div className={`grid grid-cols-1 ${orderedCands.length === 1 ? 'md:grid-cols-1' : orderedCands.length === 2 ? 'md:grid-cols-2' : orderedCands.length === 3 ? 'md:grid-cols-3' : 'md:grid-cols-4'} gap-4`}>
+      {/* Candidate Profile Cards — 간소화 (이름/소속/최근 지지율만) */}
+      <div className={`grid grid-cols-1 ${orderedCands.length <= 2 ? 'md:grid-cols-2' : orderedCands.length === 3 ? 'md:grid-cols-3' : 'md:grid-cols-4 xl:grid-cols-5'} gap-3`}>
         {orderedCands.map((c) => {
-          const data = newsByCand.find((d: any) => d.name === c.name);
-          const total = data ? data.positive + data.negative + data.neutral : 0;
-          const effective = (data?.positive || 0) + (data?.negative || 0);
-          const posRate = effective > 0 ? Math.round((data?.positive || 0) / effective * 100) : 0;
-          const qualityLow = (data?.analysis_quality === 'low');
           const surveyVal = latestSurvey[c.name] || 0;
-
           return (
             <div key={c.id} className={`card ${c.is_our_candidate ? 'ring-1 ring-blue-500/30 bg-blue-500/5' : ''}`}>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-14 h-14 rounded-full flex items-center justify-center text-white font-bold text-xl shadow-md"
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-md flex-shrink-0"
                   style={{ backgroundColor: colorMap[c.name] }}>
                   {c.name[0]}
                 </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-bold text-lg">{c.name}</h3>
-                    {c.is_our_candidate && <span className="text-xs bg-blue-500/10 text-blue-500 px-2 py-0.5 rounded-full font-semibold">우리 후보</span>}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <h3 className="font-bold truncate">{c.name}</h3>
+                    {c.is_our_candidate && <span className="text-[10px] bg-blue-500/10 text-blue-500 px-1.5 py-0.5 rounded-full font-semibold">우리</span>}
                   </div>
-                  <p className="text-sm text-[var(--muted)]">{c.party || '무소속'} {c.party_alignment ? `(${c.party_alignment === 'conservative' ? '보수' : c.party_alignment === 'progressive' ? '진보' : '중도'})` : ''}</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-[var(--muted-bg)] rounded-lg p-3 text-center">
-                  <p className="text-2xl font-bold" style={{ color: colorMap[c.name] }}>{surveyVal ? `${surveyVal}%` : '-'}</p>
-                  <p className="text-xs text-[var(--muted)]">최근 지지율</p>
-                </div>
-                <div className="bg-[var(--muted-bg)] rounded-lg p-3 text-center">
-                  <p className="text-2xl font-bold">{data?.count || 0}</p>
-                  <p className="text-xs text-[var(--muted)]">뉴스 건수</p>
-                </div>
-                <div className="bg-green-500/5 rounded-lg p-3 text-center">
-                  <p className="text-2xl font-bold text-green-600">{posRate}%</p>
-                  <p className="text-xs text-[var(--muted)]">긍정률 {effective > 0 ? `(${effective}건)` : ''}</p>
-                </div>
-                <div className="bg-red-500/5 rounded-lg p-3 text-center">
-                  <p className="text-2xl font-bold text-red-600">{data?.negative || 0}</p>
-                  <p className="text-xs text-[var(--muted)]">부정 뉴스</p>
-                </div>
-              {qualityLow && (
-                <div className="col-span-2 bg-amber-500/10 border border-amber-500/30 rounded-lg p-2 text-xs text-amber-600 dark:text-amber-400 text-center">
-                  분석 품질 낮음 — 중립 {data?.neutral_rate}% (재분석 필요)
-                </div>
-              )}
-              </div>
-
-              {/* Sentiment bar */}
-              <div className="mt-4">
-                <div className="h-2 rounded-full overflow-hidden flex bg-[var(--muted-bg)]">
-                  {total > 0 && <>
-                    <div className="bg-green-500 h-full" style={{ width: `${(data?.positive || 0) / total * 100}%` }} />
-                    <div className="bg-red-500 h-full" style={{ width: `${(data?.negative || 0) / total * 100}%` }} />
-                    <div className="bg-[var(--muted)] h-full opacity-60" style={{ width: `${(data?.neutral || 0) / total * 100}%` }} />
-                  </>}
+                  <p className="text-[11px] text-[var(--muted)] truncate">
+                    {c.party || '무소속'} {c.party_alignment ? `(${c.party_alignment === 'conservative' ? '보수' : c.party_alignment === 'progressive' ? '진보' : '중도'})` : ''}
+                  </p>
+                  {surveyVal > 0 && (
+                    <p className="text-xs font-bold mt-0.5" style={{ color: colorMap[c.name] }}>
+                      지지율 {surveyVal}%
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
