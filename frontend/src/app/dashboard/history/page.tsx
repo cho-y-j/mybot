@@ -20,12 +20,17 @@ const TYPE_LABEL: Record<string, string> = {
   council: '시·도의원/구·시·군의원',
 };
 
+// 모든 선거 유형이 동일한 기능(정당/진영 토글, 청주 그룹핑, 색 강도)을 받도록 매핑
 const VIEW_BY_LAYOUT: Record<string, any> = {
   mayor: MayorView,
-  governor: GovernorView,
+  governor: GovernorView,        // MayorView 재사용
   superintendent: SuperintendentView,
-  council: CouncilView,
-  congressional: MayorView, // 임시
+  council: CouncilView,           // MayorView 재사용
+  congressional: MayorView,       // 국회의원 (전용 뷰 미구현)
+  gu_head: MayorView,             // 구청장
+  gun_head: MayorView,            // 군수
+  metro_council: CouncilView,     // 시·도의원
+  basic_council: CouncilView,     // 시·군·구의원
 };
 
 export default function HistoryPage() {
@@ -62,31 +67,31 @@ export default function HistoryPage() {
     );
   }
   if (!election) {
-    return <div className="card text-center py-12 text-gray-500">선거를 먼저 설정해주세요.</div>;
+    return <div className="card text-center py-12 text-[var(--muted)]">선거를 먼저 설정해주세요.</div>;
   }
 
   if (analyzing && !data) {
     return (
       <div className="card text-center py-16">
-        <div className="animate-spin h-8 w-8 border-4 border-violet-500 border-t-transparent rounded-full mx-auto mb-4" />
-        <div className="text-sm text-gray-500">과거 선거 데이터 분석 중...</div>
+        <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4" />
+        <div className="text-sm text-[var(--muted)]">과거 선거 데이터 분석 중...</div>
       </div>
     );
   }
 
   if (error) {
-    return <div className="card text-center py-12 text-red-600">{error}</div>;
+    return <div className="card text-center py-12 text-red-500">{error}</div>;
   }
 
   if (data?.error) {
     return (
       <div className="space-y-4">
         <div className="card text-center py-12">
-          <div className="text-lg font-bold text-gray-800 dark:text-gray-200 mb-2">데이터 부족</div>
-          <p className="text-sm text-gray-500">{data.error}</p>
+          <div className="text-lg font-bold mb-2">데이터 부족</div>
+          <p className="text-sm text-[var(--muted)]">{data.error}</p>
           <button
             onClick={loadData}
-            className="mt-4 px-4 py-2 rounded-lg bg-violet-600 text-white text-sm hover:bg-violet-700"
+            className="mt-4 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700"
           >
             재시도
           </button>
@@ -103,26 +108,23 @@ export default function HistoryPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold">과거 선거 심층 분석</h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <p className="text-sm text-[var(--muted)] mt-1">
             {election.region_sido} · {TYPE_LABEL[election.election_type] || election.election_type} ·
             {' '}{data?.elections_count || 0}회 선거 분석
-            <span className="ml-2 text-[11px] px-2 py-0.5 rounded bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-300">
-              {layout} 특화 화면
-            </span>
           </p>
         </div>
         <button
           onClick={loadData}
           disabled={analyzing}
-          className="px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-700 text-sm hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
+          className="px-3 py-1.5 rounded-lg border border-[var(--card-border)] text-sm hover:bg-[var(--muted-bg)] disabled:opacity-50"
         >
-          {analyzing ? '재분석 중...' : '↻ 새로고침'}
+          {analyzing ? '재분석 중...' : '새로고침'}
         </button>
       </div>
 
       {data?.fallback_notice && (
-        <div className="rounded-xl border-2 border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700 p-3 text-xs text-amber-800 dark:text-amber-200">
-           {data.fallback_notice}
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-600 dark:text-amber-400">
+          {data.fallback_notice}
         </div>
       )}
 
