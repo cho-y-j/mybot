@@ -8,7 +8,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
 
-type TabType = 'overview' | 'trend' | 'all' | 'crosstab' | 'add';
+type TabType = 'trend' | 'all' | 'crosstab' | 'add';
 
 const TYPE_LABEL: Record<string, string> = {
   superintendent: '교육감', mayor: '시장', governor: '도지사',
@@ -458,13 +458,12 @@ export default function SurveysPage() {
         </button>
       </div>
 
-      {/* 탭 (2026-04-19: 순서 재조정 — 여론조사가 기본, AI 분석은 뒤로) */}
+      {/* 탭 (2026-04-19: AI 분석 탭 제거 — 콘텐츠는 여론조사/교차분석 탭 상단에 통합) */}
       <div className="flex gap-1 bg-[var(--muted-bg)] rounded-lg p-1">
         {([
           ['all', `여론조사 (${grouped?.total_groups ?? 0})`],
           ['trend', '추이 분석'],
           ['crosstab', '교차 분석'],
-          ['overview', 'AI 분석'],
           ['add', '등록'],
         ] as [TabType, string][]).map(([key, label]) => (
           <button key={key} onClick={() => setTab(key)}
@@ -475,120 +474,6 @@ export default function SurveysPage() {
       </div>
 
       {/* ═══ 지지율 현황 ═══ */}
-      {tab === 'overview' && (
-        <>
-          {/* 최신 지지율 (우리 후보 포함 최신) */}
-          {latest && (
-            <div className="card ring-2 ring-blue-500/20">
-              <div className="flex items-center gap-2 mb-1">
-                {latest.election_type && <span className={`text-[10px] px-1.5 py-0.5 rounded text-white font-bold ${TYPE_COLOR[latest.election_type] || 'bg-gray-500'}`}>{TYPE_LABEL[latest.election_type] || latest.election_type}</span>}
-                <h3 className="font-bold">최신 지지율 ({latest.date})</h3>
-              </div>
-              <p className="text-xs text-[var(--muted)] mb-4">{latest.org} | n={latest.sample_size || '?'} | ±{latest.margin_of_error || '?'}%p</p>
-              <div className="space-y-3">
-                {Object.entries(latestR)
-                  .filter(([k]) => !SKIP_KEYS.has(k))
-                  .sort((a, b) => (b[1] as number) - (a[1] as number))
-                  .map(([name, val], i) => {
-                    const v = Number(val) || 0;
-                    const ours = isOurCandidate(name);
-                    const maxVal = Math.max(...Object.entries(latestR).filter(([k]) => !SKIP_KEYS.has(k)).map(([, vv]) => Number(vv) || 0));
-                    return (
-                      <div key={name} className={`p-3 rounded-xl ${ours ? 'bg-blue-500/10 ring-1 ring-blue-500/30' : 'bg-[var(--muted-bg)]'}`}>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className={`font-semibold ${ours ? 'text-blue-500' : ''}`}>{name} {ours && ''}</span>
-                          <span className={`text-2xl font-black ${v === maxVal && v > 0 ? 'text-amber-500' : ours ? 'text-blue-500' : ''}`}>{v}%</span>
-                        </div>
-                        <div className="h-3 bg-[var(--card-border)] rounded-full overflow-hidden">
-                          <div className="h-full rounded-full transition-all duration-500"
-                            style={{ width: `${v / 50 * 100}%`, backgroundColor: CANDIDATE_COLORS[i % CANDIDATE_COLORS.length] }} />
-                        </div>
-                      </div>
-                    );
-                  })}
-                {(() => {
-                  const undecided = ['모름', '없음', '모름/무응답', '없다', '잘모름', '없음/모름'].reduce((sum, k) => sum + (latestR[k] || 0), 0);
-                  return undecided > 0 ? (
-                    <div className="p-3 rounded-xl bg-amber-500/5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[var(--muted)]">부동층</span>
-                        <span className="text-xl font-bold text-amber-600">{undecided.toFixed(1)}%</span>
-                      </div>
-                    </div>
-                  ) : null;
-                })()}
-              </div>
-            </div>
-          )}
-
-          {/* AI 분석 */}
-          {aiStrategy?.text && (
-            <div className="card bg-gradient-to-br from-blue-500/5 to-violet-500/5 border-blue-500/20">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="font-bold">AI 전략 분석</h3>
-                <button onClick={() => setExpandedAI(!expandedAI)} className="text-xs text-blue-500">{expandedAI ? '접기' : '전체'}</button>
-              </div>
-              <div className={`text-sm leading-relaxed whitespace-pre-line ${!expandedAI ? 'max-h-40 overflow-hidden' : ''}`}>{aiStrategy.text}</div>
-            </div>
-          )}
-
-          {/* 강약 세그먼트 */}
-          {((sw.strengths || []).length > 0 || (sw.weaknesses || []).length > 0) && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <div className="card">
-                <h3 className="font-bold text-green-600 mb-3">강점 세그먼트 ({ourCandidate?.name} 우위)</h3>
-                {(sw.strengths || []).map((s: any, i: number) => (
-                  <div key={i} className="flex items-center justify-between p-2 mb-1 rounded-lg bg-green-500/5 text-sm">
-                    <span><span className="text-xs text-[var(--muted)]">[{s.dimension}]</span> {s.segment}</span>
-                    <span className="font-bold text-green-600">+{s.gap}%p</span>
-                  </div>
-                ))}
-              </div>
-              <div className="card">
-                <h3 className="font-bold text-red-600 mb-3">약점 세그먼트 ({ourCandidate?.name} 열세)</h3>
-                {(sw.weaknesses || []).slice(0, 8).map((s: any, i: number) => (
-                  <div key={i} className="flex items-center justify-between p-2 mb-1 rounded-lg bg-red-500/5 text-sm">
-                    <span><span className="text-xs text-[var(--muted)]">[{s.dimension}]</span> {s.segment}</span>
-                    <span className="font-bold text-red-600">{s.gap}%p</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* 우리 후보 포함 역대 여론조사 */}
-          <div className="card">
-            <h3 className="font-bold mb-3">우리 후보 포함 여론조사 ({ourSurveys.length}건)</h3>
-            <div className="space-y-3">
-              {ourSurveys.map((s, i) => (
-                <SurveyCard key={s.id || i} survey={s} candidateNames={candidateNames} />
-              ))}
-              {ourSurveys.length === 0 && (
-                <p className="text-sm text-[var(--muted)] text-center py-4">우리 후보({candidateNames.join(', ')})가 포함된 여론조사가 없습니다. "등록" 탭에서 직접 등록하세요.</p>
-              )}
-            </div>
-          </div>
-
-          {/* 기타 여론조사 요약 (우리 후보 미포함) */}
-          {surveys.filter(s => !s.has_our_candidate).length > 0 && (
-            <div className="card opacity-70">
-              <h3 className="font-bold mb-2 text-[var(--muted)]">기타 같은 지역 여론조사 ({surveys.length - ourSurveys.length}건)</h3>
-              <p className="text-xs text-[var(--muted)] mb-3">"전체 보기" 탭에서 상세 확인</p>
-              <div className="space-y-2">
-                {surveys.filter(s => !s.has_our_candidate).slice(0, 5).map((s, i) => (
-                  <SurveyCard key={s.id || i} survey={s} candidateNames={candidateNames} compact />
-                ))}
-                {surveys.filter(s => !s.has_our_candidate).length > 5 && (
-                  <button onClick={() => setTab('all')} className="text-xs text-blue-500 hover:underline">
-                    + {surveys.filter(s => !s.has_our_candidate).length - 5}건 더 보기 →
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-        </>
-      )}
-
       {/* ═══ 추이 분석 (우리 후보만!) ═══ */}
       {tab === 'trend' && (
         <>
@@ -666,10 +551,32 @@ export default function SurveysPage() {
         </>
       )}
 
-      {/* ═══ 전체 보기 (2026-04-19 재설계) ═══
-          - API 레벨에서 org+date+region 기준 그룹핑된 조사 단위로 표시
-          - 우리 선거 포함 조사 먼저 + 다른 선거 참고는 하단 (선거별 서브탭)
-          - 각 조사 카드 안에 질문(election_type별) 모두 노출, 우리 선거 질문 하이라이트 */}
+      {/* ═══ 여론조사 (all) = 그룹핑된 조사 단위 + AI 전략 분석 통합 ═══ */}
+      {tab === 'all' && (
+        <div className="card bg-gradient-to-br from-blue-500/5 to-violet-500/5 border-blue-500/20 mb-4">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="font-bold">AI 전략 분석</h3>
+            <div className="flex items-center gap-2">
+              <button onClick={loadDeepAnalysis} disabled={analyzing}
+                className="text-xs px-3 py-1 bg-violet-600 text-white rounded-md hover:bg-violet-700 disabled:opacity-50">
+                {analyzing ? '분석 중...' : aiStrategy?.text ? '재분석' : 'AI 분석 실행'}
+              </button>
+              {aiStrategy?.text && (
+                <button onClick={() => setExpandedAI(!expandedAI)} className="text-xs text-blue-500">
+                  {expandedAI ? '접기' : '전체 보기'}
+                </button>
+              )}
+            </div>
+          </div>
+          {aiStrategy?.text ? (
+            <div className={`text-sm leading-relaxed whitespace-pre-line ${!expandedAI ? 'max-h-40 overflow-hidden' : ''}`}>
+              {aiStrategy.text}
+            </div>
+          ) : (
+            <p className="text-xs text-[var(--muted)]">아직 AI 전략 분석이 없습니다. 오른쪽 버튼을 눌러 실행하세요.</p>
+          )}
+        </div>
+      )}
       {tab === 'all' && grouped && (() => {
         const groups = grouped.groups || [];
         const ours = groups.filter(g => g.is_our_election);
@@ -750,9 +657,43 @@ export default function SurveysPage() {
         );
       })()}
 
-      {/* ═══ 교차 분석 ═══ */}
+      {/* ═══ 교차 분석 ═══ (2026-04-19: AI 세그먼트 분석 통합) */}
       {tab === 'crosstab' && (
         <>
+          {/* AI 세그먼트 분석 — 이전 overview 탭에서 이동 */}
+          {((sw.strengths || []).length > 0 || (sw.weaknesses || []).length > 0) ? (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+              <div className="card">
+                <h3 className="font-bold text-green-600 mb-3">강점 세그먼트 ({ourCandidate?.name} 우위)</h3>
+                {(sw.strengths || []).map((s: any, i: number) => (
+                  <div key={i} className="flex items-center justify-between p-2 mb-1 rounded-lg bg-green-500/5 text-sm">
+                    <span><span className="text-xs text-[var(--muted)]">[{s.dimension}]</span> {s.segment}</span>
+                    <span className="font-bold text-green-600">+{s.gap}%p</span>
+                  </div>
+                ))}
+                {(sw.strengths || []).length === 0 && <p className="text-xs text-[var(--muted)]">아직 분석 전</p>}
+              </div>
+              <div className="card">
+                <h3 className="font-bold text-red-600 mb-3">약점 세그먼트 ({ourCandidate?.name} 열세)</h3>
+                {(sw.weaknesses || []).slice(0, 8).map((s: any, i: number) => (
+                  <div key={i} className="flex items-center justify-between p-2 mb-1 rounded-lg bg-red-500/5 text-sm">
+                    <span><span className="text-xs text-[var(--muted)]">[{s.dimension}]</span> {s.segment}</span>
+                    <span className="font-bold text-red-600">{s.gap}%p</span>
+                  </div>
+                ))}
+                {(sw.weaknesses || []).length === 0 && <p className="text-xs text-[var(--muted)]">아직 분석 전</p>}
+              </div>
+            </div>
+          ) : (
+            <div className="card mb-4 text-center py-4">
+              <p className="text-xs text-[var(--muted)] mb-2">AI 세그먼트 분석이 아직 없습니다 (교차분석 기반 강점/약점 세그먼트)</p>
+              <button onClick={loadDeepAnalysis} disabled={analyzing}
+                className="text-xs px-3 py-1.5 bg-violet-600 text-white rounded-md hover:bg-violet-700 disabled:opacity-50">
+                {analyzing ? '분석 중...' : '세그먼트 분석 실행'}
+              </button>
+            </div>
+          )}
+
           <div className="card">
             <h3 className="font-bold mb-3">여론조사 선택 (교차분석 데이터 있는 것만)</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
@@ -829,7 +770,7 @@ export default function SurveysPage() {
       )}
 
       {/* ═══ 등록 ═══ */}
-      {tab === 'add' && <SurveyAddForm electionId={election.id} onSaved={() => { setTab('overview'); loadSurveys(); }} />}
+      {tab === 'add' && <SurveyAddForm electionId={election.id} onSaved={() => { setTab('all'); loadSurveys(); }} />}
     </div>
   );
 }
