@@ -157,6 +157,157 @@ async def list_surveys(
     return {"count": len(items), "total": len(items), "surveys": items}
 
 
+# ─── 2026-04-19: 여론조사 근본 재설계 ───
+# 기존 문제: 같은 조사가 election_type별로 여러 surveys 레코드로 분산
+#   예) 리얼미터 2026-03-22 충북 → superintendent 1건 + governor 3건 (실제론 1개 조사)
+# 해결: API에서 org+date+region 기준 그룹핑 → 1개 조사 + 여러 질문 구조로 반환
+# 우리 선거 vs 참고(다른 선거) 분리 + 각 질문의 후보 whitelist 추출
+@router.get("/{election_id}/surveys-grouped")
+async def list_surveys_grouped(
+    election_id: UUID,
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    조사 기관·날짜·지역 기준으로 그룹핑된 여론조사 목록.
+
+    각 그룹(= 실제 1개 조사)에는 여러 질문(election_type별)이 포함.
+    우리 선거의 질문에는 `has_our_candidate`, `our_rank`, `our_value` 태깅.
+    프론트에서 "우리 선거" + "참고(선거별)" 2탭으로 렌더.
+    """
+    import re
+    from app.elections.models import Election, Candidate
+
+    election = (await db.execute(select(Election).where(Election.id == election_id))).scalar_one_or_none()
+    if not election:
+        return {"groups": [], "our_election_type": None, "our_candidates": []}
+
+    tid = user["tenant_id"]
+    our_type = election.election_type
+    region = election.region_sido
+    sigungu = election.region_sigungu
+
+    # 등록된 우리 후보 + 경쟁자
+    our_cands = (await db.execute(
+        select(Candidate).where(Candidate.election_id == election_id, Candidate.enabled == True)
+    )).scalars().all()
+    our_names = [c.name for c in our_cands]
+    our_candidate_name = next((c.name for c in our_cands if c.is_our_candidate), None)
+
+    # 지역 매칭: 기초단체장은 시군구, 광역은 시도만
+    from sqlalchemy import or_, and_
+    local_types = {"mayor", "gun_head", "gu_head"}
+    conditions = [Survey.tenant_id == tid]
+    if region:
+        if our_type in local_types and sigungu:
+            conditions.append(and_(
+                Survey.region_sido == region,
+                or_(Survey.region_sigungu == sigungu, Survey.region_sigungu.is_(None)),
+            ))
+        else:
+            conditions.append(Survey.region_sido == region)
+
+    rows = (await db.execute(
+        select(Survey).where(or_(*conditions))
+        .order_by(Survey.survey_date.desc())
+        .limit(500)
+    )).scalars().all()
+
+    # 조사 기관명 정규화 (공백·괄호·접두어 제거)
+    def norm_org(o: str) -> str:
+        if not o:
+            return ""
+        return re.sub(r"[\s\(\)㈜(주)\[\]]+", "", o).lower()
+
+    # 질문 단위로 정규화 (각 survey row → 1개 question)
+    from collections import defaultdict
+    groups: dict[tuple, dict] = {}
+
+    for s in rows:
+        key = (norm_org(s.survey_org or ""), s.survey_date, s.region_sido or "", s.region_sigungu or "")
+        if key not in groups:
+            groups[key] = {
+                "group_key": f"{s.survey_org or ''}|{s.survey_date}|{s.region_sido or ''}|{s.region_sigungu or ''}",
+                "survey_org": s.survey_org,
+                "client_org": getattr(s, "client_org", None),
+                "survey_date": s.survey_date.isoformat() if s.survey_date else None,
+                "region_sido": s.region_sido,
+                "region_sigungu": s.region_sigungu,
+                "sample_size": s.sample_size,
+                "margin_of_error": s.margin_of_error,
+                "method": s.method,
+                "questions": [],
+                "is_our_election": False,
+            }
+        grp = groups[key]
+        # 더 큰 sample_size 채택
+        if s.sample_size and (not grp["sample_size"] or s.sample_size > grp["sample_size"]):
+            grp["sample_size"] = s.sample_size
+
+        # 질문 레벨 메타
+        results = s.results if isinstance(s.results, dict) else {}
+        # 단순 결과 dict {name: value} vs 중첩 {카테고리: {name: value}} 모두 지원
+        flat: dict[str, float] = {}
+        for k, v in (results or {}).items():
+            if isinstance(v, (int, float)):
+                flat[k] = float(v)
+            elif isinstance(v, dict):
+                # 중첩 무시 (복합 구조는 별도 처리 필요, Phase 3)
+                pass
+
+        # 우리 후보 매칭
+        our_value = None
+        our_rank = None
+        has_ours = False
+        if our_candidate_name and flat:
+            # 이름 포함 매칭 (부분 일치 허용)
+            matched_key = next((k for k in flat if our_candidate_name in k or k in our_candidate_name), None)
+            if matched_key:
+                has_ours = True
+                our_value = flat[matched_key]
+                sorted_vals = sorted(flat.items(), key=lambda x: -x[1])
+                our_rank = next((i + 1 for i, (k, _) in enumerate(sorted_vals) if k == matched_key), None)
+
+        if has_ours and s.election_type == our_type:
+            grp["is_our_election"] = True
+
+        grp["questions"].append({
+            "id": str(s.id),
+            "election_type": s.election_type,
+            "question_text": f"{s.election_type or '지지율'} 질문",
+            "results": flat,
+            "raw_results": s.results,  # 중첩 JSON 원본 유지 (UI에서 필요시)
+            "has_our_candidate": has_ours,
+            "our_rank": our_rank,
+            "our_value": our_value,
+            "is_our_election_type": s.election_type == our_type,
+        })
+
+    # 각 그룹 내 question 정렬: 우리 선거 먼저, 그 다음 election_type 순
+    result_groups = []
+    for key, grp in groups.items():
+        grp["questions"].sort(key=lambda q: (
+            0 if q["is_our_election_type"] else 1,
+            q.get("election_type") or "zz",
+        ))
+        result_groups.append(grp)
+
+    # 그룹 정렬: 날짜 역순, 우리 선거 포함 먼저
+    result_groups.sort(key=lambda g: (
+        0 if g["is_our_election"] else 1,
+        -(int((g["survey_date"] or "0000-00-00").replace("-", "")) if g["survey_date"] else 0),
+    ))
+
+    return {
+        "our_election_type": our_type,
+        "our_candidates": our_names,
+        "our_candidate_name": our_candidate_name,
+        "groups": result_groups,
+        "total_groups": len(result_groups),
+        "total_questions": sum(len(g["questions"]) for g in result_groups),
+    }
+
+
 @router.post("/{election_id}/surveys", status_code=201)
 async def create_survey(
     election_id: UUID,

@@ -518,6 +518,8 @@ class ApiClient {
 
   // ─── Surveys ────────────────────────────────────────────────
   getSurveys(electionId: string) { return this.request<any>(`/surveys/${electionId}/surveys`); }
+  /** 2026-04-19: org+date+region 그룹핑된 여론조사 — "우리 선거" + "참고" 2섹션 UI용 */
+  getSurveysGrouped(electionId: string) { return this.request<any>(`/surveys/${electionId}/surveys-grouped`); }
   getSurveyDetail(electionId: string, surveyId: string) { return this.request<any>(`/surveys/${electionId}/surveys/${surveyId}`); }
   createSurvey(electionId: string, data: any) {
     return this.request<any>(`/surveys/${electionId}/surveys`, { method: 'POST', body: JSON.stringify(data) });

@@ -197,12 +197,127 @@ function SurveyCard({ survey: s, candidateNames, compact }: { survey: any; candi
   );
 }
 
+// ── 2026-04-19: 그룹핑된 여론조사 카드 (1개 조사 = 여러 질문) ──
+function GroupedSurveyCard({
+  group,
+  ourType,
+  ourCandName,
+  candidateNames,
+  compact,
+}: {
+  group: any;
+  ourType?: string;
+  ourCandName?: string;
+  candidateNames: string[];
+  compact?: boolean;
+}) {
+  const isOur = (name: string) => candidateNames.some(cn => name.includes(cn) || cn.includes(name));
+  return (
+    <div className={`rounded-xl border ${group.is_our_election ? 'border-blue-500/30 bg-blue-500/5' : 'border-[var(--card-border)] bg-[var(--muted-bg)]'} p-3 space-y-3`}>
+      {/* 조사 메타 */}
+      <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-[var(--card-border)]/50">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-semibold text-sm">{group.survey_org}</span>
+          <span className="text-xs text-[var(--muted)]">{group.survey_date}</span>
+          {group.region_sido && (
+            <span className="text-xs text-[var(--muted)]">· {group.region_sido} {group.region_sigungu || ''}</span>
+          )}
+        </div>
+        <div className="text-[11px] text-[var(--muted)]">
+          {group.sample_size && <>n={group.sample_size}</>}
+          {group.margin_of_error && <> · ±{group.margin_of_error}%p</>}
+          {group.questions?.length > 1 && <span className="ml-2 text-[var(--foreground)]">질문 {group.questions.length}개</span>}
+        </div>
+      </div>
+
+      {/* 질문별 결과 */}
+      {(group.questions || []).map((q: any, qi: number) => {
+        const results = q.results || {};
+        const entries = Object.entries(results)
+          .filter(([k]) => !['모름', '없음', '없다', '모름/무응답', '기타', '잘모름', '없음/모름', '지지정당없음'].includes(k))
+          .map(([k, v]) => [k, Number(v) || 0] as [string, number])
+          .sort((a, b) => b[1] - a[1]);
+        const maxVal = entries.length > 0 ? Math.max(...entries.map(([, v]) => v)) : 0;
+        const isOurQ = q.is_our_election_type;
+        const typeLabel: Record<string, string> = {
+          superintendent: '교육감', mayor: '시장', governor: '도지사',
+          gun_head: '군수', gu_head: '구청장', congressional: '국회의원',
+        };
+        const etLabel = typeLabel[q.election_type || ''] || q.election_type || '지지율';
+
+        return (
+          <div key={q.id || qi} className={`${isOurQ ? '' : 'opacity-70'}`}>
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${isOurQ ? 'bg-blue-600 text-white' : 'bg-[var(--muted-bg)] text-[var(--muted)]'}`}>
+                {etLabel}
+              </span>
+              {isOurQ && <span className="text-[10px] text-blue-500 font-semibold">★ 우리 선거</span>}
+              {q.has_our_candidate && q.our_rank && ourCandName && (
+                <span className="text-[10px] text-[var(--muted)]">
+                  {ourCandName} {q.our_rank}위 · {q.our_value}%
+                </span>
+              )}
+            </div>
+            {entries.length === 0 ? (
+              <p className="text-[11px] text-[var(--muted)]">결과 미입력</p>
+            ) : compact ? (
+              // 참고용: 상위 3명만
+              <div className="flex gap-3 flex-wrap text-xs">
+                {entries.slice(0, 3).map(([n, v], i) => (
+                  <span key={n}>
+                    <span className={i === 0 ? 'font-bold' : ''}>{n}</span>
+                    <span className="ml-1 font-mono">{v}%</span>
+                  </span>
+                ))}
+              </div>
+            ) : (
+              // 상세: 바 차트 (우리 선거 질문만)
+              <div className="space-y-1">
+                {entries.slice(0, 8).map(([name, val]) => {
+                  const ours = isOur(name);
+                  const isMax = val === maxVal && val > 0;
+                  return (
+                    <div key={name} className="flex items-center gap-2">
+                      <span className={`w-24 text-xs truncate ${ours ? 'text-blue-500 font-bold' : ''}`}>
+                        {name}{ours ? ' ★' : ''}
+                      </span>
+                      <div className="flex-1 h-2 bg-[var(--card-border)] rounded-full overflow-hidden">
+                        <div className="h-full rounded-full transition-all"
+                          style={{
+                            width: `${Math.min(100, (val / Math.max(maxVal, 1)) * 100)}%`,
+                            backgroundColor: ours ? '#3b82f6' : isMax ? '#f59e0b' : '#94a3b8',
+                          }} />
+                      </div>
+                      <span className={`w-12 text-right text-xs font-mono ${isMax ? 'font-bold text-amber-500' : ours ? 'text-blue-500' : ''}`}>
+                        {val}%
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ══════════════════════════════════════
 // 메인 페이지
 // ══════════════════════════════════════
 export default function SurveysPage() {
   const { election, candidates, ourCandidate, loading: elLoading } = useElection();
   const [surveys, setSurveys] = useState<any[]>([]);
+  // 2026-04-19: 그룹핑된 데이터 (API 레벨에서 org+date+region 기준 묶음 + 우리 선거/참고 분리)
+  const [grouped, setGrouped] = useState<{
+    our_election_type?: string;
+    our_candidates?: string[];
+    our_candidate_name?: string;
+    groups?: any[];
+    total_groups?: number;
+    total_questions?: number;
+  } | null>(null);
   const [deepData, setDeepData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
@@ -217,8 +332,14 @@ export default function SurveysPage() {
 
   const loadSurveys = async () => {
     if (!election) return;
-    try { const d = await api.getSurveys(election.id); setSurveys(d.surveys || []); }
-    catch (e: any) { console.error('survey load error:', e); }
+    try {
+      const [d, g] = await Promise.all([
+        api.getSurveys(election.id),
+        api.getSurveysGrouped(election.id).catch(() => null),
+      ]);
+      setSurveys(d.surveys || []);
+      setGrouped(g);
+    } catch (e: any) { console.error('survey load error:', e); }
     finally { setLoading(false); }
   };
   const loadDeepAnalysis = async () => {
@@ -522,75 +643,89 @@ export default function SurveysPage() {
         </>
       )}
 
-      {/* ═══ 전체 보기 ═══ */}
-      {tab === 'all' && (
-        <>
-          {/* 필터 */}
-          <div className="flex gap-2 flex-wrap">
-            {Object.entries(typeCounts).map(([type, count]) => {
-              const label = type === 'all' ? '전체' : type === 'ours' ? '우리 후보' : type === 'untagged' ? '미분류' : (TYPE_LABEL[type] || type);
-              const color = type === 'ours' ? 'bg-blue-600' : type === 'all' ? 'bg-gray-600' : type === 'untagged' ? 'bg-gray-400' : (TYPE_COLOR[type] || 'bg-gray-500');
-              return (
-                <button key={type} onClick={() => setTypeFilter(type)}
-                  className={`text-xs px-3 py-1.5 rounded-full transition font-medium ${typeFilter === type ? `${color} text-white` : 'bg-[var(--muted-bg)] text-[var(--muted)] hover:text-[var(--foreground)]'}`}>
-                  {label} ({count})
-                </button>
-              );
-            })}
-          </div>
+      {/* ═══ 전체 보기 (2026-04-19 재설계) ═══
+          - API 레벨에서 org+date+region 기준 그룹핑된 조사 단위로 표시
+          - 우리 선거 포함 조사 먼저 + 다른 선거 참고는 하단 (선거별 서브탭)
+          - 각 조사 카드 안에 질문(election_type별) 모두 노출, 우리 선거 질문 하이라이트 */}
+      {tab === 'all' && grouped && (() => {
+        const groups = grouped.groups || [];
+        const ours = groups.filter(g => g.is_our_election);
+        const others = groups.filter(g => !g.is_our_election);
+        const otherByType: Record<string, any[]> = {};
+        others.forEach(g => {
+          const t = g.questions?.[0]?.election_type || 'untagged';
+          (otherByType[t] = otherByType[t] || []).push(g);
+        });
+        const TYPE_ORDER = ['superintendent', 'governor', 'congressional', 'mayor', 'gun_head', 'gu_head'];
+        const otherTypes = [
+          ...TYPE_ORDER.filter(t => otherByType[t]),
+          ...Object.keys(otherByType).filter(t => !TYPE_ORDER.includes(t) && t !== 'untagged').sort(),
+          ...(otherByType['untagged'] ? ['untagged'] : []),
+        ];
+        return (
+          <div className="space-y-6">
+            {/* ── 우리 선거 조사 ── */}
+            <section>
+              <div className="flex items-center gap-2 mb-3 pb-2 border-b-2 border-blue-500/30">
+                <span className="text-[10px] px-2 py-0.5 rounded bg-blue-600 text-white font-bold">{TYPE_LABEL[grouped.our_election_type || ''] || '우리 선거'}</span>
+                <h3 className="font-bold">{grouped.our_candidate_name ? `${grouped.our_candidate_name} 후보` : '우리 선거'} 관련 여론조사</h3>
+                <span className="text-xs text-[var(--muted)]">({ours.length}건)</span>
+              </div>
+              {ours.length === 0 ? (
+                <div className="card text-center py-8 text-[var(--muted)]">
+                  <p className="text-sm">우리 선거 관련 여론조사가 없습니다.</p>
+                  <p className="text-xs mt-2">"등록" 탭에서 직접 입력하세요.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {ours.map((g, i) => (
+                    <GroupedSurveyCard key={g.group_key || i} group={g} ourType={grouped.our_election_type} ourCandName={grouped.our_candidate_name} candidateNames={candidateNames} />
+                  ))}
+                </div>
+              )}
+            </section>
 
-          {/* 목록 — 전체/우리 후보 선택 시 선거유형별 그룹핑, 특정 타입 선택 시 단순 목록 */}
-          {(typeFilter === 'all' || typeFilter === 'ours') ? (() => {
-            const TYPE_ORDER = ['superintendent', 'governor', 'congressional', 'mayor', 'gun_head', 'gu_head', 'metro_council', 'basic_council'];
-            const groups: Record<string, any[]> = {};
-            filteredSurveys.forEach(s => {
-              const key = s.election_type || 'untagged';
-              (groups[key] = groups[key] || []).push(s);
-            });
-            const orderedKeys = [
-              ...TYPE_ORDER.filter(k => groups[k]),
-              ...Object.keys(groups).filter(k => !TYPE_ORDER.includes(k) && k !== 'untagged').sort(),
-              ...(groups['untagged'] ? ['untagged'] : []),
-            ];
-            return (
-              <div className="space-y-5">
-                {orderedKeys.map(type => {
-                  const rows = groups[type] || [];
-                  if (rows.length === 0) return null;
-                  const label = type === 'untagged' ? '미분류' : (TYPE_LABEL[type] || type);
-                  const color = type === 'untagged' ? 'bg-gray-400' : (TYPE_COLOR[type] || 'bg-gray-500');
+            {/* ── 참고: 다른 선거 여론조사 (같은 지역) ── */}
+            {others.length > 0 && (
+              <section>
+                <div className="flex items-center gap-2 mb-2 pb-2 border-b border-[var(--card-border)]">
+                  <h3 className="font-bold text-[var(--muted)]">참고 — 같은 지역 다른 선거 여론조사</h3>
+                  <span className="text-xs text-[var(--muted)]">({others.length}건)</span>
+                </div>
+                {/* 선거 유형별 서브탭 */}
+                <div className="flex gap-2 flex-wrap mb-3">
+                  {otherTypes.map(t => {
+                    const label = t === 'untagged' ? '미분류' : (TYPE_LABEL[t] || t);
+                    const color = TYPE_COLOR[t] || 'bg-gray-500';
+                    const active = typeFilter === t || (typeFilter === 'all' && otherTypes[0] === t);
+                    return (
+                      <button key={t} onClick={() => setTypeFilter(t)}
+                        className={`text-xs px-3 py-1 rounded-full transition font-medium ${active ? `${color} text-white` : 'bg-[var(--muted-bg)] text-[var(--muted)] hover:text-[var(--foreground)]'}`}>
+                        {label} ({otherByType[t].length})
+                      </button>
+                    );
+                  })}
+                </div>
+                {(() => {
+                  const activeType = otherTypes.includes(typeFilter) ? typeFilter : otherTypes[0];
+                  const rows = otherByType[activeType] || [];
                   return (
-                    <div key={type}>
-                      <div className="flex items-center gap-2 mb-2 pb-2 border-b border-[var(--card-border)]">
-                        <span className={`text-[10px] px-2 py-0.5 rounded text-white font-bold ${color}`}>{label}</span>
-                        <h4 className="text-sm font-bold">{label} 여론조사</h4>
-                        <span className="text-xs text-[var(--muted)]">({rows.length}건)</span>
-                      </div>
-                      <div className="space-y-2">
-                        {rows.map((s, i) => (
-                          <SurveyCard key={s.id || `${type}-${i}`} survey={s} candidateNames={candidateNames} />
-                        ))}
-                      </div>
+                    <div className="space-y-2 opacity-85">
+                      {rows.map((g, i) => (
+                        <GroupedSurveyCard key={g.group_key || i} group={g} ourType={grouped.our_election_type} ourCandName={grouped.our_candidate_name} candidateNames={candidateNames} compact />
+                      ))}
                     </div>
                   );
-                })}
-                {filteredSurveys.length === 0 && (
-                  <div className="card text-center py-8 text-[var(--muted)]">해당 조건의 여론조사가 없습니다.</div>
-                )}
-              </div>
-            );
-          })() : (
-            <div className="space-y-2">
-              {filteredSurveys.map((s, i) => (
-                <SurveyCard key={s.id || i} survey={s} candidateNames={candidateNames} />
-              ))}
-              {filteredSurveys.length === 0 && (
-                <div className="card text-center py-8 text-[var(--muted)]">해당 조건의 여론조사가 없습니다.</div>
-              )}
-            </div>
-          )}
-        </>
-      )}
+                })()}
+              </section>
+            )}
+
+            {groups.length === 0 && (
+              <div className="card text-center py-8 text-[var(--muted)]">여론조사 자료가 없습니다.</div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ═══ 교차 분석 ═══ */}
       {tab === 'crosstab' && (
