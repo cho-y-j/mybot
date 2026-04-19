@@ -164,16 +164,101 @@ async def generate_ai_report_endpoint(
 async def get_survey_deep_analysis(
     election_id: UUID,
     user: CurrentUser,
+    force: bool = Query(False, description="True면 캐시 무시하고 재분석"),
+    cache_only: bool = Query(False, description="True면 캐시 없을 때 생성하지 않고 빈 결과 반환"),
     db: AsyncSession = Depends(get_db),
 ):
-    """여론조사 심층 분석 — 교차분석 + 강약 세그먼트 + 추이 + 부동층 + AI 전략."""
+    """여론조사 심층 분석 — 캐시 우선 + stale 감지 + force=true면 강제 재생성.
+
+    캐시 무효화 조건:
+    - force=true 파라미터
+    - 여론조사/질문 건수 변경
+    - 우리 후보 변경
+    - 7일 경과 (프론트에서 stale 표시만, 자동 재생성 X)
+    """
+    import json as _json
+    from datetime import datetime, timezone, timedelta
     from app.analysis.survey_analyzer import analyze_survey_deep
+    from app.elections.models import Survey, SurveyQuestion
+    from app.common.election_access import get_our_candidate_id
 
     tid = user["tenant_id"]
+    eid = str(election_id)
+
+    # 현재 상태 시그니처 (캐시 유효성 비교용)
+    our_cid = await get_our_candidate_id(db, tid, election_id)
+    region = (await db.execute(
+        select(Election.region_sido).where(Election.id == election_id)
+    )).scalar_one_or_none()
+    conds = [Survey.tenant_id == tid]
+    if region:
+        conds.append(Survey.region_sido == region)
+    cur_surveys = (await db.execute(
+        select(func.count(Survey.id)).where(or_(*conds))
+    )).scalar() or 0
+    cur_questions = (await db.execute(
+        select(func.count(SurveyQuestion.id)).join(Survey, Survey.id == SurveyQuestion.survey_id).where(or_(*conds))
+    )).scalar() or 0
+
+    # 캐시 조회
+    if not force:
+        cached = (await db.execute(text("""
+            SELECT result, surveys_count, questions_count, our_candidate_id, generated_at
+            FROM survey_analysis_cache
+            WHERE election_id = :eid AND tenant_id = :tid
+        """), {"eid": eid, "tid": tid})).first()
+        if cached:
+            res, c_s, c_q, c_cid, gen_at = cached
+            data_changed = (c_s != cur_surveys or c_q != cur_questions or str(c_cid) != str(our_cid))
+            age = datetime.now(timezone.utc) - gen_at
+            aged = age > timedelta(days=7)
+            if isinstance(res, str):
+                res = _json.loads(res)
+            res["_cache"] = {
+                "hit": True,
+                "generated_at": gen_at.isoformat(),
+                "age_hours": round(age.total_seconds() / 3600, 1),
+                "stale": data_changed or aged,
+                "stale_reason": (
+                    "데이터 변경됨 (재분석 권장)" if data_changed else
+                    "7일 경과 (최신 Opus 재분석 권장)" if aged else None
+                ),
+            }
+            return res
+
+    # 캐시 없고 cache_only=true면 생성 스킵 (자동 로드 시 사용)
+    if cache_only:
+        return {"sections": {}, "total_surveys": cur_surveys, "_cache": {"hit": False, "needs_generate": True}}
+
+    # 생성 (신규 또는 강제)
     try:
-        result = await analyze_survey_deep(db, tid, str(election_id))
+        result = await analyze_survey_deep(db, tid, eid)
         if result.get("error"):
             return {"error": result["error"], "sections": {}, "total_surveys": 0}
+
+        # AI 실제 성공한 경우에만 캐시 저장 (실패 결과 저장 금지)
+        if result.get("sections", {}).get("ai_strategy", {}).get("ai_generated"):
+            await db.execute(text("""
+                INSERT INTO survey_analysis_cache
+                    (election_id, tenant_id, result, surveys_count, questions_count, our_candidate_id, generated_at, updated_at)
+                VALUES
+                    (:eid, :tid, CAST(:result AS jsonb), :sc, :qc, :oc, NOW(), NOW())
+                ON CONFLICT (election_id, tenant_id) DO UPDATE SET
+                    result = EXCLUDED.result,
+                    surveys_count = EXCLUDED.surveys_count,
+                    questions_count = EXCLUDED.questions_count,
+                    our_candidate_id = EXCLUDED.our_candidate_id,
+                    generated_at = NOW(),
+                    updated_at = NOW()
+            """), {
+                "eid": eid, "tid": str(tid),
+                "result": _json.dumps(result, default=str, ensure_ascii=False),
+                "sc": cur_surveys, "qc": cur_questions,
+                "oc": str(our_cid) if our_cid else None,
+            })
+            await db.commit()
+
+        result["_cache"] = {"hit": False, "generated_at": datetime.now(timezone.utc).isoformat(), "stale": False}
         return result
     except Exception as e:
         import structlog, traceback

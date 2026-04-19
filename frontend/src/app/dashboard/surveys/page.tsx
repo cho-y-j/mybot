@@ -352,7 +352,20 @@ export default function SurveysPage() {
   const [loadingCrosstab, setLoadingCrosstab] = useState(false);
   const [typeFilter, setTypeFilter] = useState<string>('all');
 
-  useEffect(() => { if (election) loadSurveys(); }, [election?.id]);
+  useEffect(() => {
+    if (election) {
+      loadSurveys();
+      loadCachedDeepAnalysis();  // 캐시 있으면 즉시 표시, 없으면 조용히 스킵
+    }
+  }, [election?.id]);
+
+  const loadCachedDeepAnalysis = async () => {
+    if (!election) return;
+    try {
+      const r = await api.getSurveyDeepAnalysis(election.id, { cacheOnly: true });
+      if (r?._cache?.hit) setDeepData(r);
+    } catch {}
+  };
 
   const loadSurveys = async () => {
     if (!election) return;
@@ -366,12 +379,14 @@ export default function SurveysPage() {
     } catch (e: any) { console.error('survey load error:', e); }
     finally { setLoading(false); }
   };
+  // 실행/재분석 — 항상 서버에서 새로 생성 (캐시 무효화)
   const loadDeepAnalysis = async () => {
     if (!election) return;
     setAnalyzing(true);
     setAnalyzeError(null);
     try {
-      const r = await api.getSurveyDeepAnalysis(election.id);
+      const hasCache = deepData?._cache?.hit;
+      const r = await api.getSurveyDeepAnalysis(election.id, { force: hasCache });
       if (r?.error) {
         setAnalyzeError(r.error);
       } else if (r?.sections?.ai_strategy?.ai_generated === false) {
@@ -570,11 +585,19 @@ export default function SurveysPage() {
       {tab === 'all' && (
         <div className="card bg-gradient-to-br from-blue-500/5 to-violet-500/5 border-blue-500/20 mb-4">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="font-bold">AI 전략 분석</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="font-bold">AI 전략 분석</h3>
+              {deepData?._cache?.hit && deepData._cache.generated_at && (
+                <span className="text-[10px] text-[var(--muted)]">
+                  분석 시점: {new Date(deepData._cache.generated_at).toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  {deepData._cache.age_hours !== undefined && ` · ${deepData._cache.age_hours < 24 ? `${Math.round(deepData._cache.age_hours)}시간 전` : `${Math.round(deepData._cache.age_hours/24)}일 전`}`}
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-2">
               <button onClick={loadDeepAnalysis} disabled={analyzing}
                 className="text-xs px-3 py-1 bg-violet-600 text-white rounded-md hover:bg-violet-700 disabled:opacity-50">
-                {analyzing ? '분석 중...' : aiStrategy?.text ? '재분석' : 'AI 분석 실행'}
+                {analyzing ? '분석 중... (약 30초)' : aiStrategy?.text ? '재분석' : 'AI 분석 실행'}
               </button>
               {aiStrategy?.text && (
                 <button onClick={() => setExpandedAI(!expandedAI)} className="text-xs text-blue-500">
@@ -583,6 +606,14 @@ export default function SurveysPage() {
               )}
             </div>
           </div>
+          {deepData?._cache?.stale && deepData._cache.stale_reason && (
+            <div className="mb-2 text-xs bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 p-2 rounded flex items-center justify-between gap-2">
+              <span>{deepData._cache.stale_reason}</span>
+              <button onClick={loadDeepAnalysis} disabled={analyzing} className="underline font-medium hover:text-amber-500">
+                지금 재분석
+              </button>
+            </div>
+          )}
           {analyzeError && (
             <div className="mb-2 text-xs bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 p-2 rounded">
               {analyzeError}

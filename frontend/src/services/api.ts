@@ -523,8 +523,12 @@ class ApiClient {
     return this.request<any>(`/analysis/${electionId}/dong-results${q ? '?' + q : ''}`);
   }
 
-  getSurveyDeepAnalysis(electionId: string) {
-    return this.request<any>(`/analysis/${electionId}/survey-deep-analysis`);
+  getSurveyDeepAnalysis(electionId: string, opts?: { force?: boolean; cacheOnly?: boolean }) {
+    const params = new URLSearchParams();
+    if (opts?.force) params.set('force', 'true');
+    if (opts?.cacheOnly) params.set('cache_only', 'true');
+    const qs = params.toString();
+    return this.request<any>(`/analysis/${electionId}/survey-deep-analysis${qs ? `?${qs}` : ''}`);
   }
 
   getSurveyCrosstabs(electionId: string, surveyId: string) {
