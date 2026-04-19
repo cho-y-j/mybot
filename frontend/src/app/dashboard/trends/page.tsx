@@ -162,7 +162,7 @@ export default function TrendsPage() {
       {/* 탭 */}
       <div className="flex gap-1 bg-[var(--muted-bg)] rounded-lg p-1">
         {([
-          ['recommended', '🎯 이번 주 추천'],
+          ['recommended', '이번 주 추천'],
           ['realtime', '실시간 급상승'],
           ['search', '키워드 조회'],
           ['candidates', '후보 검색량'],
@@ -174,7 +174,7 @@ export default function TrendsPage() {
         ))}
       </div>
 
-      {/* ═══ 🎯 이번 주 추천 주제 (기본 탭, 푸시 모델) ═══ */}
+      {/* ═══ 이번 주 추천 주제 (기본 탭, 푸시 모델) ═══ */}
       {tab === 'recommended' && (
         <RecommendedTopicsPanel
           electionId={election.id}
@@ -240,7 +240,7 @@ export default function TrendsPage() {
                       {t.traffic && <span className="text-[10px] text-[var(--muted)]">{t.traffic}</span>}
                     </div>
                     {t.relevance_reason && <p className="text-[11px] text-[var(--muted)] line-clamp-1">{t.relevance_reason}</p>}
-                    {t.news?.[0] && <p className="text-[10px] text-[var(--muted)] mt-0.5 line-clamp-1 italic">📰 {t.news[0].title}</p>}
+                    {t.news?.[0] && <p className="text-[10px] text-[var(--muted)] mt-0.5 line-clamp-1 italic">뉴스: {t.news[0].title}</p>}
                   </div>
                   <span className="text-xs text-blue-500 flex-shrink-0">주제 분석 →</span>
                 </div>
@@ -250,20 +250,20 @@ export default function TrendsPage() {
               <div className="space-y-4">
                 {high.length > 0 && (
                   <section>
-                    <h4 className="text-sm font-bold text-green-600 mb-2">🎯 지금 바로 활용 가능 (관련도 70+)</h4>
+                    <h4 className="text-sm font-bold text-green-600 mb-2 uppercase tracking-wider">지금 바로 활용 가능 · 관련도 70+</h4>
                     <div className="space-y-2">{high.map(renderItem)}</div>
                   </section>
                 )}
                 {mid.length > 0 && (
                   <section>
-                    <h4 className="text-sm font-semibold text-amber-600 mb-2">💡 연관해서 활용 가능 (관련도 40~69)</h4>
+                    <h4 className="text-sm font-semibold text-amber-600 mb-2 uppercase tracking-wider">연관 활용 가능 · 관련도 40~69</h4>
                     <div className="space-y-2">{mid.map((t: any, i: number) => renderItem(t, high.length + i))}</div>
                   </section>
                 )}
                 {low.length > 0 && (
                   <details>
                     <summary className="text-xs text-[var(--muted)] cursor-pointer hover:text-[var(--foreground)]">
-                      🔻 선거와 무관한 급상승 ({low.length}개) 펼쳐보기
+                      선거와 무관한 급상승 · {low.length} 펼쳐보기
                     </summary>
                     <div className="space-y-2 mt-2">{low.map((t: any, i: number) => renderItem(t, high.length + mid.length + i))}</div>
                   </details>
@@ -272,7 +272,7 @@ export default function TrendsPage() {
             );
           })()}
           <div className="text-[10px] text-[var(--muted)] text-center">
-            💡 키워드 클릭 → '키워드 조회' 탭에서 상세 주제 카드 (해시태그·블로그 제목·롱테일) 자동 생성
+            키워드 클릭 → '키워드 조회' 탭에서 상세 주제 카드 (해시태그·블로그 제목·롱테일) 자동 생성
           </div>
         </>
       )}
@@ -326,13 +326,13 @@ export default function TrendsPage() {
         </>
       )}
 
-      {/* (기존 '교육 이슈' 탭은 제거됨 — '🎯 이번 주 추천'이 범용 대체) */}
+      {/* (기존 '교육 이슈' 탭은 제거됨 — '이번 주 추천'이 범용 대체) */}
 
       {/* ═══ 키워드 조회 (주제 카드) ═══ */}
       {tab === 'search' && (
         <>
           <div className="card">
-            <h3 className="font-bold mb-2">📝 주제 카드 생성</h3>
+            <h3 className="font-bold mb-2">주제 카드 생성</h3>
             <p className="text-xs text-[var(--muted)] mb-3">
               키워드 입력 → AI가 <b>검색량 + 관련도 + 후보 결합 해시태그 + 롱테일 + 블로그 제목 + SNS 캡션</b>을 한 번에 생성
             </p>

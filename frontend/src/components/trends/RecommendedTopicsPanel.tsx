@@ -104,7 +104,7 @@ export default function RecommendedTopicsPanel({ electionId, onPickTopic }: Prop
       </div>
       {t.title_hint && (
         <p className="text-xs italic text-[var(--muted)] mb-1.5 line-clamp-1">
-          💡 "{t.title_hint}"
+          제목 예시: "{t.title_hint}"
         </p>
       )}
       {t.reason && (
@@ -114,7 +114,7 @@ export default function RecommendedTopicsPanel({ electionId, onPickTopic }: Prop
       )}
       {t.target_audience && (
         <p className="text-[10px] text-[var(--muted)] mt-1.5">
-          🎯 {t.target_audience}
+          타겟: {t.target_audience}
         </p>
       )}
       <div className="mt-2 text-[10px] text-blue-500 font-medium group-hover:underline">
@@ -129,8 +129,8 @@ export default function RecommendedTopicsPanel({ electionId, onPickTopic }: Prop
       <div className="flex items-start justify-between gap-2 flex-wrap">
         <div>
           <h3 className="font-bold flex items-center gap-2">
-            🎯 이번 주 추천 주제
-            {topics.length > 0 && <span className="text-xs text-[var(--muted)]">· {topics.length}개</span>}
+            이번 주 추천 주제
+            {topics.length > 0 && <span className="text-xs text-[var(--muted)] font-normal">· {topics.length}개</span>}
           </h3>
           <p className="text-xs text-[var(--muted)] mt-0.5">
             AI가 최근 뉴스·여론조사·커뮤니티를 분석해서 담당자가 바로 쓸 수 있는 주제를 제안합니다.
@@ -193,8 +193,8 @@ export default function RecommendedTopicsPanel({ electionId, onPickTopic }: Prop
         <div className="space-y-3">
           {high.length > 0 && (
             <section>
-              <h4 className="text-xs font-bold text-red-500 mb-2 flex items-center gap-1">
-                🔥 지금 당장 써야 ({high.length}개)
+              <h4 className="text-xs font-bold text-red-500 mb-2 uppercase tracking-wider">
+                지금 당장 써야 · {high.length}
               </h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {high.map((t, i) => renderTopic(t, i))}
@@ -203,8 +203,8 @@ export default function RecommendedTopicsPanel({ electionId, onPickTopic }: Prop
           )}
           {medium.length > 0 && (
             <section>
-              <h4 className="text-xs font-bold text-amber-500 mb-2 flex items-center gap-1">
-                📅 이번 주 내 ({medium.length}개)
+              <h4 className="text-xs font-bold text-amber-500 mb-2 uppercase tracking-wider">
+                이번 주 내 · {medium.length}
               </h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {medium.map((t, i) => renderTopic(t, high.length + i))}
@@ -213,8 +213,8 @@ export default function RecommendedTopicsPanel({ electionId, onPickTopic }: Prop
           )}
           {low.length > 0 && (
             <details className="mt-1">
-              <summary className="text-xs font-semibold text-[var(--muted)] cursor-pointer hover:text-[var(--foreground)]">
-                ⏰ 여유 있을 때 ({low.length}개) 펼쳐보기
+              <summary className="text-xs font-semibold text-[var(--muted)] cursor-pointer hover:text-[var(--foreground)] uppercase tracking-wider">
+                여유 있을 때 · {low.length} 펼쳐보기
               </summary>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
                 {low.map((t, i) => renderTopic(t, high.length + medium.length + i))}

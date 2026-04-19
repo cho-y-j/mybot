@@ -185,7 +185,7 @@ export default function TopicCard({ data, loading }: { data: TopicCardData | nul
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <h4 className="text-xs font-semibold text-[var(--muted)]">
-                  💎 AI 추천 롱테일 키워드 ({data.ai_longtail.length}개) — 경쟁 낮고 담당자 실무 최적
+                  AI 추천 롱테일 키워드 · {data.ai_longtail.length} — 경쟁 낮고 실무 최적
                 </h4>
                 <CopyButton text={longtailAll} label="키워드 목록 복사" />
               </div>
@@ -209,7 +209,7 @@ export default function TopicCard({ data, loading }: { data: TopicCardData | nul
           {data.longtail && data.longtail.length > 0 && (
             <div>
               <h4 className="text-xs font-semibold text-[var(--muted)] mb-1.5">
-                📊 네이버 실제 검색량 롱테일 ({data.longtail.length}개)
+                네이버 실제 검색량 롱테일 · {data.longtail.length}
               </h4>
               <div className="space-y-1">
                 {data.longtail.map((lt, i) => (
@@ -233,7 +233,7 @@ export default function TopicCard({ data, loading }: { data: TopicCardData | nul
           {data.blog_titles && data.blog_titles.length > 0 && (
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <h4 className="text-xs font-semibold text-[var(--muted)]">✍️ 블로그 제목 제안 (SEO 친화)</h4>
+                <h4 className="text-xs font-semibold text-[var(--muted)]">블로그 제목 제안 · SEO 친화</h4>
                 <CopyButton text={(data.blog_titles || []).join('\n')} label="전체 복사" />
               </div>
               <div className="space-y-1">
@@ -254,7 +254,7 @@ export default function TopicCard({ data, loading }: { data: TopicCardData | nul
           {/* SNS 캡션 */}
           {data.sns_captions && data.sns_captions.length > 0 && (
             <div>
-              <h4 className="text-xs font-semibold text-[var(--muted)] mb-1.5">💬 SNS 캡션</h4>
+              <h4 className="text-xs font-semibold text-[var(--muted)] mb-1.5">SNS 캡션</h4>
               <div className="space-y-1">
                 {data.sns_captions.map((c, i) => (
                   <div key={i} className="flex items-start gap-2 p-2 rounded-lg bg-violet-500/5 border border-violet-500/20">
@@ -270,7 +270,7 @@ export default function TopicCard({ data, loading }: { data: TopicCardData | nul
           {/* 메타 설명 */}
           {data.meta_descriptions && data.meta_descriptions.length > 0 && (
             <details className="text-xs">
-              <summary className="cursor-pointer text-[var(--muted)] font-semibold">📝 검색결과용 메타 설명 (SEO)</summary>
+              <summary className="cursor-pointer text-[var(--muted)] font-semibold">검색결과용 메타 설명 (SEO)</summary>
               <div className="space-y-1 mt-2">
                 {data.meta_descriptions.map((m, i) => (
                   <div key={i} className="flex items-start gap-2 p-2 rounded-lg bg-[var(--muted-bg)]">
@@ -288,7 +288,7 @@ export default function TopicCard({ data, loading }: { data: TopicCardData | nul
             </p>
           )}
           {data.ai_generated === false && (
-            <p className="text-[10px] text-amber-500">⚠️ AI 생성 실패 — 기본 템플릿으로 표시 중</p>
+            <p className="text-[10px] text-amber-500">AI 생성 실패 — 기본 템플릿으로 표시 중</p>
           )}
         </>
       )}
