@@ -233,11 +233,19 @@ function GroupedSurveyCard({
       {/* 질문별 결과 */}
       {(group.questions || []).map((q: any, qi: number) => {
         const results = q.results || {};
-        const entries = Object.entries(results)
-          .filter(([k]) => !['모름', '없음', '없다', '모름/무응답', '기타', '잘모름', '없음/모름', '지지정당없음'].includes(k))
-          .map(([k, v]) => [k, Number(v) || 0] as [string, number])
-          .sort((a, b) => b[1] - a[1]);
-        const maxVal = entries.length > 0 ? Math.max(...entries.map(([, v]) => v)) : 0;
+        // 2026-04-19: 후보 vs 비후보(모름/없음/기타) 분리. 비후보는 무조건 하단.
+        const NON_CAND_PATTERNS = ['모름', '없음', '없다', '잘모름', '무응답', '응답', '기타', '지지정당없음', '선택', '해당없음'];
+        const isNonCand = (k: string) =>
+          NON_CAND_PATTERNS.some(p => k.includes(p)) ||
+          // 후보 이름이 아닌 메타 카테고리 키 (dict 키가 한글 1~2글자면서 숫자 응답 분포) 방어
+          k.length === 0;
+        const all = Object.entries(results)
+          .map(([k, v]) => [k, Number(v) || 0] as [string, number]);
+        const candEntries = all.filter(([k]) => !isNonCand(k)).sort((a, b) => b[1] - a[1]);
+        const otherEntries = all.filter(([k]) => isNonCand(k)).sort((a, b) => b[1] - a[1]);
+        const maxVal = candEntries.length > 0 ? Math.max(...candEntries.map(([, v]) => v)) : 0;
+        // 렌더용으로 합침 — 후보 먼저, 비후보는 뒤 (시각적으로 구분)
+        const entries = candEntries;
         const isOurQ = q.is_our_election_type;
         const typeLabel: Record<string, string> = {
           superintendent: '교육감', mayor: '시장', governor: '도지사',
@@ -271,7 +279,7 @@ function GroupedSurveyCard({
                 ))}
               </div>
             ) : (
-              // 상세: 바 차트 (우리 선거 질문만)
+              // 상세: 바 차트 (후보만 상단, 비후보는 하단 회색 별도)
               <div className="space-y-1">
                 {entries.slice(0, 8).map(([name, val]) => {
                   const ours = isOur(name);
@@ -294,6 +302,20 @@ function GroupedSurveyCard({
                     </div>
                   );
                 })}
+                {/* 비후보 응답(모름/없음/기타) — 하단 회색 구역 */}
+                {otherEntries.length > 0 && (
+                  <div className="mt-2 pt-2 border-t border-[var(--card-border)]/40">
+                    <div className="flex items-center gap-2 flex-wrap text-[11px] text-[var(--muted)]">
+                      <span className="opacity-70">부동층·기타:</span>
+                      {otherEntries.map(([n, v]) => (
+                        <span key={n} className="whitespace-nowrap">
+                          <span>{n}</span>
+                          <span className="ml-1 font-mono opacity-80">{v}%</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
