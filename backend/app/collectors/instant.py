@@ -452,10 +452,11 @@ async def collect_youtube_now(db: AsyncSession, tenant_id: str, election_id: str
             search_keywords.append(f"{cand.name} {region_short} {type_label}")
 
         for keyword in search_keywords[:3]:
-            videos = await collector.search_videos(keyword, max_results=5)
-            shorts = await collector.search_shorts(keyword, max_results=3)
+            # 쿼터 절감: 일반+쇼츠 각 호출(200u) → 통합 1회(100u)
+            # search_videos 가 is_short 자동 마킹 (duration 기반)
+            videos = await collector.search_videos(keyword, max_results=8)
 
-            for vid in videos + shorts:
+            for vid in videos:
                 title = vid.get("title", "")
                 desc = vid.get("description", "")
                 text_full = f"{title} {desc}"

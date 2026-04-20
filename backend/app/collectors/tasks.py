@@ -663,8 +663,9 @@ def collect_youtube(self, tenant_id: str, election_id: str, schedule_id: str):
     session.commit()
 
     try:
-        # ── 같은 election에서 최근 수집이 있으면 스킵 ──
-        recent = _check_recent_collection(session, election_id, "youtube", within_minutes=60)
+        # ── 같은 election에서 최근 수집이 있으면 스킵 (쿼터 절감: 60분 → 12시간) ──
+        # 유튜브는 업로드 빈도 낮아 12시간 캐시로 충분. 캠프 6개 × 스케줄 3회 × 후보 5명 중복 호출 방지.
+        recent = _check_recent_collection(session, election_id, "youtube", within_minutes=720)
         if recent and recent["tenant_id"] != tenant_id:
             logger.info("youtube_skip_recent_exists",
                         tenant=tenant_id, other_tenant=recent["tenant_id"],
@@ -1220,6 +1221,20 @@ def collect_youtube_enhanced(self, tenant_id: str, election_id: str, schedule_id
     session.commit()
 
     try:
+        # 쿼터 절감: 같은 election에서 12시간 내 다른 캠프가 이미 수집했으면 스킵
+        # (유튜브는 뉴스보다 업로드 빈도 낮으니 12시간 캐시로 충분)
+        recent = _check_recent_collection(session, election_id, "youtube", within_minutes=720)
+        if recent and recent["tenant_id"] != tenant_id:
+            logger.info("youtube_enhanced_skip_recent_exists",
+                        tenant=tenant_id, other_tenant=recent["tenant_id"],
+                        minutes_ago=recent["minutes_ago"])
+            run.status = "skipped"
+            run.error_message = f"다른 캠프가 {recent['minutes_ago']}분 전에 수집 (쿼터 절감)"
+            run.completed_at = datetime.now(timezone.utc)
+            session.commit()
+            session.close()
+            return {"status": "skipped_recent", "minutes_ago": recent["minutes_ago"]}
+
         candidates = session.execute(
             select(Candidate).where(
                 Candidate.election_id == election_id,
@@ -1256,12 +1271,16 @@ def collect_youtube_enhanced(self, tenant_id: str, election_id: str, schedule_id
                     "require_any": ["교육", "선거", "후보", "교육감", "출마"],
                 }
             for keyword in (cand.search_keywords or [cand.name]):
+                # 쿼터 절감: 일반+쇼츠 각각 호출(200u) → 한 번 호출에 is_short 자동 필터(100u)
+                # max_results 15로 늘려 쇼츠 포함 전체 확보
                 videos = _run_async(collector.search_videos(
-                    keyword, max_results=10, homonym_filters=homonym,
+                    keyword, max_results=15, homonym_filters=homonym,
                 ))
-                shorts = _run_async(collector.search_shorts(keyword, max_results=5))
+                # 로깅용: 몇 개가 쇼츠로 분류됐는지
+                shorts_count = sum(1 for v in videos if v.get("is_short"))
+                logger.info("youtube_search_merged", keyword=keyword, total=len(videos), shorts=shorts_count)
 
-                for vid in videos + shorts:
+                for vid in videos:
                     pub_at = parse_published_at(vid.get("published_at"))
                     exists = session.execute(
                         select(YouTubeVideo).where(

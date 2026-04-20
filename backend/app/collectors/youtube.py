@@ -141,13 +141,15 @@ class YouTubeCollector:
         max_results: int = 10,
         order: str = "date",
     ) -> list[dict]:
-        """유튜브 숏츠 전용 검색 (videoDuration=short)."""
-        return await self.search_videos(
-            keyword=keyword,
-            max_results=max_results,
-            order=order,
-            video_duration="short",
-        )
+        """
+        DEPRECATED: search_videos 결과에서 is_short=True 를 그대로 사용하세요.
+        쿼터 절감을 위해 별도 API 호출 안 하고 빈 배열 반환 (호환성 유지).
+
+        Why: search.list 는 100 unit/회. 일반/쇼츠 따로 부르면 2배.
+        search_videos 는 이미 duration 기반으로 is_short 를 자동 마킹함.
+        """
+        logger.info("youtube_shorts_deprecated", note="use search_videos + is_short filter")
+        return []
 
     async def _get_video_details(
         self, client: httpx.AsyncClient, video_ids: list[str]
