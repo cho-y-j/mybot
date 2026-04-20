@@ -90,48 +90,58 @@ export default function UnifiedHistoryView({ data, electionId, onRefresh }: Prop
     return { cells, party_counts: partyCounts };
   }, [aggregate, year, sec.raw_party_grid, drilldown]);
 
-  // ─── 진영 모드: drilldown 재집계 (aggregate/year 둘 다) ───
+  // ─── 진영 모드 grid ─── */
+  // 역대 누적: 백엔드 sec.camp_grid 그대로 사용 (candidate_alignments + camp_overrides 적용된 정확한 진영 매핑).
+  //   프론트 재계산 시 교육감 무소속 후보의 party_camp 가 비어있어 0/0이 나오던 치명 버그 방지.
+  // 단일 회차: drilldown을 재집계하되, camp_grid에서 후보→진영 매핑을 가져와 fallback.
   const campGridByYear = useMemo(() => {
+    if (aggregate) return sec.camp_grid;
+
+    // 후보명 → 진영 매핑 (백엔드 camp_grid의 latest_winner 기반으로 추출)
+    const candToCamp = new Map<string, string>();
+    (sec.camp_grid?.cells || []).forEach((cg: any) => {
+      if (cg.latest_winner && cg.latest_winner_camp) {
+        candToCamp.set(cg.latest_winner, cg.latest_winner_camp);
+      }
+    });
+
     const cells: any[] = [];
     const legendCounts: Record<string, number> = {
       진보강세: 0, 진보우세: 0, 경합: 0, 보수우세: 0, 보수강세: 0,
     };
     Object.entries(drilldown).forEach(([sgg, timeline]: any) => {
-      const entries = aggregate ? (timeline || []) : (timeline || []).filter((t: any) => t.year === year);
-      if (!entries.length) return;
+      const entry = (timeline || []).find((t: any) => t.year === year);
+      if (!entry || !entry.top3?.length) return;
 
-      let progSum = 0, consSum = 0, cnt = 0;
-      entries.forEach((entry: any) => {
-        (entry.top3 || []).forEach((c: any) => {
-          const camp = c.party_camp || partyToCamp(c.party);
-          if (camp === '진보') progSum += c.vote_rate || 0;
-          else if (camp === '보수') consSum += c.vote_rate || 0;
-        });
-        cnt++;
+      let progSum = 0, consSum = 0;
+      entry.top3.forEach((c: any) => {
+        // 정당 → 진영 매핑 우선, 안되면 후보명으로 백엔드 매핑 fallback (교육감 무소속 대응)
+        const camp = c.party_camp || partyToCamp(c.party) || candToCamp.get(c.name) || '';
+        if (camp === '진보') progSum += c.vote_rate || 0;
+        else if (camp === '보수') consSum += c.vote_rate || 0;
       });
-      const progRate = cnt > 0 ? progSum / cnt : 0;
-      const consRate = cnt > 0 ? consSum / cnt : 0;
-      const gap = Math.abs(progRate - consRate);
-      const dominant = progRate >= consRate ? '진보' : '보수';
-      const tier = campTierOf(progRate, consRate);
+      const gap = Math.abs(progSum - consSum);
+      const dominant = progSum >= consSum ? '진보' : '보수';
+      const tier = campTierOf(progSum, consSum);
       legendCounts[tier] = (legendCounts[tier] || 0) + 1;
 
-      const latest = entries[0];
-      const latestWinner = latest?.top3?.[0];
+      const latestWinner = entry.top3[0];
       cells.push({
         district: sgg,
         tier,
         dominant,
-        progressive_rate: Math.round(progRate * 10) / 10,
-        conservative_rate: Math.round(consRate * 10) / 10,
+        progressive_rate: Math.round(progSum * 10) / 10,
+        conservative_rate: Math.round(consSum * 10) / 10,
         gap: Math.round(gap * 10) / 10,
         latest_winner: latestWinner?.name || '',
-        latest_winner_camp: latestWinner ? partyToCamp(latestWinner.party) : '',
-        latest_year: latest?.year || 0,
+        latest_winner_camp: latestWinner
+          ? (partyToCamp(latestWinner.party) || candToCamp.get(latestWinner.name) || '')
+          : '',
+        latest_year: year || 0,
       });
     });
     return { cells, legend_counts: legendCounts };
-  }, [aggregate, year, drilldown]);
+  }, [aggregate, year, drilldown, sec.camp_grid]);
 
   // 카드 클릭 → 드릴다운 탭
   function handleSelectDistrict(d: string) {
