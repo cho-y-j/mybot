@@ -8,10 +8,20 @@ import { useState, useEffect } from 'react';
 // - 절제된 그라데이션 메시 + 그리드 패턴 (Vercel/Linear 톤)
 // - 아이콘 0개. 강조는 색·타이포·모형 UI 로만.
 
-const PLANS = [
+type Plan = {
+  name: string;
+  price?: number;
+  priceLabel?: string;
+  custom?: boolean;
+  desc: string;
+  badge?: string;
+  highlights: string[];
+};
+
+const PLANS: Plan[] = [
   {
     name: '베이직',
-    price: 39,
+    price: 59,
     desc: '소형 캠프, 첫 도입',
     highlights: [
       '후보 1명 + 경쟁 후보 2명',
@@ -20,11 +30,12 @@ const PLANS = [
       '주간 전략 보고서 1회',
       '기본 모바일 홈페이지 (5개 섹션)',
       'ai.on1.kr/이름 주소',
+      'AI 챗 월 30만 토큰',
     ],
   },
   {
     name: '프로',
-    price: 89,
+    price: 129,
     desc: '실전 운영, 본격 분석',
     badge: '가장 많이 선택',
     highlights: [
@@ -32,23 +43,39 @@ const PLANS = [
       '일일 종합 보고서 PDF (매일 18시)',
       '토론 대본 자동 생성',
       'SNS 멀티톤 콘텐츠 (페북·블로그·인스타)',
-      'AI 챗 무제한 (전략 상담)',
+      'AI 챗 월 100만 토큰',
       '홈페이지 디자인 커스터마이징 (색·폰트·배치)',
       '커스텀 도메인 연결 (예: kim2026.kr)',
     ],
   },
   {
     name: '프리미엄',
-    price: 169,
+    price: 269,
     desc: '경합 지역, 위기 대응',
     highlights: [
       '프로 모든 기능 +',
+      'AI 챗 무제한 (공정 사용 정책)',
       '위기 즉시 알림 (감성 급락 시 텔레그램)',
       '갤러리 무제한 + 다중 페이지',
       'SSL 자동 + 트래픽 무제한',
       '전담 우선 지원',
       '선거법 자동 검증 (공직선거법 10개 조항)',
       'API 접근 (캠프 자체 시스템 연동)',
+    ],
+  },
+  {
+    name: '엔터프라이즈',
+    custom: true,
+    priceLabel: '세팅 800만원~ + 월 250만원~',
+    desc: '국회의원·광역단체장급 · 전용 인프라',
+    highlights: [
+      '프리미엄 모든 기능 +',
+      '전용 서버 + 완전 데이터 격리',
+      '고객 본인 Anthropic/OpenAI API 키 연동 (비용·사용량 투명)',
+      '홈페이지 100% 커스텀 디자인 (당일 세팅)',
+      '기업 도메인 연결 + SLA 보장',
+      '전담 기술 지원 · 실시간 장애 대응',
+      '맞춤 기능 개발 (별도 견적)',
     ],
   },
 ];
@@ -496,7 +523,7 @@ export default function LandingPage() {
             <h2 className="text-[36px] sm:text-[44px] font-bold text-[#181d26]" style={{ letterSpacing: '-0.5px', lineHeight: 1.15 }}>
               사람이 하면 월 500만원.
               <br />
-              <span className="text-[#1b61c9]">CampAI는 39만원부터.</span>
+              <span className="text-[#1b61c9]">CampAI는 59만원부터.</span>
             </h2>
             <p className="mt-4 text-[16px] text-[#181d26]/82 max-w-2xl mx-auto" style={{ letterSpacing: '0.16px' }}>
               실제 한국 선거 캠프 외주 단가 기준입니다.
@@ -533,12 +560,12 @@ export default function LandingPage() {
             <div className="grid grid-cols-3 px-6 py-5 bg-[#fafbfc] text-[16px] font-bold border-t-2 border-[#181d26]">
               <div className="text-[#181d26]">합계</div>
               <div className="text-[#181d26]">월 500~1,000만원+</div>
-              <div className="text-[#1b61c9]">월 39만원~</div>
+              <div className="text-[#1b61c9]">월 59만원~</div>
             </div>
           </div>
 
           <p className="mt-8 text-center text-[14px] text-[#181d26]/60" style={{ letterSpacing: '0.07px' }}>
-            6개월 캠프 기준 누적 외주 비용 3,000만~6,000만원 → CampAI 234만원 (베이직)
+            6개월 캠프 기준 누적 외주 비용 3,000만~6,000만원 → CampAI 354만원 (베이직)
           </p>
         </div>
       </section>
@@ -626,20 +653,25 @@ export default function LandingPage() {
             </div>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-5">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
             {PLANS.map((p) => {
-              const yearly = Math.round(p.price * 6 * 0.85);
+              const yearly = p.price ? Math.round(p.price * 6 * 0.85) : 0;
               const isPro = p.name === '프로';
+              const isEnt = p.custom === true;
               return (
                 <div
                   key={p.name}
                   className={`relative p-8 rounded-[16px] bg-white transition-all hover:translate-y-[-2px] ${
-                    isPro ? 'border-2 border-[#1b61c9]' : 'border border-[#e0e2e6]'
+                    isPro ? 'border-2 border-[#1b61c9]' :
+                    isEnt ? 'border-2 border-[#181d26]' :
+                    'border border-[#e0e2e6]'
                   }`}
                   style={
                     isPro
                       ? { boxShadow: 'rgba(27,97,201,0.18) 0px 12px 32px, rgba(45,127,249,0.10) 0px 4px 12px' }
-                      : { boxShadow: 'rgba(15,48,106,0.04) 0px 2px 8px' }
+                      : isEnt
+                        ? { boxShadow: 'rgba(15,48,106,0.12) 0px 8px 24px' }
+                        : { boxShadow: 'rgba(15,48,106,0.04) 0px 2px 8px' }
                   }
                 >
                   {p.badge && (
@@ -657,33 +689,49 @@ export default function LandingPage() {
                     {p.desc}
                   </p>
 
-                  <div className="mt-6 flex items-baseline gap-2">
-                    <span className="text-[44px] font-bold text-[#181d26]" style={{ letterSpacing: '-0.5px' }}>
-                      {billing === 'monthly' ? p.price : yearly}
-                    </span>
-                    <span className="text-[16px] text-[#181d26]/82">
-                      만원 / {billing === 'monthly' ? '월' : '6개월'}
-                    </span>
-                  </div>
-                  {billing === 'yearly' && (
-                    <p className="mt-1 text-[13px] text-[#1b61c9] font-medium" style={{ letterSpacing: '0.07px' }}>
-                      월 {Math.round(yearly / 6)}만원 (15% 할인)
-                    </p>
+                  {!isEnt && p.price != null && (
+                    <>
+                      <div className="mt-6 flex items-baseline gap-2">
+                        <span className="text-[44px] font-bold text-[#181d26]" style={{ letterSpacing: '-0.5px' }}>
+                          {billing === 'monthly' ? p.price : yearly}
+                        </span>
+                        <span className="text-[16px] text-[#181d26]/82">
+                          만원 / {billing === 'monthly' ? '월' : '6개월'}
+                        </span>
+                      </div>
+                      {billing === 'yearly' && (
+                        <p className="mt-1 text-[13px] text-[#1b61c9] font-medium" style={{ letterSpacing: '0.07px' }}>
+                          월 {Math.round(yearly / 6)}만원 (15% 할인)
+                        </p>
+                      )}
+                    </>
+                  )}
+                  {isEnt && (
+                    <div className="mt-6">
+                      <div className="text-[18px] font-bold text-[#181d26] leading-[1.4]" style={{ letterSpacing: '0.10px' }}>
+                        {p.priceLabel}
+                      </div>
+                      <p className="mt-2 text-[13px] text-[#181d26]/60" style={{ letterSpacing: '0.07px' }}>
+                        기능·인프라 범위에 따라 별도 견적
+                      </p>
+                    </div>
                   )}
 
                   <Link
-                    href="/apply"
+                    href={isEnt ? '/apply?plan=enterprise' : '/apply'}
                     className={`mt-7 block text-center px-5 py-3 rounded-[12px] text-[15px] font-medium transition-all ${
                       isPro
                         ? 'bg-[#181d26] text-white hover:bg-[#0a0e16]'
-                        : 'bg-white text-[#181d26] border border-[#181d26]/15 hover:border-[#181d26]/40'
+                        : isEnt
+                          ? 'bg-[#181d26] text-white hover:bg-[#0a0e16]'
+                          : 'bg-white text-[#181d26] border border-[#181d26]/15 hover:border-[#181d26]/40'
                     }`}
                     style={{
                       letterSpacing: '0.08px',
-                      boxShadow: isPro ? 'rgba(45,127,249,0.32) 0px 4px 12px' : undefined,
+                      boxShadow: (isPro || isEnt) ? 'rgba(45,127,249,0.32) 0px 4px 12px' : undefined,
                     }}
                   >
-                    가입 신청
+                    {isEnt ? '상담 문의' : '가입 신청'}
                   </Link>
 
                   <ul className="mt-8 space-y-3">
