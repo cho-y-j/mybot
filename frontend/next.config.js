@@ -17,14 +17,19 @@ const nextConfig = {
   // 브라우저에 1년 캐시돼 "배포해도 안 바뀌어 보임" 문제가 반복됨.
   // 정적 assets(/_next/static/*)은 해시 URL이므로 영향 없음.
   async headers() {
+    const nocache = [
+      { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
+      { key: 'Pragma', value: 'no-cache' },
+    ];
     return [
-      {
-        source: '/:path((dashboard|easy|admin|onboarding)(/.*)?)',
-        headers: [
-          { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
-          { key: 'Pragma', value: 'no-cache' },
-        ],
-      },
+      { source: '/dashboard/:path*', headers: nocache },
+      { source: '/easy/:path*', headers: nocache },
+      { source: '/admin/:path*', headers: nocache },
+      { source: '/onboarding/:path*', headers: nocache },
+      { source: '/dashboard', headers: nocache },
+      { source: '/easy', headers: nocache },
+      { source: '/admin', headers: nocache },
+      { source: '/onboarding', headers: nocache },
     ];
   },
 };
