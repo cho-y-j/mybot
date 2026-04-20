@@ -817,8 +817,7 @@ async def generate_history_ai_strategy(
     tenant_id: str,
     election_id: str,
 ) -> dict:
-    """v2: 4섹션 구조화 AI 전략 생성 (Claude CLI). 캐시 저장."""
-    import subprocess
+    """v2: 4섹션 구조화 AI 전략 생성 (ai_service.call_claude_text 경유). 캐시 저장."""
     import json as _json
     from uuid import UUID as PyUUID
 
@@ -922,15 +921,20 @@ async def generate_history_ai_strategy(
     ai_generated = False
 
     try:
-        result = subprocess.run(
-            ["claude", "-p", prompt],
-            capture_output=True, text=True, timeout=180,
+        # CLAUDE.md 절대 룰: subprocess.run(claude) 직접 호출 금지 → ai_service.call_claude_text 경유
+        # (고객 API키 → 관리자 CLI 계정 → 시스템 CLI 자동 전환)
+        from app.services.ai_service import call_claude_text
+        raw = await call_claude_text(
+            prompt,
+            timeout=100,  # NPM 120초 이내로 안전하게
+            context="history_ai_strategy",  # premium tier (Opus)
+            tenant_id=str(tid_uuid),
+            db=db,
         )
-        if result.returncode == 0 and result.stdout.strip():
-            text = result.stdout.strip()
+        if raw:
+            text = raw.strip()
             # JSON 파싱 시도
             try:
-                # 마크다운 코드블록 제거
                 cleaned = text
                 if cleaned.startswith("```"):
                     lines = cleaned.split("\n")
@@ -939,10 +943,10 @@ async def generate_history_ai_strategy(
                 ai_generated = True
             except Exception as parse_err:
                 logger.warning("history_ai_json_parse_failed", error=str(parse_err), text_head=text[:200])
-                # JSON 파싱 실패 → text만 보존
-                ai_generated = True
+                ai_generated = True  # 텍스트는 살림
     except Exception as e:
-        logger.warning("history_ai_failed", error=str(e))
+        import traceback
+        logger.warning("history_ai_failed", error=str(e), tb=traceback.format_exc()[:500])
 
     result_data = {
         "text": text,
