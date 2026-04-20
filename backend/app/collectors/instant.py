@@ -193,6 +193,14 @@ async def collect_news_now(db: AsyncSession, tenant_id: str, election_id: str) -
         logger.error("news_comment_collection_error", error=str(e))
 
     await db.flush()
+    # RAG 임베딩 자동 훅 — 수집 완료 후 신규 뉴스 임베딩 (이미 있는 건 스킵)
+    try:
+        from app.services.embedding_service import embed_existing_data
+        embed_result = await embed_existing_data(db, tenant_id, election_id)
+        logger.info("rag_embed_done", tenant=tenant_id, result=embed_result)
+    except Exception as e:
+        logger.warning("rag_embed_failed", error=str(e)[:200])
+
     logger.info("instant_news_collected", tenant_id=tenant_id, total=total, filtered=filtered_out, comments=comment_count)
     return {"type": "news", "collected": total, "filtered": filtered_out, "comments": comment_count}
 
@@ -403,6 +411,12 @@ async def collect_community_now(db: AsyncSession, tenant_id: str, election_id: s
                 )
 
     await db.flush()
+    try:
+        from app.services.embedding_service import embed_existing_data
+        embed_result = await embed_existing_data(db, tenant_id, election_id)
+        logger.info("rag_embed_done", tenant=tenant_id, source="community", result=embed_result)
+    except Exception as e:
+        logger.warning("rag_embed_failed", source="community", error=str(e)[:200])
     logger.info("instant_community_collected", tenant_id=tenant_id, total=total, filtered=filtered_out)
     return {"type": "community", "collected": total, "filtered": filtered_out}
 
@@ -603,6 +617,12 @@ async def collect_youtube_now(db: AsyncSession, tenant_id: str, election_id: str
                 comment_count += 1
 
     await db.flush()
+    try:
+        from app.services.embedding_service import embed_existing_data
+        embed_result = await embed_existing_data(db, tenant_id, election_id)
+        logger.info("rag_embed_done", tenant=tenant_id, source="youtube", result=embed_result)
+    except Exception as e:
+        logger.warning("rag_embed_failed", source="youtube", error=str(e)[:200])
     logger.info("instant_youtube_collected", tenant_id=tenant_id, total=total, keyword_filtered=keyword_filtered, ai_filtered=filtered_out)
     return {"type": "youtube", "collected": total, "filtered": filtered_out, "comments": comment_count}
 
