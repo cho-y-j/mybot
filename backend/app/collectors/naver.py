@@ -2,7 +2,9 @@
 ElectionPulse - Naver News/Blog/Cafe Collector
 기존 프로토타입의 검증된 크롤링 로직을 async로 포팅
 """
+import asyncio
 import re
+import time
 from datetime import datetime, timezone
 from typing import Optional
 from urllib.parse import quote, urlparse
@@ -12,6 +14,29 @@ from bs4 import BeautifulSoup
 import structlog
 
 logger = structlog.get_logger()
+
+# 429 방지용 프로세스 내부 호출 간격 (초당 8회)
+_NAVER_MIN_INTERVAL = 0.12
+_naver_last_call = {"t": 0.0}
+
+
+async def _throttle_naver():
+    now = time.monotonic()
+    gap = now - _naver_last_call["t"]
+    if gap < _NAVER_MIN_INTERVAL:
+        await asyncio.sleep(_NAVER_MIN_INTERVAL - gap)
+    _naver_last_call["t"] = time.monotonic()
+
+
+async def _get_with_retry(client: httpx.AsyncClient, url: str, **kwargs) -> httpx.Response:
+    await _throttle_naver()
+    resp = await client.get(url, **kwargs)
+    if resp.status_code == 429:
+        logger.warning("naver_429_retry", url=url)
+        await asyncio.sleep(2.0)
+        await _throttle_naver()
+        resp = await client.get(url, **kwargs)
+    return resp
 
 HEADERS = {
     "User-Agent": (
@@ -71,7 +96,7 @@ class NaverCollector:
 
         async with httpx.AsyncClient() as client:
             try:
-                resp = await client.get(url, params=params, headers=headers, timeout=15)
+                resp = await _get_with_retry(client, url, params=params, headers=headers, timeout=15)
                 resp.raise_for_status()
                 data = resp.json()
 
@@ -99,7 +124,7 @@ class NaverCollector:
 
         async with httpx.AsyncClient() as client:
             try:
-                resp = await client.get(url, headers=HEADERS, timeout=15)
+                resp = await _get_with_retry(client, url, headers=HEADERS, timeout=15)
                 resp.raise_for_status()
                 soup = BeautifulSoup(resp.text, "lxml")
 
@@ -214,7 +239,7 @@ class NaverCollector:
         }
         async with httpx.AsyncClient() as client:
             try:
-                resp = await client.get(url, params=params, headers=headers, timeout=15)
+                resp = await _get_with_retry(client, url, params=params, headers=headers, timeout=15)
                 resp.raise_for_status()
                 data = resp.json()
                 posts = []
@@ -239,7 +264,7 @@ class NaverCollector:
 
         async with httpx.AsyncClient() as client:
             try:
-                resp = await client.get(url, headers=HEADERS, timeout=15)
+                resp = await _get_with_retry(client, url, headers=HEADERS, timeout=15)
                 soup = BeautifulSoup(resp.text, "lxml")
                 posts = []
 

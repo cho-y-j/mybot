@@ -163,11 +163,11 @@ export default function NewsAnalysisPage() {
           <div className="text-3xl font-black">{stats.total}</div>
           <div className="text-xs text-[var(--muted)] mt-1">전체 뉴스</div>
         </div>
-        <div className="card text-center bg-green-500/5 border-green-500/20">
+        <div className="card text-center">
           <div className="text-3xl font-black text-green-500">{stats.positive}</div>
           <div className="text-xs text-[var(--muted)] mt-1">긍정 ({stats.total > 0 ? Math.round(stats.positive / stats.total * 100) : 0}%)</div>
         </div>
-        <div className="card text-center bg-red-500/5 border-red-500/20">
+        <div className="card text-center">
           <div className="text-3xl font-black text-red-500">{stats.negative}</div>
           <div className="text-xs text-[var(--muted)] mt-1">부정 ({stats.total > 0 ? Math.round(stats.negative / stats.total * 100) : 0}%)</div>
         </div>
@@ -267,7 +267,7 @@ export default function NewsAnalysisPage() {
       {sortedDates.map(date => (
         <div key={date}>
           {/* 날짜 헤더 */}
-          <div className="flex items-center gap-3 mb-2 mt-4">
+          <div className="flex items-center gap-3 mb-2 mt-2">
             <div className="text-sm font-bold">{date}</div>
             <div className="flex-1 h-px bg-[var(--card-border)]" />
             <span className="text-xs text-[var(--muted)]">{groupedByDate[date].length}건</span>
@@ -277,15 +277,13 @@ export default function NewsAnalysisPage() {
           <div className="space-y-1.5">
             {groupedByDate[date].map((news: any, i: number) => (
               <a key={i} href={news.url || '#'} target="_blank" rel="noopener noreferrer"
-                className={`block p-3 rounded-xl border transition-all hover:shadow-md ${
-                  news.sentiment === 'negative' ? 'bg-red-500/5 border-red-500/20' :
-                  news.sentiment === 'positive' ? 'bg-green-500/5 border-green-500/10' :
-                  'bg-[var(--card-bg)] border-[var(--card-border)]'
-                }`}>
+                className="relative block p-3 pl-4 rounded-xl border border-[var(--card-border)] bg-[var(--card-bg)] transition-all hover:shadow-md overflow-hidden">
+                <span className={`absolute left-0 top-0 bottom-0 w-[3px] ${
+                  news.sentiment === 'negative' ? 'bg-red-500' :
+                  news.sentiment === 'positive' ? 'bg-green-500' :
+                  'bg-[var(--card-border)]'
+                }`} />
                 <div className="flex items-start gap-2">
-                  <div className={`mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                    news.sentiment === 'negative' ? 'bg-red-500' : news.sentiment === 'positive' ? 'bg-green-500' : 'bg-gray-400'
-                  }`} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 mb-0.5">
                       <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
@@ -303,16 +301,11 @@ export default function NewsAnalysisPage() {
                       <p className="text-[10px] text-[var(--muted)] mt-1 opacity-50">요약 없음</p>
                     )}
                   </div>
-                  <div className="flex flex-col gap-1 flex-shrink-0 mt-1">
-                    {news.sentiment === 'negative' && (
-                      <span className="text-[9px] bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded font-bold">대응</span>
-                    )}
-                    <span role="button" style={{cursor:'pointer'}} onClick={async (e) => {
-                      e.preventDefault(); e.stopPropagation();
-                      if (!window.confirm('이 기사를 삭제하시겠습니까?')) return;
-                      try { await api.deleteNewsItem(news.id); await loadData(); } catch (err) { console.error(err); }
-                    }} className="text-[9px] text-gray-400 hover:text-red-400 px-1.5 py-0.5">삭제</span>
-                  </div>
+                  <span role="button" style={{cursor:'pointer'}} onClick={async (e) => {
+                    e.preventDefault(); e.stopPropagation();
+                    if (!window.confirm('이 기사를 삭제하시겠습니까?')) return;
+                    try { await api.deleteNewsItem(news.id); await loadData(); } catch (err) { console.error(err); }
+                  }} className="flex-shrink-0 text-[9px] text-gray-400 hover:text-red-400 px-1.5 py-0.5 mt-1">삭제</span>
                 </div>
               </a>
             ))}
