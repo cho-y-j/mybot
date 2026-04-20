@@ -345,16 +345,19 @@ async def get_dong_results(
         .order_by(ElectionResultDong.region_sigungu, ElectionResultDong.eup_myeon_dong, ElectionResultDong.vote_rate.desc())
     )).scalars().all()
 
-    # 진영 분류 도우미 (민주 계열=진보, 국힘 계열=보수)
-    def _party_to_camp(p: str | None) -> str:
-        if not p:
-            return ""
-        import re as __re
-        if __re.search(r"(더불어민주당|민주당|새정치민주연합|열린우리당|통합민주당|민주노동당|진보당|정의당|녹색당|조국혁신당|개혁|민중)", p):
-            return "진보"
-        if __re.search(r"(국민의힘|한나라당|새누리당|미래통합당|자유한국당|새천년민주당|민주자유당|신한국당|한국당)", p):
-            return "보수"
-        return ""
+    # 진영 분류 — 4-tier 범용 (camp_resolver 사용)
+    # 1) Candidate.party_alignment (후보 등록값)
+    # 2) historical_candidate_camps (수동/AI 매핑)
+    # 3) 정당명 기반 (민주 계열=진보, 국힘 계열=보수)
+    # 4) AI WebSearch (자동 판정 + 캐시)
+    from app.analysis.camp_resolver import build_camp_map
+
+    unique_names = list({r.candidate_name for r in rows if r.candidate_name})
+    party_map = {r.candidate_name: r.party for r in rows}
+    camp_map = await build_camp_map(
+        db, unique_names, party_map, etype, region,
+        enable_ai_fallback=True,  # 무소속 후보 AI 자동 매핑
+    )
 
     # 그룹: sigungu -> dong -> [후보 list]
     from collections import defaultdict
@@ -363,7 +366,7 @@ async def get_dong_results(
         grouped[r.region_sigungu][r.eup_myeon_dong].append({
             "candidate_name": r.candidate_name,
             "party": r.party,
-            "party_camp": _party_to_camp(r.party),  # 진영 정보 추가 (프론트 색상용)
+            "party_camp": camp_map.get(r.candidate_name, ""),  # 진영 (프론트 색상용)
             "votes": r.votes,
             "vote_rate": r.vote_rate,
             "is_winner": r.is_winner,
