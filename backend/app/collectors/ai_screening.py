@@ -97,13 +97,29 @@ async def _screen_batch(
 동명이인 감지 시 `homonym_detected` 필드에 **간결한 키워드**로 정체를 기록:
 - "야구감독", "프로야구 한화", "국회의원 서천", "대학교수", "배우" 같은 2~4 단어
 
+★★ 자동 차단 유형(block_type) 분류 — 동명이인일 때만 ★★
+콘텐츠가 **동명이인 판정(is_relevant=false)** 인 경우, 향후 차단 방법을 지정하세요:
+
+- "channel_block": **YouTube 채널명에 후보 이름이 포함된 개인 채널** (예: "윤건영TV", "김철수 일상")
+  → 이 채널은 해당 동명이인이 운영하며, 본 후보가 출연할 확률 사실상 0. 채널 통째로 차단.
+- "source_video": **언론사·공용 YouTube 채널의 개별 영상** (채널명에 이름 없음)
+  → 채널은 본 후보 영상도 올릴 수 있으니 해당 영상 1건만 차단.
+- "source_url": **언론사/커뮤니티의 개별 기사/글 URL**
+  → URL 1건만 차단, 언론사 전체는 유지.
+- "none": 동명이인 아니거나(is_relevant=true) 차단 불필요
+
+판정 원칙:
+1. 채널/언론사명 만 보고 판정 금지. 제목·내용에 후보 이름과 {region_clause}{election_type} 맥락이 함께 등장해야 본인.
+2. 애매하면 is_relevant=true 유지 (과도한 차단 방지).
+
 ★★ 판단 기준 ★★
 1. is_relevant: 이 글이 {region_clause}{election_type} 선거의 우리 후보/경쟁후보와 관련된 글인가?
 2. homonym_detected: 같은 이름의 다른 사람이면 정체 (없으면 null)
-3. sentiment: positive / negative / neutral
-4. strategic_value: strength / weakness / opportunity / threat / neutral
-5. summary: 핵심 1문장 요약
-6. threat_level: none / low / medium / high
+3. block_type: "channel_block" | "source_video" | "source_url" | "none"
+4. sentiment: positive / negative / neutral
+5. strategic_value: strength / weakness / opportunity / threat / neutral
+6. summary: 핵심 1문장 요약
+7. threat_level: none / low / medium / high
 
 콘텐츠:
 {items_block}
@@ -114,6 +130,7 @@ async def _screen_batch(
     "id": "...",
     "is_relevant": true,
     "homonym_detected": null,
+    "block_type": "none",
     "sentiment": "positive",
     "sentiment_score": 0.7,
     "strategic_value": "strength",
@@ -177,9 +194,14 @@ JSON array만 출력하세요."""
             sentiment = "neutral"
             sval = "neutral"
 
+        block_type = r.get("block_type") or "none"
+        if block_type not in ("channel_block", "source_video", "source_url", "none"):
+            block_type = "none"
+
         result_map[rid] = {
             "is_relevant": is_rel,
             "homonym_detected": r.get("homonym_detected") or None,
+            "block_type": block_type,
             "sentiment": sentiment,
             "sentiment_score": float(r.get("sentiment_score", 0.0)),
             "strategic_value": sval,
@@ -240,5 +262,22 @@ JSON array만 출력하세요."""
             # AI가 응답하지 않은 항목은 통과시킴
             it["is_relevant"] = True
             it["ai_screened"] = False
+
+    # ★ 동명이인 자동 차단 리스트 (excluded_identifiers) 업데이트 ★
+    # block_type 별로 channel_name / video_id / news_url / community_url 자동 등록
+    if db and items:
+        try:
+            # items 에서 election_id 추출 (모든 items 가 같은 election 이어야 함)
+            from app.collectors.exclusion_service import apply_ai_exclusions
+            eid = None
+            for it in items:
+                if it.get("election_id"):
+                    eid = it["election_id"]
+                    break
+            if eid:
+                await apply_ai_exclusions(db, election_id=str(eid), tenant_id=tenant_id, items=items)
+                await db.commit()
+        except Exception as e:
+            logger.warning("apply_exclusions_error", error=str(e)[:200])
 
     return items

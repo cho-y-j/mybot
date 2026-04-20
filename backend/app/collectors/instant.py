@@ -439,6 +439,11 @@ async def collect_youtube_now(db: AsyncSession, tenant_id: str, election_id: str
     keyword_filtered = 0
     raw_items = []
 
+    # 동명이인 자동 차단 목록 로드 (channel_name / video_id)
+    from app.collectors.exclusion_service import load_exclusions, filter_youtube_videos
+    exclusions = await load_exclusions(db, election_id)
+    excluded_by_list = 0
+
     for cand in candidates:
         exclude_words = (cand.homonym_filters or []) + GLOBAL_HOMONYM_BLOCK
 
@@ -455,6 +460,10 @@ async def collect_youtube_now(db: AsyncSession, tenant_id: str, election_id: str
             # 쿼터 절감: 일반+쇼츠 각 호출(200u) → 통합 1회(100u)
             # search_videos 가 is_short 자동 마킹 (duration 기반)
             videos = await collector.search_videos(keyword, max_results=8)
+
+            # 동명이인 자동 차단 (channel_name / video_id 블랙리스트 적용)
+            videos, removed_cnt = filter_youtube_videos(videos, exclusions)
+            excluded_by_list += removed_cnt
 
             for vid in videos:
                 title = vid.get("title", "")
@@ -493,10 +502,11 @@ async def collect_youtube_now(db: AsyncSession, tenant_id: str, election_id: str
 
                 raw_items.append({
                     "id": vid["video_id"],
+                    "election_id": str(election_id),       # 차단 저장용
                     "title": title,
                     "description": desc[:500],
                     "video_id": vid["video_id"],
-                    "channel": vid.get("channel", ""),
+                    "channel": vid.get("channel", ""),     # channel_block 차단 대상
                     "thumbnail": vid.get("thumbnail", ""),
                     "published_at": vid_pub_at,
                     "views": vid.get("views", 0),
@@ -504,6 +514,7 @@ async def collect_youtube_now(db: AsyncSession, tenant_id: str, election_id: str
                     "comments_count": vid.get("comments_count", 0),
                     "candidate_id": str(cand.id),
                     "candidate_name": cand.name,
+                    "_platform_hint": "youtube",
                 })
 
     # AI 스크리닝
