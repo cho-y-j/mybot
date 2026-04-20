@@ -215,17 +215,23 @@ session.add(YouTubeVideo(..., published_at=pub_at))  # None이면 NULL 저장
 - homepage: `/api/site/*`, `/api/analytics/*`, `/api/auth/me`, `/api/auth/logout` 등 관리자 편집용
 
 **NPM custom conf 라우팅 규칙 (`/data/nginx/custom/server_proxy.conf`)**:
-- `^~ /api/site/` → ep_homepage (homepage admin UI 데이터)
+- `^~ /api/site/` → ep_homepage (homepage admin UI 데이터 + auth/me/logout)
 - `^~ /api/analytics/` → ep_homepage
-- `= /api/auth/me` → ep_homepage
-- `= /api/auth/logout` → ep_homepage
-- `^~ /api/` (나머지) → ep_backend (mybot 분석 API)
+- `^~ /api/public/` → ep_homepage (후보 홈페이지 렌더링용 공개 API)
+- `^~ /api/` (나머지) → ep_backend (mybot 분석 API — auth/me/logout 포함)
 
-**왜 이 순서가 중요한가**: nginx `^~` prefix는 **길이순 우선 매칭**. `^~ /api/site/` 가 `^~ /api/` 보다 구체적이므로 먼저 매칭됨. `= /api/auth/me` 는 exact match라 최우선.
+**왜 이 순서가 중요한가**: nginx `^~` prefix는 **길이순 우선 매칭**. `^~ /api/site/` 가 `^~ /api/` 보다 구체적이므로 먼저 매칭됨.
 
-**증상이 뭐였나 (2026-04-18 사고)**: homepage admin 페이지에서 좌측 메뉴 클릭 → 내부 API(`/api/site/blocks`, `/api/auth/me` 등) 호출 → NPM이 모두 mybot backend로 보냄 → mybot backend에 해당 route 없음 → 404/403 → UI 깨짐 + 재로그인 요구. "신규 가입자 포함 모든 사용자가 admin 편집 불가" 상태.
+**핵심 룰 (2026-04-20 정정)**: **두 앱이 같은 path를 공유하면 안 된다.** 같은 path를 공유하면 NPM이 한쪽으로만 라우팅 → 반대쪽은 항상 401 → 무한 refresh 루프 → 세션 만료. homepage 자체 path는 모두 `/api/site/*` prefix 또는 `/api/public/*` prefix 아래로 격리할 것. 
 
-**새 API 추가 시 체크리스트**: homepage가 `/api/X` 새로 만들면 `server_proxy.conf`에 homepage 라우팅 location 추가 필수. 아니면 mybot으로 흘러가서 404.
+**증상 1 (2026-04-18 사고)**: homepage admin 페이지에서 좌측 메뉴 클릭 → 내부 API(`/api/site/blocks` 등) 호출 → NPM이 모두 mybot backend로 보냄 → mybot에 해당 route 없음 → 404/403 → UI 깨짐. 해결: homepage 전용 `/api/site/*` prefix 추가.
+
+**증상 2 (2026-04-20 사고)**: 위 사고 대응으로 `= /api/auth/me`, `= /api/auth/logout` 도 homepage 전용 룰로 박았음. 그러나 mybot dashboard `Header.tsx`도 같은 `/api/auth/me` 호출 → homepage가 Bearer JWT 모름 → 401 → frontend 가 refresh 시도 → 새 토큰으로 retry → 또 homepage로 가서 401 → `_redirectToLogin()` → "세션 만료" 페이지로 강제 이동. 사용자: "전문가 모드 들어가면 무조건 세션 만료". 해결: homepage `/api/auth/{me,logout}` route를 `/api/site/auth/{me,logout}` 으로 이동, NPM의 exact-match 룰 제거.
+
+**새 API 추가 시 체크리스트**:
+1. homepage가 `/api/X` 새로 만들면 → 반드시 `/api/site/*` 또는 `/api/public/*` prefix 안에 만들 것. 두 앱이 path를 공유하면 안 됨.
+2. mybot 신규 path가 homepage path와 충돌 안 하는지 확인.
+3. NPM 룰에 `= /api/...` exact-match 추가는 **금지** — 한 앱이 path 점유하는 형태가 되어 다른 앱이 동일 path 호출 시 위 증상 2 재현.
 
 ### 1.25. 배포 즉시 반영 — Next.js 정적 캐시 금지 (2026-04-20)
 **Next.js App Router 기본 `s-maxage=31536000`(1년 CDN 캐시)이 브라우저에 전파되어 "배포해도 안 바뀌어 보임" 문제가 반복됨.** 근본 차단:

@@ -25,7 +25,7 @@ export default function CustomerAdminLayout({
   const basePath = `/${code}/admin`;
 
   async function handleLogout() {
-    await fetch("/api/auth/logout", { method: "POST" });
+    await fetch("/api/site/auth/logout", { method: "POST" });
     router.push(`/${code}/admin/login`);
   }
 

@@ -235,7 +235,7 @@ export default function BuilderPage() {
 
   /* ─── Auth check ─── */
   useEffect(() => {
-    fetch("/api/auth/me")
+    fetch("/api/site/auth/me")
       .then((r) => r.json())
       .then((data) => {
         if (!data.success) {

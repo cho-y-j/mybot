@@ -58,7 +58,7 @@ export default function AnalyticsPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const authRes = await fetch("/api/auth/me");
+      const authRes = await fetch("/api/site/auth/me");
       if (!authRes.ok) { router.push(`/${code}/admin/login`); return; }
 
       const [overviewRes, todayRes, visitorsRes, eventsRes] = await Promise.all([

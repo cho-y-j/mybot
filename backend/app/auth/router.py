@@ -170,6 +170,7 @@ async def login(req: LoginRequest, request: Request, db: AsyncSession = Depends(
         if user.failed_login_attempts >= settings.ACCOUNT_LOCKOUT_ATTEMPTS:
             user.is_locked = True
             user.locked_until = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCOUNT_LOCKOUT_MINUTES)
+        await db.commit()
         raise HTTPException(status_code=401, detail="이메일 또는 비밀번호가 올바르지 않습니다")
 
     if not user.is_active:

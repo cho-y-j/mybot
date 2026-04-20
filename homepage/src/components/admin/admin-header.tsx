@@ -11,7 +11,7 @@ export function AdminHeader({ userName = "관리자" }: AdminHeaderProps) {
   const router = useRouter();
 
   async function handleLogout() {
-    await fetch("/api/auth/logout", { method: "POST" });
+    await fetch("/api/site/auth/logout", { method: "POST" });
     router.push("/super-admin/login");
   }
 
