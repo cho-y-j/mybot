@@ -677,6 +677,31 @@ class TelegramConfig(Base):
     )
 
 
+class EmailRecipient(Base):
+    """이메일 브리핑 수신자 — 가입 이메일 외 추가 수신 가능 (캠프 참모 등)."""
+    __tablename__ = "email_recipients"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+
+    email = Column(String(255), nullable=False)
+    name = Column(String(100), nullable=False, comment="수신자 이름 (예: 후보자 본인, 캠프장)")
+    is_active = Column(Boolean, default=True)
+
+    # 수신 타입별 on/off
+    receive_morning = Column(Boolean, default=True, comment="07:00 오전 브리핑")
+    receive_afternoon = Column(Boolean, default=True, comment="13:00 오후 브리핑")
+    receive_daily = Column(Boolean, default=True, comment="18:00 일일 종합 보고서")
+    receive_weekly = Column(Boolean, default=True, comment="월 09:00 주간 전략 보고서")
+
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "email", name="uq_email_per_tenant"),
+        Index("ix_email_recipients_tenant", "tenant_id"),
+    )
+
+
 class TelegramRecipient(Base):
     """텔레그램 수신자 — 여러 명/그룹이 보고를 받을 수 있음."""
     __tablename__ = "telegram_recipients"

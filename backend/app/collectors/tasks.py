@@ -1901,18 +1901,17 @@ def _run_briefing(tenant_id: str, election_id: str, briefing_type: str) -> dict:
         except Exception as e:
             logger.error("briefing_telegram_error", error=str(e))
 
-        # 5. 메일 발송 (tenant owner — SMTP 미설정 시 자동 skip)
-        mail_result = {"status": "skipped"}
+        # 5. 메일 발송 (email_recipients 테이블 기반 복수 수신자, SMTP 미설정 시 자동 skip)
+        mail_result = {"status": "skipped", "sent": 0, "total": 0}
         try:
             from app.services.mail_service import (
-                send_mail_sync, get_tenant_email_sync, render_briefing_html, is_configured,
+                send_mail_sync, get_briefing_recipients_sync, render_briefing_html, is_configured,
             )
             if is_configured():
-                to_email = get_tenant_email_sync(session, tenant_id)
-                if to_email:
+                to_emails = get_briefing_recipients_sync(session, tenant_id, briefing_type)
+                if to_emails:
                     type_label = {"morning":"오전 브리핑","afternoon":"오후 브리핑","daily":"일일 보고서"}.get(briefing_type, briefing_type)
                     subject = f"[ElectionPulse] {type_label} — {date.today().strftime('%Y-%m-%d')}"
-                    # election/후보 이름 재조회 (daily 블록 밖에서도 안전)
                     _mail_e_name = ""
                     _mail_our_name = ""
                     try:
@@ -1933,7 +1932,12 @@ def _run_briefing(tenant_id: str, election_id: str, briefing_type: str) -> dict:
                     if pdf_path and os.path.exists(pdf_path):
                         with open(pdf_path, "rb") as f:
                             attachments.append((os.path.basename(pdf_path), f.read()))
-                    mail_result = send_mail_sync(to_email, subject, html, text_body=report_text, attachments=attachments)
+                    sent_cnt = 0
+                    for to in to_emails:
+                        r = send_mail_sync(to, subject, html, text_body=report_text, attachments=attachments)
+                        if r.get("status") == "sent":
+                            sent_cnt += 1
+                    mail_result = {"status": "sent" if sent_cnt else "error", "sent": sent_cnt, "total": len(to_emails)}
         except Exception as e:
             logger.error("briefing_mail_error", error=str(e)[:300])
             mail_result = {"status": "error", "error": str(e)[:200]}
@@ -1944,7 +1948,8 @@ def _run_briefing(tenant_id: str, election_id: str, briefing_type: str) -> dict:
             tenant_id=tenant_id,
             ai=ai_generated,
             telegram_sent=sent,
-            mail_status=mail_result.get("status"),
+            mail_sent=mail_result.get("sent"),
+            mail_total=mail_result.get("total"),
         )
 
         return {
@@ -2037,15 +2042,15 @@ def _run_weekly_report(tenant_id: str, election_id: str) -> dict:
         except Exception as e:
             logger.error("weekly_telegram_error", error=str(e)[:200])
 
-        # 6. 메일 발송 (주간 보고서 PDF 첨부)
-        mail_result = {"status": "skipped"}
+        # 6. 메일 발송 (주간 보고서 PDF 첨부, 복수 수신자)
+        mail_result = {"status": "skipped", "sent": 0, "total": 0}
         try:
             from app.services.mail_service import (
-                send_mail_sync, get_tenant_email_sync, render_briefing_html, is_configured,
+                send_mail_sync, get_briefing_recipients_sync, render_briefing_html, is_configured,
             )
             if is_configured():
-                to_email = get_tenant_email_sync(session, tenant_id)
-                if to_email:
+                to_emails = get_briefing_recipients_sync(session, tenant_id, "weekly")
+                if to_emails:
                     subject = f"[ElectionPulse] 주간 전략 보고서 — {date.today().strftime('%Y-%m-%d')}"
                     html = render_briefing_html(
                         "weekly", report_text,
@@ -2056,13 +2061,18 @@ def _run_weekly_report(tenant_id: str, election_id: str) -> dict:
                     if pdf_path and os.path.exists(pdf_path):
                         with open(pdf_path, "rb") as f:
                             attachments.append((os.path.basename(pdf_path), f.read()))
-                    mail_result = send_mail_sync(to_email, subject, html, text_body=report_text, attachments=attachments)
+                    sent_cnt = 0
+                    for to in to_emails:
+                        r = send_mail_sync(to, subject, html, text_body=report_text, attachments=attachments)
+                        if r.get("status") == "sent":
+                            sent_cnt += 1
+                    mail_result = {"status": "sent" if sent_cnt else "error", "sent": sent_cnt, "total": len(to_emails)}
         except Exception as e:
             logger.error("weekly_mail_error", error=str(e)[:300])
             mail_result = {"status": "error", "error": str(e)[:200]}
 
         logger.info("weekly_report_complete", tenant_id=tenant_id, ai=ai_generated,
-                    pdf=bool(pdf_path), mail_status=mail_result.get("status"))
+                    pdf=bool(pdf_path), mail_sent=mail_result.get("sent"), mail_total=mail_result.get("total"))
         return {"status": "success", "report_id": str(report.id),
                 "ai_generated": ai_generated, "mail": mail_result}
 

@@ -398,6 +398,8 @@ function SchedulesTab() {
 function AccountTab() {
   const [tenant, setTenant] = useState<any>(null);
   const [tgData, setTgData] = useState<any>(null);
+  const [emailData, setEmailData] = useState<any>(null);
+  const [emailForm, setEmailForm] = useState({ email: '', name: '', receive_morning: true, receive_afternoon: true, receive_daily: true, receive_weekly: true });
   const [botForm, setBotForm] = useState({ bot_token: '' });
   const [recipientForm, setRecipientForm] = useState({ chat_id: '', name: '', chat_type: 'private' });
   const [message, setMessage] = useState('');
@@ -408,6 +410,7 @@ function AccountTab() {
   const [pwNew, setPwNew] = useState('');
   const [pwConfirm, setPwConfirm] = useState('');
   const [pwChanging, setPwChanging] = useState(false);
+  const [emailTesting, setEmailTesting] = useState(false);
 
   useEffect(() => { loadAll(); }, []);
 
@@ -419,6 +422,31 @@ function AccountTab() {
       const r = await fetch('/api/telegram/recipients', { headers: { Authorization: `Bearer ${getToken()}` } });
       if (r.ok) setTgData(await r.json());
     } catch {}
+    try { setEmailData(await api.getEmailRecipients()); } catch {}
+  };
+
+  const handleAddEmail = async (e: React.FormEvent) => {
+    e.preventDefault(); setError(''); setMessage('');
+    try {
+      const r = await api.addEmailRecipient(emailForm);
+      setMessage(r.message);
+      setEmailForm({ email: '', name: '', receive_morning: true, receive_afternoon: true, receive_daily: true, receive_weekly: true });
+      loadAll();
+    } catch (err: any) { setError(err.message); }
+  };
+
+  const handleToggleEmailField = async (id: string, field: string, val: boolean) => {
+    try { await api.updateEmailRecipient(id, { [field]: !val }); loadAll(); } catch {}
+  };
+
+  const handleDeleteEmail = async (id: string) => {
+    if (!confirm('수신자를 삭제하시겠습니까?')) return;
+    try { await api.deleteEmailRecipient(id); loadAll(); } catch {}
+  };
+
+  const handleTestEmail = async () => {
+    setError(''); setMessage(''); setEmailTesting(true);
+    try { const r = await api.sendTestEmail(); setMessage(r.message); } catch (err: any) { setError(err.message); } finally { setEmailTesting(false); }
   };
 
   const handleChangePassword = async () => {
@@ -490,6 +518,87 @@ function AccountTab() {
           </div>
         </div>
       )}
+
+      {/* 이메일 브리핑 */}
+      <div className="p-4 rounded-xl border border-[var(--card-border)] bg-[var(--card-bg)]">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-sm">이메일 브리핑</h3>
+          {emailData?.smtp_configured && (
+            <button onClick={handleTestEmail} disabled={emailTesting}
+              className="text-[11px] px-2 py-1 border border-[var(--card-border)] rounded hover:bg-white/5 disabled:opacity-40">
+              {emailTesting ? '발송 중...' : '테스트 발송'}
+            </button>
+          )}
+        </div>
+
+        {!emailData?.smtp_configured ? (
+          <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-400">
+            SMTP가 설정되지 않았습니다. 관리자가 메일 서버 설정 완료 후 사용 가능합니다.
+          </div>
+        ) : (
+          <>
+            <div className="mb-3 p-2 bg-blue-500/5 border border-blue-500/20 rounded-lg text-xs text-[var(--muted)]">
+              가입 이메일 <span className="font-mono text-[var(--foreground)]">{emailData.tenant_email || '미등록'}</span> 으로 기본 발송됩니다.
+              아래에 수신자를 추가하면 가입 이메일 대신 **추가한 수신자**에게만 발송됩니다.
+            </div>
+
+            {emailData.recipients?.length > 0 ? (
+              <div className="space-y-2 mb-4">
+                {emailData.recipients.map((r: any) => (
+                  <div key={r.id} className={`flex items-center justify-between p-3 rounded-lg border border-[var(--card-border)] ${!r.is_active ? 'opacity-40' : ''}`}>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium">{r.name}</span>
+                        <span className="text-[10px] text-[var(--muted)] font-mono">{r.email}</span>
+                      </div>
+                      <div className="flex gap-1.5 mt-1.5">
+                        {[
+                          ['receive_morning', r.receive_morning, '오전', 'blue'],
+                          ['receive_afternoon', r.receive_afternoon, '오후', 'orange'],
+                          ['receive_daily', r.receive_daily, '일일', 'green'],
+                          ['receive_weekly', r.receive_weekly, '주간', 'purple'],
+                        ].map(([field, val, label, color]) => (
+                          <button key={field as string} onClick={() => handleToggleEmailField(r.id, field as string, val as boolean)}
+                            className={`text-[10px] px-1.5 py-0.5 rounded-full ${val ? `bg-${color}-500/20 text-${color}-400` : 'bg-white/5 text-[var(--muted)]'}`}>
+                            {label as string}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => handleToggleEmailField(r.id, 'is_active', r.is_active)}
+                        className={`relative w-9 h-5 rounded-full transition-colors ${r.is_active ? 'bg-green-500' : 'bg-gray-600'}`}>
+                        <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${r.is_active ? 'left-[18px]' : 'left-0.5'}`} />
+                      </button>
+                      <button onClick={() => handleDeleteEmail(r.id)} className="text-[11px] text-[var(--muted)] hover:text-red-400">삭제</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : <div className="text-center py-6 text-[var(--muted)] text-sm mb-4">가입 이메일로만 발송됩니다. 추가 수신자를 아래에서 등록하세요.</div>}
+
+            <form onSubmit={handleAddEmail} className="border-t border-[var(--card-border)] pt-3 space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <input className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm" value={emailForm.name} onChange={e => setEmailForm({ ...emailForm, name: e.target.value })} placeholder="이름 (예: 후보자, 캠프장)" required />
+                <input type="email" className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm" value={emailForm.email} onChange={e => setEmailForm({ ...emailForm, email: e.target.value })} placeholder="email@example.com" required />
+              </div>
+              <div className="flex items-center gap-3 text-[11px] flex-wrap">
+                <span className="text-[var(--muted)]">수신:</span>
+                {[
+                  ['receive_morning', '오전'], ['receive_afternoon', '오후'],
+                  ['receive_daily', '일일'], ['receive_weekly', '주간'],
+                ].map(([field, label]) => (
+                  <label key={field} className="flex items-center gap-1 cursor-pointer select-none">
+                    <input type="checkbox" checked={(emailForm as any)[field]} onChange={e => setEmailForm({ ...emailForm, [field]: e.target.checked })} className="rounded" />
+                    <span>{label}</span>
+                  </label>
+                ))}
+                <button type="submit" className="ml-auto px-4 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-500">수신자 추가</button>
+              </div>
+            </form>
+          </>
+        )}
+      </div>
 
       {/* 텔레그램 */}
       <div className="p-4 rounded-xl border border-[var(--card-border)] bg-[var(--card-bg)]">

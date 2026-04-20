@@ -16,6 +16,7 @@ from app.collectors.router import router as collectors_router
 from app.analysis.router import router as analysis_router
 from app.reports.router import router as reports_router
 from app.telegram_service.router import router as telegram_router
+from app.email_service.router import router as email_router
 from app.admin.router import router as admin_router
 from app.billing.router import router as billing_router
 from app.elections.onboarding import router as onboarding_router
@@ -88,6 +89,7 @@ app.include_router(collectors_router, prefix="/api/collectors", tags=["Data Coll
 app.include_router(analysis_router, prefix="/api/analysis", tags=["Analysis"])
 app.include_router(reports_router, prefix="/api/reports", tags=["Reports"])
 app.include_router(telegram_router, prefix="/api/telegram", tags=["Telegram"])
+app.include_router(email_router, prefix="/api/email", tags=["Email"])
 app.include_router(admin_router, prefix="/api/admin", tags=["Admin"])
 app.include_router(billing_router, prefix="/api/billing", tags=["Billing"])
 app.include_router(onboarding_router, prefix="/api/onboarding", tags=["Smart Onboarding"])

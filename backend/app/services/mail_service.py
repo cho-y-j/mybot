@@ -119,6 +119,38 @@ async def get_tenant_email_async(db, tenant_id: str) -> Optional[str]:
     return row.email if row else None
 
 
+def get_briefing_recipients_sync(db_sync, tenant_id: str, briefing_type: str) -> list[str]:
+    """brief type(morning/afternoon/daily/weekly) 수신 설정된 이메일 목록.
+
+    우선순위:
+    1. email_recipients 테이블에 등록된 활성 수신자 중 해당 타입 on 된 사람
+    2. 등록 수신자 0명이면 가입 이메일로 fallback (기존 동작 호환)
+    """
+    col = {
+        "morning": "receive_morning",
+        "afternoon": "receive_afternoon",
+        "daily": "receive_daily",
+        "weekly": "receive_weekly",
+    }.get(briefing_type, "receive_daily")
+
+    try:
+        rows = db_sync.execute(sql_text(
+            f"SELECT email FROM email_recipients "
+            f"WHERE tenant_id = cast(:tid as uuid) "
+            f"AND is_active = true AND {col} = true"
+        ), {"tid": str(tenant_id)}).fetchall()
+        emails = [r.email for r in rows if r.email]
+    except Exception as e:
+        logger.warning("email_recipients_query_error", error=str(e)[:200])
+        emails = []
+
+    if not emails:
+        fb = get_tenant_email_sync(db_sync, tenant_id)
+        if fb:
+            emails = [fb]
+    return emails
+
+
 # ─── 브리핑/보고서용 HTML 템플릿 ─────────────────────────────
 def render_briefing_html(
     briefing_type: str,

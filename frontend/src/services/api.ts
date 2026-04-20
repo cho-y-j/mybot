@@ -288,6 +288,27 @@ class ApiClient {
     return this.request<any>(`/telegram/send-briefing?briefing_type=${type}`, { method: 'POST' });
   }
 
+  // ─── Email ──────────────────────────────────────────────────
+  getEmailRecipients() {
+    return this.request<any>('/email/recipients');
+  }
+
+  addEmailRecipient(data: { email: string; name: string; receive_morning?: boolean; receive_afternoon?: boolean; receive_daily?: boolean; receive_weekly?: boolean }) {
+    return this.request<any>('/email/recipients', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  updateEmailRecipient(id: string, data: any) {
+    return this.request<any>(`/email/recipients/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  }
+
+  deleteEmailRecipient(id: string) {
+    return this.request<any>(`/email/recipients/${id}`, { method: 'DELETE' });
+  }
+
+  sendTestEmail() {
+    return this.request<any>('/email/test', { method: 'POST' });
+  }
+
   // ─── Collection ─────────────────────────────────────────────
   getCollectionStatus(electionId: string) {
     return this.request<any>(`/collectors/${electionId}/status`);
