@@ -88,9 +88,24 @@
    ```
    docker cp .next/standalone/server.js ep_homepage:/app/server.js
    docker cp .next/standalone/.next/. ep_homepage:/app/.next/
-   docker cp .next/static ep_homepage:/app/.next/static
+   # ★ static 디렉토리는 반드시 비우고 다시 복사. nesting 사고 방지.
+   docker exec -u root ep_homepage rm -rf /app/.next/static
+   docker cp .next/static ep_homepage:/app/.next/
    docker restart ep_homepage
    ```
+
+   **금지**: `docker cp .next/static ep_homepage:/app/.next/static` — destination 디렉토리가
+   이미 존재하면 source 가 destination **안으로** 복사되어 `/app/.next/static/static/` 중첩이
+   발생함. 결과: 새 chunk 가 nested 위치에 박히고 NPM rewrite (`/_mh_assets/_next/static/...`)
+   가 도달 못 해 **404 → React ChunkLoadError → 빈 화면**. 2026-04-20 사고 (homepage admin
+   로그인 폼 자체가 안 떠서 사용자가 "비번 바뀐 줄" 오해).
+
+   **검증**: hot-swap 후 즉시 chunk 도달 확인:
+   ```
+   docker exec ep_homepage find /app/.next/static -name "page-*.js" | head -3
+   curl -s -o /dev/null -w "%{http_code}\n" "https://ai.on1.kr/_mh_assets/_next/static/chunks/app/%5Bcode%5D/admin/login/<해당파일명>"
+   ```
+   → 200 이어야 함. 404면 nesting 사고.
 4. **Playwright MCP로 실제 렌더링 검증** — 사용자에게 스크린샷 요청 금지. Claude가 직접 확인:
    - `mcp__playwright__browser_navigate` → 해당 페이지
    - `mcp__playwright__browser_evaluate` → DOM 상태·값 확인
