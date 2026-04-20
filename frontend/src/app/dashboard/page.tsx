@@ -15,7 +15,7 @@ export default function DashboardPage() {
   const { election, candidates, candidateNames, ourCandidate, loading: elLoading } = useElection();
   const colorMap = useMemo(() => getCandidateColorMap(candidates), [candidates]);
   const [data, setData] = useState<any>(null);
-  const [collecting, setCollecting] = useState(false);
+  // collecting state 제거됨 (/dashboard/schedules 로 이동)
   const [refreshingBrief, setRefreshingBrief] = useState(false);
 
   const handleRefreshBriefing = async () => {
@@ -42,32 +42,7 @@ export default function DashboardPage() {
     } finally { setLoading(false); }
   };
 
-  const [collectMsg, setCollectMsg] = useState('');
-
-  const handleCollect = async () => {
-    if (!election) return;
-    setCollecting(true);
-    setCollectMsg('수집 요청 전송...');
-    try {
-      await api.collectNow(election.id, 'all');
-      setCollectMsg('백그라운드 수집 중... (1~2분 소요)');
-      // 30초 후 자동 새로고침
-      setTimeout(async () => {
-        await loadData();
-        setCollectMsg('수집 완료! 데이터가 업데이트되었습니다.');
-        setTimeout(() => setCollectMsg(''), 3000);
-        setCollecting(false);
-      }, 30000);
-      // 60초 후 한 번 더
-      setTimeout(async () => {
-        await loadData();
-      }, 60000);
-    } catch (e: any) {
-      setError('수집 실패: ' + (e?.message || ''));
-      setCollectMsg('');
-      setCollecting(false);
-    }
-  };
+  // '지금 수집' 로직은 /dashboard/schedules 로 이동. 여기 handleCollect 제거됨.
 
   if (elLoading || loading) return (
     <div className="flex items-center justify-center h-64">
@@ -164,16 +139,7 @@ export default function DashboardPage() {
           <span className={`text-sm font-bold ${kpi.d_day > 30 ? 'text-blue-600' : kpi.d_day > 7 ? 'text-amber-600' : 'text-red-600'}`}>
             {kpi.d_day > 0 ? `D-${kpi.d_day}` : kpi.d_day === 0 ? 'D-Day' : `D+${Math.abs(kpi.d_day)}`}
           </span>
-          <button onClick={handleCollect} disabled={collecting}
-            className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
-            {collecting ? '수집중...' : '지금 수집'}
-          </button>
-          {collectMsg && (
-            <span className={`text-xs ${collectMsg.includes('완료') ? 'text-green-500' : 'text-amber-500'}`}>
-              {collecting && <span className="inline-block w-3 h-3 border-2 border-amber-500 border-t-transparent rounded-full animate-spin mr-1" />}
-              {collectMsg}
-            </span>
-          )}
+          {/* '지금 수집' 버튼은 /dashboard/schedules 로 이동 — 빈번 클릭 방지 (API 쿼터 보호) */}
         </div>
       </div>
 

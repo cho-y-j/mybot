@@ -27,6 +27,57 @@ export default function SchedulesPage() {
   // 편집 모달
   const [editing, setEditing] = useState<any>(null);
   const [editForm, setEditForm] = useState({ name: '', fixed_times: '', schedule_type: 'news' });
+  // 즉시 수집 상태 (쿨다운 방지)
+  const [collecting, setCollecting] = useState(false);
+  const [lastCollectAt, setLastCollectAt] = useState<number>(0);
+  const [collectMsg, setCollectMsg] = useState('');
+
+  // 최근 1시간 내 수집했는지 (쿨다운)
+  const cooldownMinutes = 60;
+  const cooldownRemainSec = lastCollectAt
+    ? Math.max(0, cooldownMinutes * 60 - Math.floor((Date.now() - lastCollectAt) / 1000))
+    : 0;
+  const inCooldown = cooldownRemainSec > 0;
+
+  // 페이지 로드시 localStorage에서 마지막 수집 시각 복원 (캠프별)
+  useEffect(() => {
+    if (!election) return;
+    const key = `last_collect_${election.id}`;
+    const raw = localStorage.getItem(key);
+    if (raw) setLastCollectAt(parseInt(raw, 10) || 0);
+  }, [election?.id]);
+
+  // 수동 수집 실행 (확인 다이얼로그 + 쿨다운)
+  async function handleManualCollect() {
+    if (!election) return;
+    if (inCooldown) {
+      const mins = Math.ceil(cooldownRemainSec / 60);
+      alert(`최근 ${cooldownMinutes - mins}분 전에 수집했습니다. ${mins}분 후 다시 시도 가능합니다.\n\n(API 쿼터 보호를 위한 쿨다운)`);
+      return;
+    }
+    const ok = confirm(
+      '즉시 수집을 실행합니다.\n\n' +
+      '• 뉴스 + 커뮤니티 + 유튜브 + 트렌드 전체\n' +
+      '• 약 1~3분 소요\n' +
+      '• YouTube API 쿼터를 소모합니다\n' +
+      '• 자동 스케줄(07/13/17시)과 별도\n\n' +
+      '계속하시겠습니까?'
+    );
+    if (!ok) return;
+    setCollecting(true);
+    setCollectMsg('수집 요청 전송...');
+    try {
+      await api.collectNow(election.id, 'all');
+      const now = Date.now();
+      setLastCollectAt(now);
+      localStorage.setItem(`last_collect_${election.id}`, String(now));
+      setCollectMsg('백그라운드 수집 중... 1~3분 후 각 페이지에서 확인 가능.');
+      setTimeout(() => setCollectMsg(''), 10000);
+    } catch (e: any) {
+      setCollectMsg('수집 실패: ' + (e?.message || ''));
+      setTimeout(() => setCollectMsg(''), 5000);
+    } finally { setCollecting(false); }
+  }
 
   useEffect(() => {
     if (election) loadSchedules();
@@ -137,14 +188,23 @@ export default function SchedulesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold">수집 스케줄</h1>
-          <p className="text-gray-500 mt-1">
-            활성 {activeCount}개 | 일 {totalRuns}회 실행 | 운영시간 09:00~20:00
+          <p className="text-[var(--muted)] mt-1 text-sm">
+            활성 {activeCount}개 | 일 {totalRuns}회 자동 실행 | 운영시간 09:00~20:00
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          {/* 즉시 수집 — 확인 다이얼로그 + 1시간 쿨다운 (API 쿼터 보호) */}
+          <button
+            onClick={handleManualCollect}
+            disabled={collecting || inCooldown}
+            className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            title={inCooldown ? `쿨다운 ${Math.ceil(cooldownRemainSec/60)}분 남음` : '뉴스+커뮤니티+유튜브+트렌드 즉시 수집'}
+          >
+            {collecting ? '수집중...' : inCooldown ? `쿨다운 ${Math.ceil(cooldownRemainSec/60)}분` : '지금 수집'}
+          </button>
           <button onClick={() => setShowAdd(true)} className="btn-secondary text-sm">+ 스케줄 추가</button>
           {schedules.length === 0 && (
             <button onClick={handleCreateDefaults} disabled={creating} className="btn-primary text-sm">
@@ -153,6 +213,12 @@ export default function SchedulesPage() {
           )}
         </div>
       </div>
+      {collectMsg && (
+        <div className={`text-xs p-2 rounded ${collectMsg.includes('실패') ? 'bg-red-500/10 text-red-500' : 'bg-blue-500/10 text-blue-500'}`}>
+          {collecting && <span className="inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-2 align-middle" />}
+          {collectMsg}
+        </div>
+      )}
 
       {message && (
         <div className="bg-green-50 text-green-700 p-3 rounded-lg text-sm">{message}</div>
