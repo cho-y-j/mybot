@@ -69,12 +69,18 @@ export default function UnifiedHeatmap({
   const partyCells: PartyCell[] = partyData?.cells || [];
   const legendCounts = campData?.legend_counts || {};
 
-  // party 모드 시에도 district별 tier(진영)를 campData에서 매핑해서 배경색 적용 → 통일성
+  // district → tier/진영 정보 매핑 (campCells 기준, 항상 사용)
   const tierMap = new Map<string, CampTier>();
-  campCells.forEach((c) => tierMap.set(c.district, c.tier));
+  const campByDistrict = new Map<string, CampCell>();
+  campCells.forEach((c) => {
+    tierMap.set(c.district, c.tier);
+    campByDistrict.set(c.district, c);
+  });
 
-  // 렌더 대상 선택 (모드별)
-  const cells = mode === 'party' ? partyCells : campCells;
+  // 렌더 대상 선택. party 모드에 데이터 없으면 campCells 으로 폴백 (교육감 등 정당 정보 부족 케이스)
+  const partyHasData = partyCells.length > 0;
+  const useMode: ViewMode = mode === 'party' && partyHasData ? 'party' : 'camp';
+  const cells = useMode === 'party' ? partyCells : campCells;
   if (!cells.length) {
     return <div className="card text-center text-[var(--muted)] py-12">시·군·구 데이터가 없습니다.</div>;
   }
@@ -124,7 +130,7 @@ export default function UnifiedHeatmap({
             const tierColor = tier ? TIER_HEX[tier] : TIER_HEX['경합'];
             const textCls = tier ? TIER_TEXT_ON[tier] : 'text-amber-900';
 
-            if (mode === 'camp') {
+            if (useMode === 'camp') {
               const cc = c as CampCell;
               return (
                 <button

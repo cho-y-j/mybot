@@ -257,10 +257,18 @@ export default function UnifiedHistoryView({ data, electionId, onRefresh }: Prop
         )}
 
         {/* ─── 시·군·구 드릴다운 (year 반영) ─── */}
+        {/* strength_grid는 progressive/conservative_rate가 0이라 쓸모없음 → campGridByYear 사용 */}
         {tab === 'drilldown' && (
           <DistrictDrilldownPanel
             drilldown={drilldown}
-            cells={sec.strength_grid?.cells || []}
+            cells={(campGridByYear?.cells || []).map((c: any) => ({
+              district: c.district,
+              margin: c.gap || 0,
+              dominant: c.dominant,
+              progressive_rate: c.progressive_rate,
+              conservative_rate: c.conservative_rate,
+              strength: c.tier,
+            }))}
             selectedDistrict={selectedDistrict}
             onSelect={setSelectedDistrict}
             sido={region}
