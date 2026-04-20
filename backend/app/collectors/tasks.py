@@ -253,7 +253,7 @@ def collect_news(self, tenant_id: str, election_id: str, schedule_id: str):
         for _c in candidates:
             _c.is_our_candidate = bool(_our_cand_id and str(_c.id) == str(_our_cand_id))
 
-        collector = NaverCollector(settings.NAVER_CLIENT_ID, settings.NAVER_CLIENT_SECRET)
+        collector = NaverCollector(settings.NAVER_CLIENT_ID, settings.NAVER_CLIENT_SECRET, settings.NAVER_CLIENT_ID_2, settings.NAVER_CLIENT_SECRET_2)
         cand_names = [c.name for c in candidates]
         our_cand = next((c for c in candidates if c.is_our_candidate), None)
         rival_names = [c.name for c in candidates if not c.is_our_candidate]
@@ -269,61 +269,73 @@ def collect_news(self, tenant_id: str, election_id: str, schedule_id: str):
         type_label = _raw_label.split("(")[0].strip().split(" ")[0]
         region_short = REGIONS.get(election.region_sido, {}).get("short", "") if election and election.region_sido else ""
 
+        # keyword 단위 dedup — 여러 후보가 같은 키워드 등록 시 1회만 API 호출
+        kw_plans: dict[str, object] = {}
         for cand in candidates:
+            for keyword in (cand.search_keywords or [cand.name]):
+                kw_plans.setdefault(keyword, cand)
+
+        seen_urls: set[str] = set()
+        for keyword, primary_cand in kw_plans.items():
             homonym = None
-            if cand.homonym_filters:
+            if primary_cand.homonym_filters:
                 homonym = {
-                    "exclude": cand.homonym_filters,
+                    "exclude": primary_cand.homonym_filters,
                     "require_any": ["선거", "후보", "공약", "출마", type_label, region_short],
                 }
+            articles = _run_async(
+                collector.search_news(keyword, display=15, homonym_filters=homonym)
+            )
 
-            for keyword in (cand.search_keywords or [cand.name]):
-                articles = _run_async(
-                    collector.search_news(keyword, display=15, homonym_filters=homonym)
+            for article in articles:
+                title = article.get("title", "")
+                desc = article.get("description", "")
+                full_text = f"{title} {desc}"
+                url = article.get("url", "")
+
+                if url in seen_urls:
+                    continue
+
+                # 실제 매칭 후보 찾기 (본문에 이름 포함)
+                matched_cand = next((c for c in candidates if c.name in full_text), None)
+                if matched_cand is None:
+                    continue
+                if any(x in title for x in [
+                    "멤버십", "무료배송", "스토어", "할인", "쿠폰",
+                    "적립", "클립 챌린지", "24시간 센터",
+                ]):
+                    continue
+
+                pub_at_raw = parse_published_at(
+                    article.get("pub_date") or article.get("pubDate")
                 )
+                pub_at, should_keep = _check_pub_cutoff(pub_at_raw, datetime.now(timezone.utc))
+                if not should_keep:
+                    dropped_old += 1
+                    continue
 
-                for article in articles:
-                    title = article.get("title", "")
-                    desc = article.get("description", "")
-                    full_text = f"{title} {desc}"
-
-                    if not any(cn in full_text for cn in cand_names):
-                        continue
-                    if any(x in title for x in [
-                        "멤버십", "무료배송", "스토어", "할인", "쿠폰",
-                        "적립", "클립 챌린지", "24시간 센터",
-                    ]):
-                        continue
-
-                    pub_at_raw = parse_published_at(
-                        article.get("pub_date") or article.get("pubDate")
+                # 중복 체크 (election-shared)
+                exists = session.execute(
+                    select(NewsArticle).where(
+                        NewsArticle.election_id == election_id,
+                        NewsArticle.url == url,
                     )
-                    pub_at, should_keep = _check_pub_cutoff(pub_at_raw, datetime.now(timezone.utc))
-                    if not should_keep:
-                        dropped_old += 1
-                        continue
+                ).scalar_one_or_none()
+                if exists:
+                    continue
 
-                    # 중복 체크 (election-shared)
-                    exists = session.execute(
-                        select(NewsArticle).where(
-                            NewsArticle.election_id == election_id,
-                            NewsArticle.url == article["url"],
-                        )
-                    ).scalar_one_or_none()
-                    if exists:
-                        continue
-
-                    raw_items.append({
-                        "id": article["url"],
-                        "title": title,
-                        "description": desc[:500],
-                        "url": article["url"],
-                        "source": article.get("source", ""),
-                        "published_at": pub_at,
-                        "platform": article.get("platform", "naver"),
-                        "candidate_id": str(cand.id),
-                        "candidate_name": cand.name,
-                    })
+                seen_urls.add(url)
+                raw_items.append({
+                    "id": url,
+                    "title": title,
+                    "description": desc[:500],
+                    "url": url,
+                    "source": article.get("source", ""),
+                    "published_at": pub_at,
+                    "platform": article.get("platform", "naver"),
+                    "candidate_id": str(matched_cand.id),
+                    "candidate_name": matched_cand.name,
+                })
 
         # ── AI 스크리닝 (동명이인 필터 + 감성/전략 분석) ──
         filtered_out = 0
@@ -486,7 +498,7 @@ def collect_community(self, tenant_id: str, election_id: str, schedule_id: str):
         for _c in candidates:
             _c.is_our_candidate = bool(_our_cand_id and str(_c.id) == str(_our_cand_id))
 
-        collector = NaverCollector(settings.NAVER_CLIENT_ID, settings.NAVER_CLIENT_SECRET)
+        collector = NaverCollector(settings.NAVER_CLIENT_ID, settings.NAVER_CLIENT_SECRET, settings.NAVER_CLIENT_ID_2, settings.NAVER_CLIENT_SECRET_2)
         cand_names = [c.name for c in candidates]
         our_cand = next((c for c in candidates if c.is_our_candidate), None)
         rival_names = [c.name for c in candidates if not c.is_our_candidate]
@@ -501,46 +513,64 @@ def collect_community(self, tenant_id: str, election_id: str, schedule_id: str):
         _raw_label = ELECTION_ISSUES.get(etype, {}).get("label", "후보")
         type_label = _raw_label.split("(")[0].strip().split(" ")[0]
 
+        # keyword 단위 dedup + blog/cafe 병렬 fetch
+        kw_set: list[str] = []
         for cand in candidates:
             for keyword in (cand.search_keywords or [cand.name]):
-                blog_posts = _run_async(collector.search_blog(keyword, display=10))
-                cafe_posts = _run_async(collector.search_cafe(keyword, display=10))
+                if keyword not in kw_set:
+                    kw_set.append(keyword)
 
-                for post in blog_posts + cafe_posts:
-                    post_text = f"{post['title']} {post.get('description', '')}"
-                    if not any(cn in post_text for cn in cand_names):
-                        continue
+        async def _fetch_both(kw: str):
+            return await asyncio.gather(
+                collector.search_blog(kw, display=10),
+                collector.search_cafe(kw, display=10),
+            )
 
-                    raw_pd = post.get("postdate") or post.get("pub_date") or post.get("pubDate")
-                    post_pub_raw = parse_published_at(raw_pd)
-                    post_pub_at, should_keep = _check_pub_cutoff(post_pub_raw, datetime.now(timezone.utc))
-                    if not should_keep:
-                        dropped_old += 1
-                        continue
+        seen_urls: set[str] = set()
+        for keyword in kw_set:
+            blog_posts, cafe_posts = _run_async(_fetch_both(keyword))
 
-                    exists = session.execute(
-                        select(CommunityPost).where(
-                            CommunityPost.election_id == election_id,
-                            CommunityPost.url == post["url"],
-                        )
-                    ).scalar_one_or_none()
-                    if exists:
-                        if exists.published_at is None and post_pub_at is not None:
-                            exists.published_at = post_pub_at
-                        continue
+            for post in blog_posts + cafe_posts:
+                post_text = f"{post['title']} {post.get('description', '')}"
+                url = post.get("url", "")
+                if url in seen_urls:
+                    continue
 
-                    raw_items.append({
-                        "id": post["url"],
-                        "title": post["title"],
-                        "description": post.get("description", "")[:500],
-                        "url": post["url"],
-                        "source": post.get("author", ""),
-                        "published_at": post_pub_at,
-                        "platform": post.get("platform", "naver_blog"),
-                        "candidate_id": str(cand.id),
-                        "candidate_name": cand.name,
-                        "relevance_score": calculate_relevance(post_text, cand_names) / 100.0,
-                    })
+                matched_cand = next((c for c in candidates if c.name in post_text), None)
+                if matched_cand is None:
+                    continue
+
+                raw_pd = post.get("postdate") or post.get("pub_date") or post.get("pubDate")
+                post_pub_raw = parse_published_at(raw_pd)
+                post_pub_at, should_keep = _check_pub_cutoff(post_pub_raw, datetime.now(timezone.utc))
+                if not should_keep:
+                    dropped_old += 1
+                    continue
+
+                exists = session.execute(
+                    select(CommunityPost).where(
+                        CommunityPost.election_id == election_id,
+                        CommunityPost.url == url,
+                    )
+                ).scalar_one_or_none()
+                if exists:
+                    if exists.published_at is None and post_pub_at is not None:
+                        exists.published_at = post_pub_at
+                    continue
+
+                seen_urls.add(url)
+                raw_items.append({
+                    "id": url,
+                    "title": post["title"],
+                    "description": post.get("description", "")[:500],
+                    "url": url,
+                    "source": post.get("author", ""),
+                    "published_at": post_pub_at,
+                    "platform": post.get("platform", "naver_blog"),
+                    "candidate_id": str(matched_cand.id),
+                    "candidate_name": matched_cand.name,
+                    "relevance_score": calculate_relevance(post_text, cand_names) / 100.0,
+                })
 
         # AI 스크리닝
         filtered_out = 0

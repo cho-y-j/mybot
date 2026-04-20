@@ -45,7 +45,7 @@ async def collect_news_now(db: AsyncSession, tenant_id: str, election_id: str) -
     base_relevance = ["선거", "후보", "공약", "캠프", "출마", "지지", "유세", "경선", "공천"]
     require_any = base_relevance + [w for w in [type_label, region_short, region_full, region_sigungu] if w]
 
-    collector = NaverCollector(settings.NAVER_CLIENT_ID, settings.NAVER_CLIENT_SECRET)
+    collector = NaverCollector(settings.NAVER_CLIENT_ID, settings.NAVER_CLIENT_SECRET, settings.NAVER_CLIENT_ID_2, settings.NAVER_CLIENT_SECRET_2)
     analyzer = SentimentAnalyzer()
     total = 0
     filtered_out = 0

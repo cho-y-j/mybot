@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     # --- Naver API ---
     NAVER_CLIENT_ID: str = ""
     NAVER_CLIENT_SECRET: str = ""
+    NAVER_CLIENT_ID_2: str = ""       # fallback 키 (1차 429/quota → 자동 전환)
+    NAVER_CLIENT_SECRET_2: str = ""
     NAVER_SEARCHAD_API_KEY: str = ""
     NAVER_SEARCHAD_SECRET: str = ""
     NAVER_SEARCHAD_CUSTOMER_ID: str = ""

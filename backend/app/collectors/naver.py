@@ -3,6 +3,7 @@ ElectionPulse - Naver News/Blog/Cafe Collector
 기존 프로토타입의 검증된 크롤링 로직을 async로 포팅
 """
 import asyncio
+import os
 import re
 import time
 from datetime import datetime, timezone
@@ -15,21 +16,81 @@ import structlog
 
 logger = structlog.get_logger()
 
-# 429 방지용 프로세스 내부 호출 간격 (초당 8회)
-_NAVER_MIN_INTERVAL = 0.12
-_naver_last_call = {"t": 0.0}
+# ──────────────── Redis 전역 Rate Limit ──────────────────────────
+# 모든 Celery worker가 공유하는 초당 버킷. 네이버 공식 한도: 초당 10회 → 안전하게 8회.
+_NAVER_RPS = 8
+_NAVER_DAILY_SOFT_LIMIT = 25000  # 단일 앱 기본 한도 (2차 키 포함 시 50,000)
+_redis_client = None
+
+
+def _get_redis():
+    global _redis_client
+    if _redis_client is None:
+        try:
+            import redis
+            _redis_client = redis.Redis.from_url(
+                os.getenv("REDIS_URL", "redis://ep_redis:6379"),
+                decode_responses=True,
+                socket_timeout=2,
+            )
+            _redis_client.ping()
+        except Exception as e:
+            logger.warning("naver_redis_unavailable", error=str(e))
+            _redis_client = False  # 실패 sentinel
+    return _redis_client if _redis_client is not False else None
 
 
 async def _throttle_naver():
-    now = time.monotonic()
-    gap = now - _naver_last_call["t"]
-    if gap < _NAVER_MIN_INTERVAL:
-        await asyncio.sleep(_NAVER_MIN_INTERVAL - gap)
-    _naver_last_call["t"] = time.monotonic()
+    """Redis 기반 초당 토큰 버킷. 모든 워커 공유."""
+    r = _get_redis()
+    if r is None:
+        # Redis 없으면 프로세스 로컬 fallback
+        await asyncio.sleep(1.0 / _NAVER_RPS)
+        return
+    for _ in range(100):  # 최대 ~1.5초 대기
+        now_sec = int(time.time())
+        key = f"naver:rate:{now_sec}"
+        try:
+            pipe = r.pipeline()
+            pipe.incr(key)
+            pipe.expire(key, 3)
+            count, _expire_ok = pipe.execute()
+            if count <= _NAVER_RPS:
+                return
+        except Exception as e:
+            logger.warning("naver_throttle_redis_err", error=str(e))
+            return
+        # 다음 초까지 대기
+        wait_ms = 1000 - (int(time.time() * 1000) % 1000) + 20
+        await asyncio.sleep(wait_ms / 1000)
+
+
+def _record_daily_usage() -> int:
+    """일일 사용량 증가 + 80%/100% 경보. 반환: 오늘 누적 호출 수."""
+    r = _get_redis()
+    if r is None:
+        return 0
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    key = f"naver:usage:{today}"
+    try:
+        count = r.incr(key)
+        if count == 1:
+            r.expire(key, 3 * 86400)
+        # 2차 키 있을 때는 50000, 없으면 25000
+        limit = _NAVER_DAILY_SOFT_LIMIT * 2
+        if count == int(limit * 0.8):
+            logger.warning("naver_usage_80pct", count=count, limit=limit)
+        elif count == limit:
+            logger.error("naver_usage_exceeded", count=count, limit=limit)
+        return int(count)
+    except Exception:
+        return 0
 
 
 async def _get_with_retry(client: httpx.AsyncClient, url: str, **kwargs) -> httpx.Response:
+    """스크래핑 전용: throttle + 429 재시도. API 호출은 NaverCollector._api_get 사용."""
     await _throttle_naver()
+    _record_daily_usage()
     resp = await client.get(url, **kwargs)
     if resp.status_code == 429:
         logger.warning("naver_429_retry", url=url)
@@ -58,11 +119,115 @@ NAVER_NEWS_LINK_CLASSES = [
 
 
 class NaverCollector:
-    """네이버 뉴스/블로그/카페 수집기 (API + 스크래핑 듀얼모드)."""
+    """네이버 뉴스/블로그/카페 수집기 (API + 스크래핑 듀얼모드).
 
-    def __init__(self, client_id: str = "", client_secret: str = ""):
-        self.client_id = client_id
-        self.client_secret = client_secret
+    쿼터 로테이션: 1차 키 429/errorCode SE06 → 2차 키 자동 전환.
+    일일 25,000 × N키 = 총 N×2.5만회 확보.
+    """
+
+    # 모든 인스턴스 공유 — 소진 상태 (key_idx → datetime)
+    _exhausted_at: dict[int, datetime] = {}
+
+    def __init__(
+        self,
+        client_id: str = "",
+        client_secret: str = "",
+        client_id_2: str = "",
+        client_secret_2: str = "",
+    ):
+        creds = [(client_id, client_secret), (client_id_2, client_secret_2)]
+        self.keys: list[tuple[str, str]] = [c for c in creds if c[0] and c[1]]
+        self.active_idx: int = 0
+        self._retry_after_hours = 12
+
+    def _maybe_reset_exhausted(self) -> None:
+        if not self._exhausted_at:
+            return
+        now = datetime.now(timezone.utc)
+        stale = [k for k, t in self._exhausted_at.items()
+                 if (now - t).total_seconds() > self._retry_after_hours * 3600]
+        for k in stale:
+            del self._exhausted_at[k]
+            logger.info("naver_key_retry", key_idx=k)
+
+    def _current_creds(self) -> tuple[str, str] | None:
+        if not self.keys:
+            return None
+        self._maybe_reset_exhausted()
+        if self.active_idx in self._exhausted_at:
+            for i in range(len(self.keys)):
+                if i not in self._exhausted_at:
+                    self.active_idx = i
+                    break
+        return self.keys[self.active_idx] if self.active_idx < len(self.keys) else None
+
+    @property
+    def client_id(self) -> str:
+        c = self._current_creds()
+        return c[0] if c else ""
+
+    @property
+    def client_secret(self) -> str:
+        c = self._current_creds()
+        return c[1] if c else ""
+
+    def _mark_exhausted_and_rotate(self) -> bool:
+        cur = self.active_idx
+        self._exhausted_at[cur] = datetime.now(timezone.utc)
+        logger.warning("naver_key_quota_exceeded", key_idx=cur, total_keys=len(self.keys))
+        for i in range(len(self.keys)):
+            if i != cur and i not in self._exhausted_at:
+                self.active_idx = i
+                logger.info("naver_key_rotated", from_idx=cur, to_idx=i)
+                return True
+        logger.error("naver_all_keys_exhausted", total_keys=len(self.keys))
+        return False
+
+    def _is_rate_limited(self, resp: httpx.Response) -> bool:
+        """429 Too Many Requests + 네이버 errorCode (SE06 일일 초과 / SE09 서버 부하)."""
+        if resp.status_code == 429:
+            return True
+        if resp.status_code in (400, 403, 500):
+            try:
+                body = resp.json()
+                code = (body.get("errorCode") or "").upper()
+                if code in ("SE06", "SE09", "SE04", "QUOTA_EXCEEDED"):
+                    return True
+            except Exception:
+                pass
+        return False
+
+    async def _api_get(self, url: str, params: dict) -> Optional[dict]:
+        """API 호출 공통 진입점: throttle + 키 로테이션 + 429 재시도.
+        반환: 파싱된 JSON dict 또는 None(모든 키 소진/실패)."""
+        if not self.keys:
+            return None
+        async with httpx.AsyncClient() as client:
+            last_resp: httpx.Response | None = None
+            for _ in range(max(1, len(self.keys))):
+                cur = self._current_creds()
+                if not cur:
+                    break
+                headers = {
+                    "X-Naver-Client-Id": cur[0],
+                    "X-Naver-Client-Secret": cur[1],
+                }
+                await _throttle_naver()
+                _record_daily_usage()
+                last_resp = await client.get(url, params=params, headers=headers, timeout=15)
+                if self._is_rate_limited(last_resp):
+                    if self._mark_exhausted_and_rotate():
+                        continue
+                    return None
+                break
+            if last_resp is None:
+                return None
+            try:
+                last_resp.raise_for_status()
+                return last_resp.json()
+            except Exception as e:
+                logger.error("naver_api_error", url=url, status=getattr(last_resp, "status_code", 0), error=str(e))
+                return None
 
     # ──────────────── NEWS ──────────────────────────────────────
 
@@ -86,36 +251,26 @@ class NaverCollector:
         return articles
 
     async def _api_news(self, keyword: str, display: int) -> list[dict]:
-        """네이버 뉴스 검색 API."""
+        """네이버 뉴스 검색 API (키 로테이션 + 전역 throttle)."""
         url = "https://openapi.naver.com/v1/search/news.json"
         params = {"query": keyword, "display": display, "sort": "date"}
-        headers = {
-            "X-Naver-Client-Id": self.client_id,
-            "X-Naver-Client-Secret": self.client_secret,
-        }
-
-        async with httpx.AsyncClient() as client:
-            try:
-                resp = await _get_with_retry(client, url, params=params, headers=headers, timeout=15)
-                resp.raise_for_status()
-                data = resp.json()
-
-                articles = []
-                for item in data.get("items", []):
-                    href = item.get("originallink") or item.get("link", "")
-                    articles.append({
-                        "title": self._clean_html(item.get("title", "")),
-                        "url": href,
-                        "source": self._extract_source(href),
-                        "description": self._clean_html(item.get("description", "")),
-                        "pub_date": item.get("pubDate"),
-                        "platform": "naver",
-                    })
-                logger.info("naver_news_api", keyword=keyword, count=len(articles))
-                return articles
-            except Exception as e:
-                logger.error("naver_news_api_error", keyword=keyword, error=str(e))
-                return await self._scrape_news(keyword, display)
+        data = await self._api_get(url, params)
+        if data is None:
+            logger.info("naver_news_api_fallback_scrape", keyword=keyword)
+            return await self._scrape_news(keyword, display)
+        articles = []
+        for item in data.get("items", []):
+            href = item.get("originallink") or item.get("link", "")
+            articles.append({
+                "title": self._clean_html(item.get("title", "")),
+                "url": href,
+                "source": self._extract_source(href),
+                "description": self._clean_html(item.get("description", "")),
+                "pub_date": item.get("pubDate"),
+                "platform": "naver",
+            })
+        logger.info("naver_news_api", keyword=keyword, count=len(articles), key_idx=self.active_idx)
+        return articles
 
     async def _scrape_news(self, keyword: str, count: int = 20) -> list[dict]:
         """네이버 뉴스 웹 스크래핑 (API 실패 시 폴백)."""
@@ -230,32 +385,23 @@ class NaverCollector:
         return await self._scrape_community("article", keyword, display)
 
     async def _api_search(self, search_type: str, keyword: str, display: int) -> list[dict]:
-        """네이버 검색 API (blog/cafearticle)."""
+        """네이버 검색 API (blog/cafearticle) - 키 로테이션 + 전역 throttle."""
         url = f"https://openapi.naver.com/v1/search/{search_type}.json"
         params = {"query": keyword, "display": display, "sort": "date"}
-        headers = {
-            "X-Naver-Client-Id": self.client_id,
-            "X-Naver-Client-Secret": self.client_secret,
-        }
-        async with httpx.AsyncClient() as client:
-            try:
-                resp = await _get_with_retry(client, url, params=params, headers=headers, timeout=15)
-                resp.raise_for_status()
-                data = resp.json()
-                posts = []
-                for item in data.get("items", []):
-                    posts.append({
-                        "title": self._clean_html(item.get("title", "")),
-                        "url": item.get("link", ""),
-                        "author": item.get("bloggername") or item.get("cafename", ""),
-                        "description": self._clean_html(item.get("description", ""))[:200],
-                        "pub_date": item.get("postdate"),
-                        "platform": "naver_blog" if search_type == "blog" else "naver_cafe",
-                    })
-                return posts
-            except Exception as e:
-                logger.error(f"naver_{search_type}_error", keyword=keyword, error=str(e))
-                return []
+        data = await self._api_get(url, params)
+        if data is None:
+            return []
+        posts = []
+        for item in data.get("items", []):
+            posts.append({
+                "title": self._clean_html(item.get("title", "")),
+                "url": item.get("link", ""),
+                "author": item.get("bloggername") or item.get("cafename", ""),
+                "description": self._clean_html(item.get("description", ""))[:200],
+                "pub_date": item.get("postdate"),
+                "platform": "naver_blog" if search_type == "blog" else "naver_cafe",
+            })
+        return posts
 
     async def _scrape_community(self, where: str, keyword: str, count: int) -> list[dict]:
         """네이버 블로그/카페 웹 스크래핑."""
