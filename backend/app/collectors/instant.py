@@ -432,7 +432,7 @@ async def collect_youtube_now(db: AsyncSession, tenant_id: str, election_id: str
     base_relevance = ["선거", "후보", "공약", "캠프", "출마", "지지", "유세", "경선", "공천", "토론", "인터뷰"]
     relevance_words = base_relevance + [w for w in [type_label, region_short, region_full, region_sigungu] if w]
 
-    collector = YouTubeCollector(settings.YOUTUBE_API_KEY or settings.GOOGLE_API_KEY)
+    collector = YouTubeCollector(settings.YOUTUBE_API_KEY or settings.GOOGLE_API_KEY, settings.YOUTUBE_API_KEY_2)
     our_cand = next((c for c in candidates if c.is_our_candidate), None)
     rival_names = [c.name for c in candidates if not c.is_our_candidate]
     total = 0

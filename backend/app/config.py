@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     # --- Google/YouTube ---
     GOOGLE_API_KEY: str = ""
     YOUTUBE_API_KEY: str = ""
+    YOUTUBE_API_KEY_2: str = ""   # fallback 키 (1차 quotaExceeded 시 자동 전환 → 일일 20,000 unit)
 
     # --- Admin ---
     ADMIN_EMAIL: str = "admin@electionpulse.kr"

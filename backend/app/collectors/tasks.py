@@ -696,7 +696,7 @@ def collect_youtube(self, tenant_id: str, election_id: str, schedule_id: str):
         for _c in candidates:
             _c.is_our_candidate = bool(_our_cand_id and str(_c.id) == str(_our_cand_id))
 
-        collector = YouTubeCollector(settings.YOUTUBE_API_KEY or settings.GOOGLE_API_KEY)
+        collector = YouTubeCollector(settings.YOUTUBE_API_KEY or settings.GOOGLE_API_KEY, settings.YOUTUBE_API_KEY_2)
         our_cand = next((c for c in candidates if c.is_our_candidate), None)
         rival_names = [c.name for c in candidates if not c.is_our_candidate]
         total = 0
@@ -1249,7 +1249,7 @@ def collect_youtube_enhanced(self, tenant_id: str, election_id: str, schedule_id
         for _c in candidates:
             _c.is_our_candidate = bool(_our_cand_id and str(_c.id) == str(_our_cand_id))
 
-        collector = YouTubeCollector(settings.YOUTUBE_API_KEY or settings.GOOGLE_API_KEY)
+        collector = YouTubeCollector(settings.YOUTUBE_API_KEY or settings.GOOGLE_API_KEY, settings.YOUTUBE_API_KEY_2)
         total = 0
         comment_total = 0
 

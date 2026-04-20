@@ -21,12 +21,72 @@ DEFAULT_MIN_VIEWS = 50
 
 
 class YouTubeCollector:
-    """YouTube Data API v3 기반 수집기."""
+    """YouTube Data API v3 기반 수집기.
+
+    쿼터 로테이션: 1차 키 quotaExceeded → 2차 키 자동 fallback.
+    일일 10,000 × N키 = 총 N만 unit 확보.
+    """
 
     BASE_URL = "https://www.googleapis.com/youtube/v3"
 
-    def __init__(self, api_key: str = ""):
-        self.api_key = api_key
+    # 모든 인스턴스 공유 — 쿼터 소진 상태 (key_idx → datetime)
+    # 프로세스 재시작 시 자동 초기화 (PT 자정 리셋과 불일치해도 다음 호출에서 재시도)
+    _exhausted_at: dict[int, datetime] = {}
+
+    def __init__(self, api_key: str = "", api_key_2: str = ""):
+        # 빈 키는 제외
+        self.keys: list[str] = [k for k in [api_key, api_key_2] if k]
+        self.active_idx: int = 0
+        # 과거 소진 이후 12시간 지나면 자동 재시도 (PT 자정 기준 리셋)
+        self._retry_after_hours = 12
+
+    @property
+    def api_key(self) -> str:
+        """현재 활성 키. 기존 호출 호환을 위해 property 유지."""
+        if not self.keys:
+            return ""
+        self._maybe_reset_exhausted()
+        # active_idx 가 소진 상태면 다른 키 찾기
+        if self.active_idx in self._exhausted_at:
+            for i in range(len(self.keys)):
+                if i not in self._exhausted_at:
+                    self.active_idx = i
+                    break
+        return self.keys[self.active_idx] if self.active_idx < len(self.keys) else ""
+
+    def _maybe_reset_exhausted(self) -> None:
+        """_exhausted_at 에 기록된 항목 중 12시간 지난 것 해제 (쿼터 복구)."""
+        if not self._exhausted_at:
+            return
+        now = datetime.now(timezone.utc)
+        stale = [k for k, t in self._exhausted_at.items() if (now - t).total_seconds() > self._retry_after_hours * 3600]
+        for k in stale:
+            del self._exhausted_at[k]
+            logger.info("youtube_key_retry", key_idx=k)
+
+    def _mark_exhausted_and_rotate(self) -> bool:
+        """현재 키를 소진으로 마킹하고 다음 키로 전환. 남은 키 없으면 False."""
+        cur = self.active_idx
+        self._exhausted_at[cur] = datetime.now(timezone.utc)
+        logger.warning("youtube_key_quota_exceeded", key_idx=cur, total_keys=len(self.keys))
+        for i in range(len(self.keys)):
+            if i != cur and i not in self._exhausted_at:
+                self.active_idx = i
+                logger.info("youtube_key_rotated", from_idx=cur, to_idx=i)
+                return True
+        logger.error("youtube_all_keys_exhausted", total_keys=len(self.keys))
+        return False
+
+    def _is_quota_exceeded(self, resp: httpx.Response) -> bool:
+        """quotaExceeded 에러 감지."""
+        if resp.status_code != 403:
+            return False
+        try:
+            body = resp.json()
+            errors = (body.get("error") or {}).get("errors") or []
+            return any(e.get("reason") in ("quotaExceeded", "dailyLimitExceeded", "rateLimitExceeded") for e in errors)
+        except Exception:
+            return "quotaExceeded" in resp.text or "dailyLimitExceeded" in resp.text
 
     async def search_videos(
         self,
@@ -72,11 +132,21 @@ class YouTubeCollector:
 
         async with httpx.AsyncClient() as client:
             try:
-                resp = await client.get(
-                    f"{self.BASE_URL}/search",
-                    params=params,
-                    timeout=15,
-                )
+                # 쿼터 로테이션: 1차 quotaExceeded → 2차 키로 자동 재시도
+                resp = None
+                for _attempt in range(len(self.keys) or 1):
+                    params["key"] = self.api_key  # 현재 활성 키
+                    resp = await client.get(
+                        f"{self.BASE_URL}/search",
+                        params=params,
+                        timeout=15,
+                    )
+                    if self._is_quota_exceeded(resp):
+                        if self._mark_exhausted_and_rotate():
+                            continue  # 다른 키로 재시도
+                        # 모든 키 소진
+                        raise RuntimeError("youtube_all_keys_exhausted")
+                    break  # 성공
                 resp.raise_for_status()
                 data = resp.json()
 
@@ -158,14 +228,21 @@ class YouTubeCollector:
         params = {
             "part": "statistics,contentDetails",
             "id": ",".join(video_ids),
-            "key": self.api_key,
         }
         try:
-            resp = await client.get(
-                f"{self.BASE_URL}/videos",
-                params=params,
-                timeout=15,
-            )
+            resp = None
+            for _attempt in range(len(self.keys) or 1):
+                params["key"] = self.api_key
+                resp = await client.get(
+                    f"{self.BASE_URL}/videos",
+                    params=params,
+                    timeout=15,
+                )
+                if self._is_quota_exceeded(resp):
+                    if self._mark_exhausted_and_rotate():
+                        continue
+                    raise RuntimeError("youtube_all_keys_exhausted")
+                break
             resp.raise_for_status()
             data = resp.json()
 
@@ -214,16 +291,23 @@ class YouTubeCollector:
             "videoId": video_id,
             "maxResults": max_results,
             "order": "relevance",
-            "key": self.api_key,
         }
 
         async with httpx.AsyncClient() as client:
             try:
-                resp = await client.get(
-                    f"{self.BASE_URL}/commentThreads",
-                    params=params,
-                    timeout=15,
-                )
+                resp = None
+                for _attempt in range(len(self.keys) or 1):
+                    params["key"] = self.api_key
+                    resp = await client.get(
+                        f"{self.BASE_URL}/commentThreads",
+                        params=params,
+                        timeout=15,
+                    )
+                    if self._is_quota_exceeded(resp):
+                        if self._mark_exhausted_and_rotate():
+                            continue
+                        raise RuntimeError("youtube_all_keys_exhausted")
+                    break
                 resp.raise_for_status()
                 data = resp.json()
 
