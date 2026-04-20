@@ -31,10 +31,10 @@ export default function CustomerSettingsPage() {
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-bold text-zinc-100">설정</h1>
+      <h1 className="mb-6 text-2xl font-bold text-[var(--foreground)]">설정</h1>
 
-      <div className="max-w-md rounded-2xl border border-white/5 bg-zinc-900/50 p-5">
-        <h2 className="mb-4 text-lg font-semibold text-zinc-200">비밀번호 변경</h2>
+      <div className="max-w-md rounded-2xl border border-white/5 bg-[var(--card-bg)] p-5">
+        <h2 className="mb-4 text-lg font-semibold text-[var(--foreground)]">비밀번호 변경</h2>
         <form onSubmit={handleChangePassword} className="space-y-3">
           <input
             type="password"
@@ -42,7 +42,7 @@ export default function CustomerSettingsPage() {
             value={currentPassword}
             onChange={(e) => setCurrentPassword(e.target.value)}
             required
-            className="w-full rounded-xl border border-white/10 bg-zinc-800 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-accent/50"
+            className="w-full rounded-xl border border-white/10 bg-[var(--muted-bg)] px-3 py-2.5 text-sm text-[var(--foreground)] outline-none focus:border-accent/50"
           />
           <input
             type="password"
@@ -51,7 +51,7 @@ export default function CustomerSettingsPage() {
             onChange={(e) => setNewPassword(e.target.value)}
             required
             minLength={8}
-            className="w-full rounded-xl border border-white/10 bg-zinc-800 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-accent/50"
+            className="w-full rounded-xl border border-white/10 bg-[var(--muted-bg)] px-3 py-2.5 text-sm text-[var(--foreground)] outline-none focus:border-accent/50"
           />
           {error && <p className="text-sm text-red-400">{error}</p>}
           {message && <p className="text-sm text-green-400">{message}</p>}
