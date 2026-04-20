@@ -80,10 +80,17 @@ export default function UnifiedHeatmap({
   // 렌더 대상 선택. party 모드에 데이터 없으면 campCells 으로 폴백 (교육감 등 정당 정보 부족 케이스)
   const partyHasData = partyCells.length > 0;
   const useMode: ViewMode = mode === 'party' && partyHasData ? 'party' : 'camp';
-  const cells = useMode === 'party' ? partyCells : campCells;
-  if (!cells.length) {
+  const rawCells = useMode === 'party' ? partyCells : campCells;
+  if (!rawCells.length) {
     return <div className="card text-center text-[var(--muted)] py-12">시·군·구 데이터가 없습니다.</div>;
   }
+  // 같은 부모 도시끼리 연속되도록 정렬 (청주시상당/서원/청원/흥덕 4구가 옆옆옆으로 붙음)
+  const cells = [...rawCells].sort((a: any, b: any) => {
+    const pa = parentCity(a.district);
+    const pb = parentCity(b.district);
+    if (pa !== pb) return pa.localeCompare(pb, 'ko');
+    return a.district.localeCompare(b.district, 'ko');
+  });
 
   return (
     <div className="space-y-4">
