@@ -227,6 +227,14 @@ session.add(YouTubeVideo(..., published_at=pub_at))  # None이면 NULL 저장
 
 **새 API 추가 시 체크리스트**: homepage가 `/api/X` 새로 만들면 `server_proxy.conf`에 homepage 라우팅 location 추가 필수. 아니면 mybot으로 흘러가서 404.
 
+### 1.24. 외부 API rate limit은 Redis 전역 (2026-04-20)
+**프로세스 로컬 throttle은 거짓 안전감. 여러 Celery worker 병렬이면 합산 초과 가능.**
+- 외부 API에 rate limit 있으면 반드시 **Redis 공유 토큰 버킷** 기반. `{api}:rate:{epoch_second}` incr + TTL 3초 패턴.
+- 키 로테이션 지원 시 `_exhausted_at` 클래스 변수 + `_mark_exhausted_and_rotate()` (YouTube/Naver 패턴 동일).
+- 일일 사용량 카운터 `{api}:usage:YYYY-MM-DD` + 80%/100% 경보 로그 필수.
+- 2차 키는 `{KEY_NAME}_2` 컨벤션. Config에 필드 + .env.server에 값 + Collector 생성자에 전달.
+- 2026-04-20 네이버 근본 해결 참고 — 프로세스 로컬 `_throttle_naver` → Redis `naver:rate:*` 전환.
+
 ### 1.22. 보고서/브리핑 PDF 정책 (2026-04-18 확정)
 | 시간(KST) | 타입 | 텍스트 | 텔레그램 | 메일 | PDF |
 |---|---|---|---|---|---|

@@ -19,11 +19,14 @@
 - dashboard / easy / components 내부 hex 하드코딩 **0건** (grep 확인)
 - 남은 hex는 LandingPage(Airtable 팔레트 의도), 로그인/가입(다크 팔레트 의도) — 치환 대상 아님
 
-### ✅ 네이버 429 rate limit 대응
-- 프로세스 내 호출 간격 120ms 제한(`_throttle_naver`)
-- 429 감지 시 2초 대기 + 1회 자동 재시도(`_get_with_retry`)
-- 4개 진입점 모두 교체: `_api_news` / `_scrape_news` / `_api_search` / `_scrape_community`
-- 파일: `backend/app/collectors/naver.py`
+### ✅ 네이버 API 근본 rate limit 대응 (2026-04-20)
+- **2차 API 키 로테이션**: `NAVER_CLIENT_ID_2/SECRET_2` 추가, 429/SE06/SE09 감지 시 자동 전환, 12시간 후 재시도. 일일 한도 25,000 → **50,000회**
+- **Redis 전역 토큰 버킷**: `naver:rate:{epoch_second}` incr. 모든 Celery worker + backend 공유. 초당 8회 강제 (안전 마진 2회)
+- **일일 사용량 카운터**: `naver:usage:YYYY-MM-DD` 증가. 80% 도달 시 `naver_usage_80pct` 경보
+- **키워드 dedup + blog/cafe 병렬**: 여러 후보가 같은 키워드 등록 시 1회만 호출, blog/cafe는 `asyncio.gather`
+- 기사 matched_candidate를 본문 기반 재할당 (정확도 향상)
+- 실측 검증: 2개 키 로드, Redis key 생성, 일일 카운터 증가 확인
+- 파일: `backend/app/collectors/{naver,tasks,instant}.py`, `backend/app/config.py`, `docker/.env.server`
 
 ---
 
