@@ -845,6 +845,7 @@ async def generate_history_ai_strategy(
     sw = sections.get("swing_districts", {})
     ta = sections.get("turnout_analysis", {})
     pc = sections.get("political_context", {})
+    camp_grid = sections.get("camp_grid", {})
 
     # election-shared: tenant_elections 기준으로 우리 후보 찾기
     from app.common.election_access import get_our_candidate_id
@@ -855,30 +856,74 @@ async def generate_history_ai_strategy(
             select(Candidate).where(Candidate.id == _my_id)
         )).scalar_one_or_none()
 
-    # 강세/약세 시군 추출
-    strong_districts = [c["district"] for c in sg.get("cells", []) if c["strength"] in ("prog_strong", "prog_lean")][:5]
-    weak_districts = [c["district"] for c in sg.get("cells", []) if c["strength"] in ("cons_strong", "cons_lean")][:5]
-    swing_districts = [s["district"] for s in sw.get("swing", [])][:5]
+    # 후보 진영(camp) 매핑 로드 — 교육감 등 무소속 선거에서 필수
+    # 역대 당선자/우리 후보의 진보/보수 진영을 정확히 알기 위함
+    camp_overrides = await load_camp_overrides(db, election.election_type, election.region_sido)
+    candidate_alignments = await load_current_candidate_alignments(db, election.election_type)
+
+    def _lookup_camp(candidate_name: str, party: str | None = None) -> str:
+        """후보 진영 찾기: 1) historical override 2) current alignment 3) 정당 기반 추정"""
+        if not candidate_name:
+            return ""
+        # 1. historical_candidate_camps (이기용=보수, 김병우=진보, 윤건영=보수 등)
+        if candidate_name in camp_overrides:
+            return camp_overrides[candidate_name]
+        # 2. candidate_alignments (current)
+        if candidate_name in candidate_alignments:
+            return candidate_alignments[candidate_name]
+        # 3. 정당 기반 (시장/도지사는 정당 있음)
+        if party:
+            nparty = _normalize_party(party)
+            if nparty in ("진보", "보수"):
+                return nparty
+        return ""
+
+    # 우리 후보 진영
+    our_camp = _lookup_camp(our.name, our.party) if our else ""
+
+    # 역대 당선자 진영 주입 — winner_pattern 원본에 없으면 lookup으로 보강
+    elections_enriched = []
+    for e in wp.get("elections", []):
+        w = e.get("winner", {})
+        w_camp = _lookup_camp(w.get("name"), w.get("party"))
+        elections_enriched.append({**e, "winner_camp": w_camp})
+
+    # 진영 교체 횟수 계산 (역대 당선자 진영 변화 기반)
+    camps_sequence = [e.get("winner_camp", "") for e in elections_enriched if e.get("winner_camp")]
+    camp_alternation = sum(1 for i in range(1, len(camps_sequence)) if camps_sequence[i] != camps_sequence[i-1])
+
+    # 강세/약세 시군 (camp_grid 기반 — 진보/보수 직접 매핑)
+    camp_cells = camp_grid.get("cells", [])
+    strong_districts = [c["district"] for c in camp_cells if c.get("tier") in ("진보강세", "진보우세")][:7]
+    weak_districts = [c["district"] for c in camp_cells if c.get("tier") in ("보수강세", "보수우세")][:7]
+    swing_districts = [c["district"] for c in camp_cells if c.get("tier") == "경합"][:7]
+
+    is_superintendent = (election.election_type == "superintendent")
 
     factsheet = f"""
 ## 과거 선거 심층 팩트시트 — {election.region_sido} {election.election_type}
 
+{'''### ⚠️ 교육감 선거 특수 사항 (법적·실무)
+1. 교육감은 공직선거법상 **정당 공천 금지**. 분석에서 정당명 언급 금지 (민주당/국민의힘 등 표기 금지).
+   대신 "진보(전교조·민주 계열 교육관)" / "보수(교총·국민의힘 계열 교육관)" 용어로 표현.
+2. 유권자 관심도가 낮아 선거 초~중반 여론조사에서 진영 판별이 불확실하게 나오는 경향이 있음.
+   막바지(투표 1~2주 전)에 진영별 표심이 정상화되어 실제 결과와 수렴.
+3. 따라서 현 여론조사 수치만 보고 판단 금지 — 과거 선거 진영 분포가 더 신뢰도 높은 기준.
+''' if is_superintendent else ''}
 ### 우리 후보
 - 이름: {our.name if our else '미설정'}
-- 정당: {our.party if our else '미설정'}
+- 진영: **{our_camp or '진영 미매핑 (슈퍼관리자 매핑 필요)'}**
+{'' if is_superintendent else f'- 정당: {our.party if our else "미설정"}'}
 
-### 역대 패턴 ({wp.get('total_elections', 0)}회 분석)
-{chr(10).join(f"- {e['year']}년: {e['winner']['name']} ({e['winner']['party']}) {e['winner']['vote_rate']}%, 격차 {e.get('margin',0)}%p" for e in wp.get('elections', []))}
-- 우세 정당: {wp.get('dominant_party')} (교대율 {wp.get('alternation_rate', 0)}%)
-- 패턴: {wp.get('pattern_summary')}
+### 역대 당선자 (진영 기준, 교체 횟수 {camp_alternation}회)
+{chr(10).join(f"- {e['year']}년: {e['winner']['name']} [**{e.get('winner_camp') or '진영 미매핑'}**] {e['winner']['vote_rate']}%, 격차 {e.get('margin',0)}%p" for e in elections_enriched)}
+- 원본 winner_pattern 판단: 우세 정당={wp.get('dominant_party')} / 교대율={wp.get('alternation_rate', 0)}%
+  (교육감 선거에서는 정당 기반 교대율은 무의미 — 위 진영 교체 {camp_alternation}회가 실제 기준)
 
-### 정당 추이
-{pt.get('trend_summary', '')}
-
-### 지역 강세 (5단계 분류)
+### 지역 진영 강세 (camp_grid 5단계 분류)
 - 진보 강세/우세 시군: {', '.join(strong_districts) or '없음'}
 - 보수 강세/우세 시군: {', '.join(weak_districts) or '없음'}
-- 스윙 시군: {', '.join(swing_districts) or '없음'}
+- 경합 시군: {', '.join(swing_districts) or '없음'}
 
 ### 투표율
 - {ta.get('insight', '데이터 없음')}
@@ -887,8 +932,17 @@ async def generate_history_ai_strategy(
 - {pc.get('correlation_note', '데이터 없음')}
 """
 
-    prompt = f"""당신은 한국 선거 전략 전문가입니다. 아래 팩트시트를 읽고 우리 후보({our.name if our else '미설정'})를 위한 4섹션 전략 분석을 작성하세요.
+    # 프롬프트 — 교육감 특수 지침 조건부 포함
+    superintendent_rules = """
+## 🚨 교육감 선거 분석 필수 규칙
+1. **정당명 절대 언급 금지** — "민주당", "국민의힘", "한국당", "무소속" 모두 사용 금지 (공직선거법 위반)
+2. 진영 구분은 오직 **"진보 진영"**, **"보수 진영"** 용어만 사용
+3. 과거 여론조사 해석 시: 교육감 유권자 관심이 낮아 중반까지 진영 매칭 불명확 → 막바지 정상화 패턴 언급 (실제 관측 사실)
+4. "우세 정당" 같은 표현 금지. "우세 진영" 또는 "역대 진보/보수 당선 빈도" 로 표현
+""" if is_superintendent else ""
 
+    prompt = f"""당신은 한국 선거 전략 전문가입니다. 아래 팩트시트를 읽고 우리 후보({our.name if our else '미설정'}, 진영: {our_camp or '미매핑'})를 위한 4섹션 전략 분석을 작성하세요.
+{superintendent_rules}
 {factsheet}
 
 **반드시 다음 JSON 형식으로만 응답하세요. 마크다운 코드블록(```)도 쓰지 말고, 순수 JSON만 출력하세요:**
