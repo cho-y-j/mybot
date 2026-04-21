@@ -16,8 +16,9 @@ import {
 import ScheduleAddPanel from '@/components/calendar/ScheduleAddPanel';
 import ScheduleCard from '@/components/calendar/ScheduleCard';
 import ScheduleBottomSheet from '@/components/calendar/ScheduleBottomSheet';
+import MonthlyCalendar from '@/components/calendar/MonthlyCalendar';
 
-type Tab = 'today' | 'week' | 'map';
+type Tab = 'today' | 'week' | 'month' | 'map';
 
 export default function CalendarPage() {
   const { election, candidates, loading: elLoading } = useElection();
@@ -30,17 +31,26 @@ export default function CalendarPage() {
   const [showYesterday, setShowYesterday] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
 
-  const load = useCallback(async () => {
+  // 로드 범위: 달력 뷰의 월 이동 시 확장. 기본은 -30일 ~ +60일
+  const [loadedRange, setLoadedRange] = useState<{ from: string; to: string } | null>(null);
+
+  const load = useCallback(async (fromOverride?: string, toOverride?: string) => {
     if (!election?.id) return;
     setLoading(true);
     try {
       const now = new Date();
-      const from = new Date(now);
-      from.setDate(from.getDate() - 1);
-      from.setHours(0, 0, 0, 0);
-      const to = new Date(now);
-      to.setDate(to.getDate() + 14);
-      to.setHours(23, 59, 59, 999);
+      const from = fromOverride ? new Date(fromOverride) : (() => {
+        const d = new Date(now);
+        d.setDate(d.getDate() - 30);
+        d.setHours(0, 0, 0, 0);
+        return d;
+      })();
+      const to = toOverride ? new Date(toOverride) : (() => {
+        const d = new Date(now);
+        d.setDate(d.getDate() + 60);
+        d.setHours(23, 59, 59, 999);
+        return d;
+      })();
 
       const [items, yest] = await Promise.all([
         api.listCandidateSchedules(election.id, {
@@ -51,17 +61,32 @@ export default function CalendarPage() {
       ]);
       setSchedules(items || []);
       setYesterdayList(yest || []);
-      // 결과 미입력 있으면 어제 회고 자동 펼침
-      const needResult = (yest || []).some(
-        (s: any) => s.status === 'done' && !s.result_mood && !s.result_summary,
-      );
-      if (needResult) setShowYesterday(true);
+      setLoadedRange({ from: from.toISOString(), to: to.toISOString() });
+      // 어제 회고는 기본 접힘 — 상단 빨간 배너로 힌트, 사용자가 탭 시 펼침
     } catch (e) {
       console.error('load schedules', e);
     } finally {
       setLoading(false);
     }
   }, [election?.id]);
+
+  /** 달력 뷰에서 월 이동 시 호출 — 현재 로드 범위 밖이면 확장 로드 */
+  const handleCalendarRange = useCallback(async (fromIso: string, toIso: string) => {
+    if (!election?.id) return [];
+    const needsReload =
+      !loadedRange ||
+      new Date(fromIso) < new Date(loadedRange.from) ||
+      new Date(toIso) > new Date(loadedRange.to);
+    if (needsReload) {
+      // 새 월 범위 + 기존 범위 여유 포함
+      const newFrom = new Date(fromIso);
+      newFrom.setDate(newFrom.getDate() - 7);
+      const newTo = new Date(toIso);
+      newTo.setDate(newTo.getDate() + 7);
+      await load(newFrom.toISOString(), newTo.toISOString());
+    }
+    return [];
+  }, [election?.id, loadedRange, load]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -142,6 +167,7 @@ export default function CalendarPage() {
         {([
           { v: 'today' as Tab, label: '오늘' },
           { v: 'week' as Tab, label: '이번주' },
+          { v: 'month' as Tab, label: '달력' },
           { v: 'map' as Tab, label: '지도' },
         ]).map((t) => (
           <button
@@ -161,9 +187,57 @@ export default function CalendarPage() {
       {/* ─── 오늘 탭 ─── */}
       {tab === 'today' && (
         <div className="space-y-4">
-          {/* 어제 회고 */}
-          {yesterdayList.length > 0 && (
+          {/* 어제 회고 미입력 힌트 배너 (상단, 얇게) */}
+          {yesterdayNeedingResult.length > 0 && (
+            <button
+              onClick={() => {
+                setShowYesterday(true);
+                setTimeout(() => {
+                  document.getElementById('yesterday-review')?.scrollIntoView({ behavior: 'smooth' });
+                }, 50);
+              }}
+              className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-rose-500/10 border border-rose-500/30 text-sm hover:bg-rose-500/15"
+            >
+              <span className="text-rose-600 dark:text-rose-400 font-medium">
+                어제 결과 미입력 {yesterdayNeedingResult.length}건
+              </span>
+              <span className="text-xs text-rose-500">아래로 이동 →</span>
+            </button>
+          )}
+
+          {/* 1. 다음 일정 3개 크게 (오늘 우선) */}
+          <div className="space-y-2">
+            <p className="text-sm font-semibold text-[var(--muted)]">다가오는 일정</p>
+            {loading ? (
+              <div className="h-20 bg-[var(--muted-bg)] rounded-xl animate-pulse" />
+            ) : nextUpcoming.length === 0 ? (
+              <div className="border border-dashed border-[var(--card-border)] rounded-xl p-6 text-center text-sm text-[var(--muted)]">
+                다가오는 일정이 없습니다. "일정 추가" 버튼으로 첫 일정을 등록하세요.
+              </div>
+            ) : (
+              nextUpcoming.map((s) => (
+                <ScheduleCard key={s.id} schedule={s} size="lg" onClick={() => setSelected(s)} />
+              ))
+            )}
+          </div>
+
+          {/* 2. 오늘 하루 타임라인 (접힘 기본) */}
+          {todayItems.length > 0 && (
             <div className="border border-[var(--card-border)] rounded-xl overflow-hidden">
+              <button
+                onClick={() => setShowTimeline(!showTimeline)}
+                className="w-full flex items-center justify-between px-4 py-3 bg-[var(--muted-bg)] hover:bg-[var(--card-bg)] text-sm"
+              >
+                <span className="font-semibold">오늘 하루 타임라인 ({todayItems.length}건)</span>
+                <span className="text-xs text-[var(--muted)]">{showTimeline ? '닫기' : '펼치기'}</span>
+              </button>
+              {showTimeline && <DayTimeline items={todayItems} onPick={setSelected} />}
+            </div>
+          )}
+
+          {/* 3. 어제 회고 (아래로 이동, 접힘 기본) */}
+          {yesterdayList.length > 0 && (
+            <div id="yesterday-review" className="border border-[var(--card-border)] rounded-xl overflow-hidden">
               <button
                 onClick={() => setShowYesterday(!showYesterday)}
                 className="w-full flex items-center justify-between px-4 py-3 bg-[var(--muted-bg)] hover:bg-[var(--card-bg)] text-sm"
@@ -185,36 +259,6 @@ export default function CalendarPage() {
                   ))}
                 </div>
               )}
-            </div>
-          )}
-
-          {/* 다음 일정 3개 크게 */}
-          <div className="space-y-2">
-            <p className="text-sm font-semibold text-[var(--muted)]">다가오는 일정</p>
-            {loading ? (
-              <div className="h-20 bg-[var(--muted-bg)] rounded-xl animate-pulse" />
-            ) : nextUpcoming.length === 0 ? (
-              <div className="border border-dashed border-[var(--card-border)] rounded-xl p-6 text-center text-sm text-[var(--muted)]">
-                다가오는 일정이 없습니다. "일정 추가" 버튼으로 첫 일정을 등록하세요.
-              </div>
-            ) : (
-              nextUpcoming.map((s) => (
-                <ScheduleCard key={s.id} schedule={s} size="lg" onClick={() => setSelected(s)} />
-              ))
-            )}
-          </div>
-
-          {/* 하루 타임라인 (접힘 기본) */}
-          {todayItems.length > 0 && (
-            <div className="border border-[var(--card-border)] rounded-xl overflow-hidden">
-              <button
-                onClick={() => setShowTimeline(!showTimeline)}
-                className="w-full flex items-center justify-between px-4 py-3 bg-[var(--muted-bg)] hover:bg-[var(--card-bg)] text-sm"
-              >
-                <span className="font-semibold">오늘 하루 타임라인 ({todayItems.length}건)</span>
-                <span className="text-xs text-[var(--muted)]">{showTimeline ? '닫기' : '펼치기'}</span>
-              </button>
-              {showTimeline && <DayTimeline items={todayItems} onPick={setSelected} />}
             </div>
           )}
         </div>
@@ -245,6 +289,23 @@ export default function CalendarPage() {
             ))
           )}
         </div>
+      )}
+
+      {/* ─── 달력 탭 (월간 뷰) ─── */}
+      {tab === 'month' && (
+        <MonthlyCalendar
+          schedules={schedules}
+          onLoadRange={handleCalendarRange}
+          onSelect={setSelected}
+          onAddForDate={(dateIso) => {
+            setShowAdd(true);
+            // 날짜 프리필은 ScheduleAddPanel 내부 수동 모드에서 자동 적용은 향후 개선
+            // Phase 1에서는 달력에서 날짜 클릭 후 "이 날짜에 추가" → 추가 패널 스크롤로 이동
+            setTimeout(() => {
+              document.querySelector('.border-blue-500\\/30')?.scrollIntoView({ behavior: 'smooth' });
+            }, 50);
+          }}
+        />
       )}
 
       {/* ─── 지도 탭 (Phase 3 placeholder) ─── */}
