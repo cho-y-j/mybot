@@ -3,7 +3,9 @@ FROM node:20-alpine
 WORKDIR /app
 
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
+# --legacy-peer-deps: react-leaflet 5.x는 react 19 peer를 요구하나
+# 우리는 react 18.3 사용 → peer 충돌 bypass (react-leaflet 5.x가 react 18에서도 동작 확인됨)
+RUN npm ci --legacy-peer-deps
 
 COPY frontend/ .
 
