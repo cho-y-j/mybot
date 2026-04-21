@@ -21,6 +21,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Application code
 COPY backend/ .
 
+# 행정동 경계 GeoJSON (.dockerignore에서 data/ 차단되므로 명시적 포함)
+COPY backend/data/geo/ ./data/geo/
+
 # Non-root user
 RUN useradd -m appuser && chown -R appuser:appuser /app
 USER appuser
