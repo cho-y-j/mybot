@@ -1363,8 +1363,28 @@ function ScheduleTab() {
 
   return (
     <div className="space-y-6">
+      {/* 2026-04-21: mybot 캘린더 통합 안내 */}
+      <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-4 space-y-2">
+        <p className="text-sm font-semibold text-amber-600 dark:text-amber-400">
+          일정 관리가 mybot 대시보드로 통합됩니다
+        </p>
+        <p className="text-xs text-[var(--muted)]">
+          <strong>새 일정·수정·반복 설정은 mybot 캘린더에서</strong> 입력해주세요. 한 줄 받아쓰기 · 카톡 복붙 · 음성 입력 · 자동 지오코딩 · 어제 회고가 모두 지원됩니다.
+          <br />
+          공개로 설정한 일정은 자동으로 이 홈페이지에 표시됩니다.
+        </p>
+        <a
+          href="/dashboard/calendar"
+          className="inline-flex items-center gap-1.5 mt-1 text-sm font-medium text-blue-500 hover:underline"
+        >
+          mybot 캘린더로 이동 →
+        </a>
+      </div>
+
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-[var(--foreground)]">일정 관리</h2>
+        <h2 className="text-lg font-semibold text-[var(--foreground)]">
+          일정 관리 <span className="text-xs text-[var(--muted)] font-normal">(legacy — 수동 입력)</span>
+        </h2>
         <button onClick={() => { resetForm(); setAdding(true); }} className={btnPrimary}>
           <span className="flex items-center gap-1.5"><IconifyIcon icon="solar:add-circle-bold" width="16" height="16" />추가</span>
         </button>

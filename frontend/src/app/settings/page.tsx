@@ -186,6 +186,9 @@ export default function SettingsPage() {
         </div>
       )}
 
+      {/* 일정 관리 설정 */}
+      <ScheduleDefaultPublicCard />
+
       {/* 텔레그램 알림 설정 */}
       <div className="card">
         <div className="flex items-center justify-between mb-4">
@@ -363,6 +366,68 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+
+function ScheduleDefaultPublicCard() {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [value, setValue] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await api.getScheduleSettings();
+        setValue(!!r.schedule_default_public);
+      } catch {}
+      setLoading(false);
+    })();
+  }, []);
+
+  const toggle = async () => {
+    const next = !value;
+    setSaving(true);
+    setMsg('');
+    try {
+      await api.updateScheduleSettings({ schedule_default_public: next });
+      setValue(next);
+      setMsg(next ? '이제 새 일정은 기본적으로 홈페이지에 공개됩니다.' : '이제 새 일정은 기본 내부 전용입니다. 공개하려면 일정별로 체크하세요.');
+    } catch (e: any) {
+      setMsg(e?.message || '저장 실패');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="card">
+      <h3 className="font-semibold mb-3">일정 관리</h3>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="flex-1 min-w-[240px]">
+          <p className="text-sm font-medium">새 일정을 자동으로 홈페이지에 공개</p>
+          <p className="text-xs text-[var(--muted)] mt-1">
+            켜면 일정 추가 시 기본값이 <strong>공개</strong>가 됩니다 (캠프 일정을 적극 노출).<br />
+            끄면 기본값이 <strong>내부</strong>가 되며, 공개하려면 일정별로 체크해야 합니다.
+          </p>
+          {msg && <p className="text-xs text-blue-500 mt-2">{msg}</p>}
+        </div>
+        <button
+          type="button"
+          onClick={toggle}
+          disabled={loading || saving}
+          className={`relative inline-flex h-7 w-12 items-center rounded-full transition ${
+            value ? 'bg-blue-500' : 'bg-[var(--card-border)]'
+          } disabled:opacity-50`}
+          aria-pressed={value}
+        >
+          <span
+            className={`inline-block h-5 w-5 transform rounded-full bg-white transition ${
+              value ? 'translate-x-6' : 'translate-x-1'
+            }`}
+          />
+        </button>
+      </div>
     </div>
   );
 }

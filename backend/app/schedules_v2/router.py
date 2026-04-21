@@ -351,3 +351,45 @@ async def parse_natural_input(
 
     from app.schedules_v2.parser import parse_schedule_text
     return await parse_schedule_text(payload)
+
+
+# ─── 캠프 설정 ──────────────────────────────────────────────────────────────
+
+@router.get("/settings/me")
+async def get_schedule_settings(
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """캠프의 일정 관련 설정 — 홈페이지 공개 기본값 등."""
+    from sqlalchemy import text
+    tid = user.get("tenant_id")
+    if not tid:
+        raise HTTPException(403, "No tenant")
+
+    row = (await db.execute(
+        text("SELECT COALESCE(schedule_default_public, false) FROM tenants WHERE id = :tid"),
+        {"tid": str(tid)},
+    )).scalar()
+    return {"schedule_default_public": bool(row)}
+
+
+@router.patch("/settings/me")
+async def update_schedule_settings(
+    payload: dict,
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """캠프 일정 설정 업데이트 — schedule_default_public 토글."""
+    from sqlalchemy import text
+    tid = user.get("tenant_id")
+    if not tid:
+        raise HTTPException(403, "No tenant")
+    if "schedule_default_public" not in payload:
+        raise HTTPException(400, "missing schedule_default_public")
+
+    await db.execute(
+        text("UPDATE tenants SET schedule_default_public = :val WHERE id = :tid"),
+        {"val": bool(payload["schedule_default_public"]), "tid": str(tid)},
+    )
+    await db.commit()
+    return {"schedule_default_public": bool(payload["schedule_default_public"])}

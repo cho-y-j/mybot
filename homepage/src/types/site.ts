@@ -41,7 +41,7 @@ export interface SiteData {
     sortOrder: number;
   }>;
   schedules: Array<{
-    id: number;
+    id: string | number; // mybot UUID "cs-<uuid>" 또는 legacy 수동 입력 number
     title: string;
     date: string;
     time: string | null;

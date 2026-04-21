@@ -703,6 +703,17 @@ class ApiClient {
       body: JSON.stringify(data),
     });
   }
+
+  getScheduleSettings() {
+    return this.request<{ schedule_default_public: boolean }>('/candidate-schedules/settings/me');
+  }
+
+  updateScheduleSettings(data: { schedule_default_public: boolean }) {
+    return this.request<{ schedule_default_public: boolean }>(
+      '/candidate-schedules/settings/me',
+      { method: 'PATCH', body: JSON.stringify(data) },
+    );
+  }
 }
 
 export const api = new ApiClient();

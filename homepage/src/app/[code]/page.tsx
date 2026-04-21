@@ -67,6 +67,65 @@ async function mergeAiNews(
 }
 
 
+/**
+ * 수동 홈페이지 일정(homepage.schedules) + mybot 공개 일정(candidate_schedules visibility='public')
+ * 을 병합해서 반환. electionId 있으면 mybot 공개 일정 우선, 없으면 homepage 수동만.
+ * Phase 2 (2026-04-21): 일정 관리 일원화 진행 중 — 편집은 mybot 캘린더에서만.
+ */
+async function mergeCandidateSchedules(
+  electionId: string | null,
+  manualSchedules: any[],
+): Promise<any[]> {
+  const manual = manualSchedules.map((s) => ({
+    id: String(s.id),
+    title: s.title,
+    date: s.date.toISOString().split("T")[0],
+    time: s.time,
+    location: s.location,
+  }));
+
+  if (!electionId) return manual;
+
+  try {
+    const aiRows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT cs.id::text AS id, cs.title, cs.starts_at, cs.ends_at, cs.all_day,
+              cs.location, cs.category, cs.admin_sigungu, cs.admin_dong
+         FROM public.candidate_schedules cs
+         WHERE cs.election_id = $1::uuid
+           AND cs.visibility = 'public'
+           AND cs.status != 'canceled'
+           AND cs.ends_at >= NOW()
+         ORDER BY cs.starts_at ASC
+         LIMIT 10`,
+      electionId,
+    );
+
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const aiList = aiRows.map((r: any) => {
+      const starts = new Date(r.starts_at);
+      const ends = new Date(r.ends_at);
+      const timeStr = r.all_day
+        ? "종일"
+        : `${pad(starts.getHours())}:${pad(starts.getMinutes())}~${pad(ends.getHours())}:${pad(ends.getMinutes())}`;
+      const locDetail =
+        r.admin_sigungu && r.admin_dong ? ` (${r.admin_sigungu} ${r.admin_dong})` : "";
+      return {
+        id: `cs-${r.id}`, // manual과 구분
+        title: r.title,
+        date: starts.toISOString().split("T")[0],
+        time: timeStr,
+        location: r.location ? `${r.location}${locDetail}` : null,
+      };
+    });
+
+    // electionId 있으면 mybot 공개 일정 우선 — 수동은 Phase 2-D 마이그레이션 후 제거 예정
+    return aiList.length > 0 ? aiList : manual;
+  } catch {
+    return manual;
+  }
+}
+
+
 async function getSiteData(code: string): Promise<SiteData | null> {
   const user = await prisma.user.findUnique({
     where: { code, isActive: true },
@@ -167,13 +226,7 @@ async function getSiteData(code: string): Promise<SiteData | null> {
       category: g.category,
       sortOrder: g.sortOrder,
     })),
-    schedules: schedules.map((s) => ({
-      id: s.id,
-      title: s.title,
-      date: s.date.toISOString().split("T")[0],
-      time: s.time,
-      location: s.location,
-    })),
+    schedules: await mergeCandidateSchedules(user.electionId, schedules),
     contacts: contacts.map((c) => ({
       id: c.id,
       type: c.type,
