@@ -409,3 +409,156 @@ def morning_result_reminder_prep():
         return {"status": "error", "error": str(e)[:200]}
     finally:
         session.close()
+
+
+# ─── 시작 30분 전 텔레그램 알림 (Phase 4-B) ──────────────────────────────────
+
+@celery_app.task(name="schedules_v2.start_reminder")
+def schedule_start_reminder():
+    """일정 시작 25~35분 이내면 텔레그램 알림 전송.
+
+    매 5분 주기. Redis 락으로 같은 일정 중복 발송 방지.
+    """
+    import redis
+    from sqlalchemy import text as sql_text
+    from app.config import get_settings
+    from app.telegram_service.reporter import _send_to_all_recipients
+
+    session = get_sync_session()
+    try:
+        settings = get_settings()
+        r = redis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
+
+        now = datetime.now(timezone.utc)
+        window_start = now + timedelta(minutes=25)
+        window_end = now + timedelta(minutes=35)
+
+        rows = session.execute(sql_text("""
+            SELECT cs.id::text AS id, cs.tenant_id::text AS tid,
+                   cs.title, cs.starts_at, cs.ends_at,
+                   cs.location, cs.admin_sigungu, cs.admin_dong,
+                   cs.category, cs.visibility
+              FROM candidate_schedules cs
+             WHERE cs.starts_at BETWEEN :ws AND :we
+               AND cs.status IN ('planned', 'in_progress')
+        """), {"ws": window_start, "we": window_end}).mappings().all()
+
+        sent_total = 0
+        for row in rows:
+            # 중복 방지 락 — 같은 일정 1시간 내 1회만
+            lock_key = f"schedules:start_reminder:{row['id']}"
+            if r.get(lock_key):
+                continue
+
+            starts_kst = row["starts_at"].astimezone(KST)
+            loc_parts = []
+            if row["location"]:
+                loc_parts.append(row["location"])
+            if row["admin_sigungu"] and row["admin_dong"]:
+                loc_parts.append(f"({row['admin_sigungu']} {row['admin_dong']})")
+
+            message = (
+                f"<b>[30분 후 일정]</b>\n\n"
+                f"<b>{row['title']}</b>\n"
+                f"시간: {starts_kst.strftime('%m/%d %H:%M')}\n"
+            )
+            if loc_parts:
+                message += f"장소: {' '.join(loc_parts)}\n"
+            message += f"\n분류: {row['category']}"
+            if row["visibility"] == "public":
+                message += "  ·  홈페이지 공개"
+
+            try:
+                sent = _run_async(_send_to_all_recipients_async(row["tid"], message, "briefing"))
+                if sent > 0:
+                    r.setex(lock_key, 3600, "1")  # 1시간 락
+                    sent_total += sent
+                    logger.info(
+                        "schedule_start_reminder_sent",
+                        schedule_id=row["id"], tenant_id=row["tid"], recipients=sent,
+                    )
+            except Exception as e:
+                logger.warning("start_reminder_send_fail", schedule_id=row["id"], error=str(e)[:120])
+
+        return {"status": "ok", "checked": len(rows), "sent": sent_total}
+    except Exception as e:
+        logger.error("start_reminder_error", error=str(e)[:200])
+        return {"status": "error", "error": str(e)[:200]}
+    finally:
+        session.close()
+
+
+# ─── 일정 종료 후 결과 입력 요청 (Phase 4-C) ────────────────────────────────
+
+@celery_app.task(name="schedules_v2.result_nudge")
+def schedule_result_nudge():
+    """일정 종료 후 30분~3시간 내 결과 미입력이면 텔레그램에 "어땠어요?" 카드.
+
+    매시간 실행. Redis 락으로 일정당 1회만 발송.
+    """
+    import redis
+    from sqlalchemy import text as sql_text
+    from app.config import get_settings
+
+    session = get_sync_session()
+    try:
+        settings = get_settings()
+        r = redis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
+
+        now = datetime.now(timezone.utc)
+        window_end = now - timedelta(minutes=30)
+        window_start = now - timedelta(hours=3)
+
+        rows = session.execute(sql_text("""
+            SELECT cs.id::text AS id, cs.tenant_id::text AS tid,
+                   cs.title, cs.starts_at, cs.ends_at,
+                   cs.admin_sigungu, cs.admin_dong, cs.location
+              FROM candidate_schedules cs
+             WHERE cs.status = 'done'
+               AND cs.result_mood IS NULL
+               AND cs.result_summary IS NULL
+               AND cs.ends_at BETWEEN :ws AND :we
+        """), {"ws": window_start, "we": window_end}).mappings().all()
+
+        sent_total = 0
+        for row in rows:
+            lock_key = f"schedules:result_nudge:{row['id']}"
+            if r.get(lock_key):
+                continue
+
+            ends_kst = row["ends_at"].astimezone(KST)
+            message = (
+                f"<b>[결과 회고]</b> {row['title']}\n"
+                f"{ends_kst.strftime('%m/%d %H:%M')} 종료\n\n"
+                f"어떠셨어요? 웹에서 한 줄(좋음/보통/별로 + 메모)로 기록해주세요:\n"
+                f"https://ai.on1.kr/easy/calendar"
+            )
+
+            try:
+                sent = _run_async(_send_to_all_recipients_async(row["tid"], message, "briefing"))
+                if sent > 0:
+                    # 긴 락 — 일정당 한 번만
+                    r.setex(lock_key, 86400, "1")
+                    sent_total += sent
+                    logger.info(
+                        "schedule_result_nudge_sent",
+                        schedule_id=row["id"], tenant_id=row["tid"], recipients=sent,
+                    )
+            except Exception as e:
+                logger.warning("result_nudge_send_fail", schedule_id=row["id"], error=str(e)[:120])
+
+        return {"status": "ok", "checked": len(rows), "sent": sent_total}
+    except Exception as e:
+        logger.error("result_nudge_error", error=str(e)[:200])
+        return {"status": "error", "error": str(e)[:200]}
+    finally:
+        session.close()
+
+
+async def _send_to_all_recipients_async(tenant_id: str, message: str, filter_type: str) -> int:
+    """Celery → async reporter 호출 브릿지."""
+    from app.database import async_session_factory
+    from app.telegram_service.reporter import _send_to_all_recipients
+
+    async with async_session_factory() as db:
+        return await _send_to_all_recipients(db, tenant_id, message, filter_type)

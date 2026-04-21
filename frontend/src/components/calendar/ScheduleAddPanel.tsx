@@ -9,7 +9,7 @@ import {
   CATEGORY_LABELS, CATEGORY_COLORS, ScheduleCategory,
 } from '@/lib/schedules';
 
-type Mode = 'single' | 'multi' | 'manual';
+type Mode = 'single' | 'multi' | 'manual' | 'photo';
 
 interface Props {
   electionId: string;
@@ -122,11 +122,12 @@ export default function ScheduleAddPanel({
   return (
     <div className="border border-blue-500/30 bg-blue-500/5 rounded-xl p-4 space-y-3">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex gap-2 text-sm">
+        <div className="flex gap-2 text-sm flex-wrap">
           {[
             { v: 'single' as const, label: '한 줄' },
             { v: 'multi' as const, label: '여러 줄 붙여넣기' },
             { v: 'manual' as const, label: '수동 입력' },
+            { v: 'photo' as const, label: '현장 사진' },
           ].map((m) => (
             <button
               key={m.v}
@@ -208,6 +209,14 @@ export default function ScheduleAddPanel({
             {parsing ? 'AI 해석 중… (4~15초 소요)' : 'AI로 일괄 파싱'}
           </button>
         </div>
+      )}
+
+      {mode === 'photo' && (
+        <PhotoExifMode
+          electionId={electionId}
+          candidateId={candidateId}
+          onSaved={onSaved}
+        />
       )}
 
       {mode === 'manual' && (
@@ -394,5 +403,166 @@ function VoiceInputButton({ onResult }: { onResult: (text: string) => void }) {
     >
       {listening ? '듣는 중…' : '음성'}
     </button>
+  );
+}
+
+
+/** 사진 EXIF로 일정 역방향 생성 — GPS 좌표·촬영시각 추출하여 일정 자동 채움. 파일 업로드 없음 (메타데이터만). */
+function PhotoExifMode({
+  electionId, candidateId, onSaved,
+}: {
+  electionId: string; candidateId: string; onSaved: () => void;
+}) {
+  const [extracted, setExtracted] = useState<{
+    lat?: number; lng?: number; takenAt?: string; preview?: string;
+  } | null>(null);
+  const [title, setTitle] = useState('');
+  const [category, setCategory] = useState<ScheduleCategory>('street');
+  const [isPublic, setIsPublic] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [address, setAddress] = useState<string>('');
+
+  const handleFile = async (file: File) => {
+    setLoading(true);
+    setError(null);
+    setExtracted(null);
+    try {
+      const { default: exifr } = await import('exifr');
+      const [meta, preview] = await Promise.all([
+        exifr.parse(file, ['DateTimeOriginal', 'CreateDate', 'latitude', 'longitude', 'GPSLatitude', 'GPSLongitude']),
+        new Promise<string>((resolve) => {
+          const r = new FileReader();
+          r.onload = () => resolve(r.result as string);
+          r.readAsDataURL(file);
+        }),
+      ]);
+
+      if (!meta || (!meta.latitude && !meta.GPSLatitude)) {
+        setError('이 사진에는 GPS 좌표가 없습니다. 카메라 위치 정보 ON 상태로 찍은 사진을 올려주세요.');
+        setLoading(false);
+        return;
+      }
+
+      const lat = meta.latitude ?? meta.GPSLatitude;
+      const lng = meta.longitude ?? meta.GPSLongitude;
+      const taken = meta.DateTimeOriginal || meta.CreateDate;
+
+      setExtracted({
+        lat, lng,
+        takenAt: taken ? new Date(taken).toISOString() : new Date().toISOString(),
+        preview,
+      });
+
+      // 역지오코딩 (백엔드 카카오 API 호출) — 백엔드 생성 후 저장 시점에 자동 처리됨
+      // 여기서는 화면 표시용으로 좌표 텍스트만
+      setAddress(`위도 ${lat.toFixed(5)}, 경도 ${lng.toFixed(5)}`);
+    } catch (e: any) {
+      setError(e?.message || 'EXIF 파싱 실패 — 다른 사진으로 시도해주세요.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!extracted || !title.trim()) {
+      setError('제목을 입력하세요');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const starts = new Date(extracted.takenAt!);
+      const ends = new Date(starts.getTime() + 2 * 60 * 60 * 1000); // 2h 기본
+      await api.createCandidateSchedule(electionId, {
+        candidate_id: candidateId,
+        title,
+        location: address,
+        starts_at: starts.toISOString(),
+        ends_at: ends.toISOString(),
+        category,
+        visibility: isPublic ? 'public' : undefined,
+        // lat/lng는 location 텍스트 기반 지오코딩이 자동 처리, 수동으로 주입하려면 API 확장 필요
+      });
+      setExtracted(null);
+      setTitle('');
+      onSaved();
+    } catch (e: any) {
+      setError(e?.message || '저장 실패');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-[var(--muted)]">
+        유세 현장에서 찍은 사진을 올리면 <strong>촬영 시각 + GPS 좌표</strong>를 자동 추출해 일정을 만듭니다.
+        사진 파일은 서버에 저장되지 않습니다 (메타데이터만 사용).
+      </p>
+
+      <input
+        type="file"
+        accept="image/*"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) handleFile(f);
+        }}
+        className="block w-full text-sm border rounded-lg p-2 bg-[var(--card-bg)] border-[var(--card-border)]"
+      />
+
+      {loading && <p className="text-xs text-blue-500">EXIF 분석 중…</p>}
+
+      {extracted && (
+        <div className="border border-[var(--card-border)] rounded-lg p-3 space-y-2">
+          {extracted.preview && (
+            <img src={extracted.preview} alt="미리보기" className="max-h-40 rounded border border-[var(--card-border)]" />
+          )}
+          <div className="text-xs text-[var(--muted)] space-y-0.5">
+            <div>촬영 시각: {new Date(extracted.takenAt!).toLocaleString('ko-KR')}</div>
+            <div>위치: {address}</div>
+          </div>
+
+          <div>
+            <label className="text-xs text-[var(--muted)] mb-1 block">일정 제목</label>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="예: 용암동 거리인사 (현장 사진)"
+              className="w-full px-3 py-2 border rounded bg-[var(--card-bg)] border-[var(--card-border)] text-sm"
+            />
+          </div>
+
+          <div className="flex items-center gap-3 flex-wrap text-sm">
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value as ScheduleCategory)}
+              className="px-2 py-1 border rounded bg-[var(--card-bg)] border-[var(--card-border)]"
+            >
+              {Object.entries(CATEGORY_LABELS).map(([k, v]) => (
+                <option key={k} value={k}>{v}</option>
+              ))}
+            </select>
+            <label className="flex items-center gap-1">
+              <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} />
+              공개
+            </label>
+          </div>
+
+          <button
+            onClick={handleSave}
+            disabled={saving || !title.trim()}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold disabled:opacity-50"
+          >
+            {saving ? '저장 중…' : '일정 생성'}
+          </button>
+        </div>
+      )}
+
+      {error && (
+        <div className="text-sm text-rose-500 bg-rose-500/10 px-3 py-2 rounded">{error}</div>
+      )}
+    </div>
   );
 }

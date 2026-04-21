@@ -2667,6 +2667,14 @@ celery_app.conf.beat_schedule = {
         "task": "schedules_v2.media_match",
         "schedule": 3600.0,  # 매시간 — status=done 일정에 관련 뉴스 매칭
     },
+    "candidate-schedules-start-reminder": {
+        "task": "schedules_v2.start_reminder",
+        "schedule": 300.0,  # 5분 — 일정 시작 30분 전 텔레그램 알림
+    },
+    "candidate-schedules-result-nudge": {
+        "task": "schedules_v2.result_nudge",
+        "schedule": 3600.0,  # 매시간 — 일정 종료 후 결과 미입력 텔레그램 회고 질문
+    },
 }
 
 # schedules_v2 태스크 등록 (import 순간 Celery에 registered)
