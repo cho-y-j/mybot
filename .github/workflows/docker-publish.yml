@@ -17,6 +17,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Download 행정동 GeoJSON (vuski/admdongkor)
+        run: |
+          mkdir -p backend/data/geo
+          curl -sL -o backend/data/geo/HangJeongDong_ver20260201.geojson \
+            https://raw.githubusercontent.com/vuski/admdongkor/master/ver20260201/HangJeongDong_ver20260201.geojson
+          ls -lh backend/data/geo/
+
       - name: Log in to the Container registry
         uses: docker/login-action@v3
         with:
