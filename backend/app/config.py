@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     YOUTUBE_API_KEY: str = ""
     YOUTUBE_API_KEY_2: str = ""   # fallback 키 (1차 quotaExceeded 시 자동 전환 → 일일 20,000 unit)
 
+    # --- Kakao (지오코딩 + 지도 히트맵) ---
+    KAKAO_REST_API_KEY: str = ""      # https://developers.kakao.com REST API 키
+    KAKAO_JS_API_KEY: str = ""        # 프론트엔드 지도 렌더용 (공개)
+
     # --- Admin ---
     ADMIN_EMAIL: str = "admin@electionpulse.kr"
     ADMIN_INITIAL_PASSWORD: str = "CHANGE-THIS"

@@ -24,6 +24,7 @@ const ICON = {
 // 일상
 const MENU_DAILY = [
   { href: '/easy', label: '홈', icon: ICON.home },
+  { href: '/easy/calendar', label: '일정', icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z' },
   { href: '/easy/reports', label: '보고서', icon: ICON.report },
   { href: '/easy/assistant', label: 'AI 비서', icon: ICON.chat },
 ];

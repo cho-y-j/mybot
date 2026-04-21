@@ -2649,7 +2649,24 @@ celery_app.conf.beat_schedule = {
         "task": "system.claude_token_keepalive",
         "schedule": 14400.0,  # 4시간 (토큰 TTL 8시간의 절반)
     },
+    # ─── schedules_v2 (후보자 일정 관리) ─────────────────────
+    "candidate-schedules-auto-complete": {
+        "task": "schedules_v2.auto_complete_past",
+        "schedule": 3600.0,  # 매시간
+    },
+    "candidate-schedules-expand-recurring": {
+        "task": "schedules_v2.expand_recurring",
+        # 매일 03:00 KST = 18:00 UTC 전날. 초 단위 간격으로는 매일 실행 유사 효과.
+        "schedule": 86400.0,  # 24시간
+    },
+    "candidate-schedules-morning-reminder": {
+        "task": "schedules_v2.morning_result_reminder_prep",
+        "schedule": 3600.0,  # 매시간 — 07:00 KST 브리핑 전에 최신 값 보장
+    },
 }
+
+# schedules_v2 태스크 등록 (import 순간 Celery에 registered)
+import app.schedules_v2.tasks  # noqa: F401, E402
 
 
 @celery_app.task(name="system.claude_token_keepalive")

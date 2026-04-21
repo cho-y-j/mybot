@@ -28,6 +28,7 @@ from app.elections.events_router import router as events_router
 from app.elections.survey_router import router as survey_router
 from app.strategy.router import router as strategy_router
 from app.homepage_sso.router import router as homepage_sso_router
+from app.schedules_v2.router import router as candidate_schedules_router
 from app.common.middleware import (
     RateLimitMiddleware,
     AuditLogMiddleware,
@@ -101,6 +102,7 @@ app.include_router(events_router, prefix="/api/events", tags=["Events & Recommen
 app.include_router(survey_router, prefix="/api/surveys", tags=["Surveys"])
 app.include_router(strategy_router, prefix="/api/strategy", tags=["Strategy 4-Quadrant"])
 app.include_router(homepage_sso_router, tags=["Homepage SSO"])  # /api/sso/* — myhome 브릿지
+app.include_router(candidate_schedules_router, prefix="/api/candidate-schedules", tags=["Candidate Schedules"])
 
 
 # ──────────────── Health Check ─────────────────────────────────────────────

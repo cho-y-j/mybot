@@ -645,6 +645,64 @@ class ApiClient {
   deleteYoutubeItem(itemId: string) {
     return this.request<any>(`/analysis/youtube/${itemId}`, { method: 'DELETE' });
   }
+
+  // ─── Candidate Schedules (v2) ───────────────────────────────
+  listCandidateSchedules(electionId: string, params: {
+    from?: string; to?: string; candidate_id?: string; category?: string; status?: string; visibility?: string;
+  } = {}) {
+    const q = new URLSearchParams();
+    if (params.from) q.set('from', params.from);
+    if (params.to) q.set('to', params.to);
+    if (params.candidate_id) q.set('candidate_id', params.candidate_id);
+    if (params.category) q.set('category', params.category);
+    if (params.status) q.set('status', params.status);
+    if (params.visibility) q.set('visibility', params.visibility);
+    const qs = q.toString() ? `?${q.toString()}` : '';
+    return this.request<any[]>(`/candidate-schedules/${electionId}${qs}`);
+  }
+
+  listYesterdayCandidateSchedules(electionId: string) {
+    return this.request<any[]>(`/candidate-schedules/${electionId}/yesterday`);
+  }
+
+  createCandidateSchedule(electionId: string, data: any) {
+    return this.request<any>(`/candidate-schedules/${electionId}`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  createCandidateSchedulesBulk(electionId: string, items: any[]) {
+    return this.request<any[]>(`/candidate-schedules/${electionId}/bulk`, {
+      method: 'POST',
+      body: JSON.stringify(items),
+    });
+  }
+
+  parseCandidateScheduleText(electionId: string, text: string, candidate_id: string, default_date?: string) {
+    return this.request<any>(`/candidate-schedules/${electionId}/parse`, {
+      method: 'POST',
+      body: JSON.stringify({ text, candidate_id, default_date }),
+    });
+  }
+
+  updateCandidateSchedule(scheduleId: string, data: any) {
+    return this.request<any>(`/candidate-schedules/${scheduleId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  cancelCandidateSchedule(scheduleId: string) {
+    return this.request<any>(`/candidate-schedules/${scheduleId}`, { method: 'DELETE' });
+  }
+
+  updateCandidateScheduleResult(scheduleId: string, data: { result_mood?: string; result_summary?: string; attended_count?: number }) {
+    return this.request<any>(`/candidate-schedules/${scheduleId}/result`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
 }
 
 export const api = new ApiClient();
