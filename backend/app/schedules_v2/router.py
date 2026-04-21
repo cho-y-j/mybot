@@ -373,6 +373,117 @@ async def get_schedule_settings(
     return {"schedule_default_public": bool(row)}
 
 
+@router.get("/{election_id}/points")
+async def schedule_points(
+    election_id: UUID,
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+    candidate_id: Optional[UUID] = None,
+    days: int = Query(60, ge=1, le=365),
+):
+    """
+    지도 마커용 좌표 배열. 최근 N일 일정 중 location_lat/lng 있는 건만.
+    응답: [{id, title, category, lat, lng, starts_at, status, visits(동별 합계)}]
+    """
+    from sqlalchemy import text as sql_text
+
+    await _check_access(db, user, election_id)
+    tid = str(user["tenant_id"])
+
+    if not candidate_id:
+        from app.common.election_access import get_our_candidate_id
+        our_id = await get_our_candidate_id(db, tid, election_id)
+        if not our_id:
+            return {"items": []}
+        cid_str = our_id
+    else:
+        cid_str = str(candidate_id)
+
+    sql = f"""
+        SELECT id::text AS id, title, category, location,
+               admin_sido, admin_sigungu, admin_dong,
+               location_lat, location_lng,
+               starts_at, status
+          FROM candidate_schedules
+         WHERE candidate_id = cast(:cid as uuid)
+           AND location_lat IS NOT NULL AND location_lng IS NOT NULL
+           AND status != 'canceled'
+           AND starts_at >= NOW() - INTERVAL '{int(days)} days'
+         ORDER BY starts_at DESC
+    """
+    rows = (await db.execute(sql_text(sql), {"cid": cid_str})).mappings().all()
+    return {
+        "candidate_id": cid_str,
+        "items": [dict(r) for r in rows],
+    }
+
+
+@router.get("/{election_id}/heatmap")
+async def heatmap_by_dong(
+    election_id: UUID,
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+    candidate_id: Optional[UUID] = None,
+    days: int = Query(30, ge=1, le=365),
+):
+    """
+    읍면동별 방문 집계 — Phase 3 지도 히트맵 데이터 소스.
+    기본: 해당 선거 우리 후보 최근 30일.
+    응답: [{admin_sido, admin_sigungu, admin_dong, visits, last_visit_at, categories: {rally: 2, street: 3, ...}}]
+    """
+    from sqlalchemy import text as sql_text
+
+    await _check_access(db, user, election_id)
+
+    tid = str(user["tenant_id"])
+
+    # 후보 미지정 시 우리 후보 자동
+    if not candidate_id:
+        from app.common.election_access import get_our_candidate_id
+        our_id = await get_our_candidate_id(db, tid, election_id)
+        if not our_id:
+            raise HTTPException(400, "candidate_id not specified and no our-candidate")
+        candidate_id_str = our_id
+    else:
+        candidate_id_str = str(candidate_id)
+
+    # days는 pydantic Query(ge=1, le=365)로 검증된 int라 f-string 안전
+    sql = f"""
+        SELECT admin_sido, admin_sigungu, admin_dong,
+               COUNT(*)::int AS visits,
+               MAX(starts_at) AS last_visit_at,
+               jsonb_object_agg(category, cnt) AS categories
+          FROM (
+            SELECT admin_sido, admin_sigungu, admin_dong, category, starts_at,
+                   COUNT(*) OVER (PARTITION BY admin_sido, admin_sigungu, admin_dong, category) AS cnt
+              FROM candidate_schedules
+             WHERE candidate_id = cast(:cid as uuid)
+               AND admin_dong IS NOT NULL
+               AND status != 'canceled'
+               AND starts_at >= NOW() - INTERVAL '{int(days)} days'
+          ) sub
+         GROUP BY admin_sido, admin_sigungu, admin_dong
+         ORDER BY visits DESC
+    """
+    rows = (await db.execute(sql_text(sql), {"cid": candidate_id_str})).mappings().all()
+
+    return {
+        "candidate_id": candidate_id_str,
+        "days": days,
+        "items": [
+            {
+                "admin_sido": r["admin_sido"],
+                "admin_sigungu": r["admin_sigungu"],
+                "admin_dong": r["admin_dong"],
+                "visits": r["visits"],
+                "last_visit_at": r["last_visit_at"].isoformat() if r["last_visit_at"] else None,
+                "categories": r["categories"],
+            }
+            for r in rows
+        ],
+    }
+
+
 @router.patch("/settings/me")
 async def update_schedule_settings(
     payload: dict,

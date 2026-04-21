@@ -163,6 +163,78 @@ async def get_today_actions(
     except Exception as e:
         logger.warning("today_strength_error", error=str(e)[:200])
 
+    # ── 일정 관련 추천 (Phase 3) ──────────────────────────
+
+    # 어제 결과 미입력 (우선)
+    try:
+        pending = (await db.execute(text("""
+            SELECT COUNT(*)::int AS cnt
+              FROM candidate_schedules
+             WHERE tenant_id = cast(:tid as uuid)
+               AND status = 'done'
+               AND result_mood IS NULL AND result_summary IS NULL
+               AND starts_at >= NOW() - INTERVAL '2 days'
+        """), {"tid": tid})).scalar() or 0
+        if pending > 0:
+            actions.append({
+                "priority": "medium",
+                "icon": "📝",
+                "type": "schedule_result_pending",
+                "title": "일정 결과 입력 필요",
+                "summary": f"어제 완료한 일정 {pending}건에 결과가 없습니다",
+                "detail": "좋음/보통/별로 한 번만 눌러도 AI가 참고합니다",
+                "action": "결과 입력하기",
+                "action_link": "/easy/calendar",
+                "secondary": None,
+            })
+    except Exception as e:
+        logger.warning("today_schedule_pending_error", error=str(e)[:200])
+
+    # 빈 슬롯 + 소외 동 추천 (유세 일정 추가 권장)
+    if our_cand_id:
+        try:
+            # 최근 30일 방문 0회인 동 + 최근 7일 일정 개수
+            dong_data = (await db.execute(text("""
+                WITH visited AS (
+                    SELECT admin_dong, COUNT(*)::int AS cnt,
+                           MAX(starts_at) AS last_v
+                      FROM candidate_schedules
+                     WHERE candidate_id = cast(:cid as uuid)
+                       AND admin_dong IS NOT NULL
+                       AND status != 'canceled'
+                       AND starts_at >= NOW() - INTERVAL '30 days'
+                     GROUP BY admin_dong
+                )
+                SELECT admin_dong, cnt, EXTRACT(days FROM (NOW() - last_v))::int AS days_since
+                  FROM visited
+                 ORDER BY cnt ASC, days_since DESC NULLS FIRST
+                 LIMIT 3
+            """), {"cid": our_cand_id})).mappings().all()
+
+            upcoming_7d = (await db.execute(text("""
+                SELECT COUNT(*)::int FROM candidate_schedules
+                 WHERE candidate_id = cast(:cid as uuid)
+                   AND status != 'canceled'
+                   AND starts_at BETWEEN NOW() AND NOW() + INTERVAL '7 days'
+            """), {"cid": our_cand_id})).scalar() or 0
+
+            # 향후 7일 일정이 3건 미만이면 유세 권장
+            if upcoming_7d < 3 and dong_data:
+                dong_names = [d["admin_dong"] for d in dong_data if d.get("admin_dong")][:3]
+                actions.append({
+                    "priority": "medium",
+                    "icon": "📍",
+                    "type": "schedule_coverage",
+                    "title": "유세 일정 추가 권장",
+                    "summary": f"향후 7일 일정 {upcoming_7d}건 — 더 많이 현장으로",
+                    "detail": f"적게 방문한 동: {', '.join(dong_names)}" if dong_names else "",
+                    "action": "일정 추가",
+                    "action_link": "/easy/calendar",
+                    "secondary": {"label": "지도로 보기", "link": "/dashboard/calendar"},
+                })
+        except Exception as e:
+            logger.warning("today_schedule_coverage_error", error=str(e)[:200])
+
     # 5. 수집 현황 (액션 아닌 상태 요약)
     try:
         counts = (await db.execute(text("""

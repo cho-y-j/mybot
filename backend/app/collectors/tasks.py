@@ -2663,6 +2663,10 @@ celery_app.conf.beat_schedule = {
         "task": "schedules_v2.morning_result_reminder_prep",
         "schedule": 3600.0,  # 매시간 — 07:00 KST 브리핑 전에 최신 값 보장
     },
+    "candidate-schedules-media-match": {
+        "task": "schedules_v2.media_match",
+        "schedule": 3600.0,  # 매시간 — status=done 일정에 관련 뉴스 매칭
+    },
 }
 
 # schedules_v2 태스크 등록 (import 순간 Celery에 registered)

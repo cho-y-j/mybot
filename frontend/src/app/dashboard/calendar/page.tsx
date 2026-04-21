@@ -17,6 +17,7 @@ import ScheduleAddPanel from '@/components/calendar/ScheduleAddPanel';
 import ScheduleCard from '@/components/calendar/ScheduleCard';
 import ScheduleBottomSheet from '@/components/calendar/ScheduleBottomSheet';
 import MonthlyCalendar from '@/components/calendar/MonthlyCalendar';
+import ScheduleHeatmap from '@/components/calendar/ScheduleHeatmap';
 
 type Tab = 'today' | 'week' | 'month' | 'map';
 
@@ -308,15 +309,18 @@ export default function CalendarPage() {
         />
       )}
 
-      {/* ─── 지도 탭 (Phase 3 placeholder) ─── */}
+      {/* ─── 지도 탭 ─── */}
       {tab === 'map' && (
-        <div className="border border-dashed border-[var(--card-border)] rounded-xl p-10 text-center">
-          <p className="text-lg font-semibold mb-2">지도 히트맵 — 준비 중</p>
-          <p className="text-sm text-[var(--muted)] max-w-md mx-auto">
-            Phase 3에서 제공: 읍면동 방문 히트맵 · 소외 지역 TOP 5 · 투표소 핀 토글.<br />
-            현재 일정에 입력된 장소는 백그라운드에서 카카오맵 지오코딩으로 위경도·동 정보를 자동 저장하고 있습니다.
-          </p>
-        </div>
+        <ScheduleHeatmap
+          electionId={election.id}
+          onSelectSchedule={setSelected}
+          onAddForLocation={(loc) => {
+            setShowAdd(true);
+            setTimeout(() => {
+              document.querySelector('.border-blue-500\\/30')?.scrollIntoView({ behavior: 'smooth' });
+            }, 50);
+          }}
+        />
       )}
 
       {/* 상세 Bottom Sheet */}

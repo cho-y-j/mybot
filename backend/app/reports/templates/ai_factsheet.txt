@@ -71,3 +71,28 @@
   {{ h }}
 {% endfor %}
 {% endif %}
+
+{% if recent_schedules and (recent_schedules.past or recent_schedules.upcoming) %}
+=== 후보 일정 (최근 7일 + 향후 7일) ===
+{% if recent_schedules.past %}
+[어제·지난주 완료/진행 일정]
+{% for s in recent_schedules.past %}
+  {{ s.when }} {{ s.title }} ({{ s.category }}){% if s.dong %} @{{ s.dong }}{% elif s.location %} @{{ s.location }}{% endif %}
+{%- if s.result_mood or s.result_summary %}
+    결과: {{ s.result_mood or "" }}{% if s.result_summary %} — {{ s.result_summary }}{% endif %}{% if s.attended_count %} (참석 {{ s.attended_count }}명){% endif %}
+{%- endif %}
+{% endfor %}
+{% endif %}
+{% if recent_schedules.upcoming %}
+[향후 7일 예정 일정]
+{% for s in recent_schedules.upcoming %}
+  {{ s.when }} {{ s.title }} ({{ s.category }}){% if s.dong %} @{{ s.dong }}{% elif s.location %} @{{ s.location }}{% endif %}{% if s.visibility == "public" %} [공개]{% endif %}
+{% endfor %}
+{% endif %}
+{% if recent_schedules.dong_visits %}
+[최근 30일 동별 방문 — 소외 지역 진단용]
+{% for d in recent_schedules.dong_visits[:10] %}
+  {{ d.dong }}: {{ d.visits }}회 (마지막 {{ d.last_visit_days }}일 전)
+{% endfor %}
+{% endif %}
+{% endif %}

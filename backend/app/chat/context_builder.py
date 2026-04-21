@@ -170,8 +170,68 @@ async def build_chat_context(
         if cand.name in question:
             sections.append(await _build_candidate_detail(db, tenant_id, cand, today))
 
+    # ── 우리 후보 최근·예정 일정 (항상 포함 — 챗 질문의 "오늘/내일/지난주" 시간 표현에 필수) ──
+    if our:
+        sections.append(await _build_recent_schedules_context(db, str(our.id)))
+
     context = "\n\n".join(s for s in sections if s)
     return context
+
+
+async def _build_recent_schedules_context(db: AsyncSession, candidate_id: str) -> str:
+    """최근 7일 완료 + 향후 7일 예정 일정 블록 — Phase 3 AI 컨텍스트."""
+    from sqlalchemy import text as sql_text
+    from datetime import timezone, timedelta
+
+    utc_now = datetime.now(timezone.utc)
+    past_from = utc_now - timedelta(days=7)
+    future_to = utc_now + timedelta(days=7)
+    kst = timezone(timedelta(hours=9))
+
+    past = (await db.execute(sql_text("""
+        SELECT title, starts_at, category, location, admin_sigungu, admin_dong,
+               result_mood, result_summary, attended_count
+          FROM candidate_schedules
+         WHERE candidate_id = cast(:cid as uuid)
+           AND starts_at >= :from_ts AND starts_at <= :now_ts
+           AND status != 'canceled'
+         ORDER BY starts_at DESC LIMIT 15
+    """), {"cid": candidate_id, "from_ts": past_from, "now_ts": utc_now})).mappings().all()
+
+    upcoming = (await db.execute(sql_text("""
+        SELECT title, starts_at, category, location, admin_sigungu, admin_dong, visibility
+          FROM candidate_schedules
+         WHERE candidate_id = cast(:cid as uuid)
+           AND starts_at > :now_ts AND starts_at <= :to_ts
+           AND status != 'canceled'
+         ORDER BY starts_at ASC LIMIT 15
+    """), {"cid": candidate_id, "now_ts": utc_now, "to_ts": future_to})).mappings().all()
+
+    if not past and not upcoming:
+        return ""
+
+    lines = ["=== 우리 후보 일정 (최근 7일 + 향후 7일) ==="]
+    if past:
+        lines.append("[완료·진행 일정]")
+        for r in past:
+            when = r["starts_at"].astimezone(kst).strftime("%m/%d %H:%M") if r["starts_at"] else ""
+            loc = f"@{r['admin_sigungu']} {r['admin_dong']}" if r.get("admin_dong") else (f"@{r['location']}" if r.get("location") else "")
+            result = ""
+            if r.get("result_mood") or r.get("result_summary"):
+                result = f" → 결과: {r.get('result_mood') or ''}"
+                if r.get("result_summary"):
+                    result += f" ({r['result_summary']})"
+                if r.get("attended_count"):
+                    result += f" (참석 {r['attended_count']}명)"
+            lines.append(f"  {when} {r['title']} ({r['category']}) {loc}{result}")
+    if upcoming:
+        lines.append("[예정]")
+        for r in upcoming:
+            when = r["starts_at"].astimezone(kst).strftime("%m/%d %H:%M") if r["starts_at"] else ""
+            loc = f"@{r['admin_sigungu']} {r['admin_dong']}" if r.get("admin_dong") else (f"@{r['location']}" if r.get("location") else "")
+            vis = " [공개]" if r.get("visibility") == "public" else ""
+            lines.append(f"  {when} {r['title']} ({r['category']}) {loc}{vis}")
+    return "\n".join(lines)
 
 
 async def build_chat_context_with_citations(

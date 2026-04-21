@@ -211,6 +211,154 @@ def expand_recurring_schedules():
 
 # ─── 오전 브리핑용: 어제 결과 미입력 숫자 캐시 ──────────────────────────────
 
+@celery_app.task(name="schedules_v2.media_match")
+def media_match_schedules():
+    """완료 일정에 관련 뉴스·커뮤니티 자동 매칭.
+
+    대상: status='done' AND (media_coverage = '[]'::jsonb OR media_coverage IS NULL)
+    조건: 최근 14일 내 일정만 (오래된 일정은 DB 기사가 이미 없음)
+    매칭: 일정 ±3h 시간대 + 본문에 후보 이름 포함 + AI(Sonnet) "이 일정과 관련 있나" 판정
+    저장: media_coverage JSONB = [{type, id, title, url, sentiment, confidence}]
+    """
+    import json as _json
+    from sqlalchemy import text as sql_text
+    from app.services.ai_service import call_claude_text
+
+    session = get_sync_session()
+    try:
+        now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(days=14)
+
+        # 대상 일정 — 최대 20건씩 처리 (AI 호출 부담)
+        rows = session.execute(sql_text("""
+            SELECT cs.id::text AS id, cs.title, cs.starts_at, cs.ends_at,
+                   cs.candidate_id::text AS cand_id,
+                   cs.election_id::text AS eid,
+                   cs.admin_dong, cs.location,
+                   c.name AS cand_name
+              FROM candidate_schedules cs
+              JOIN candidates c ON c.id = cs.candidate_id
+             WHERE cs.status = 'done'
+               AND (cs.media_coverage = '[]'::jsonb OR cs.media_coverage IS NULL)
+               AND cs.starts_at >= :cutoff
+             ORDER BY cs.starts_at DESC
+             LIMIT 20
+        """), {"cutoff": cutoff}).mappings().all()
+
+        if not rows:
+            return {"status": "ok", "processed": 0}
+
+        processed = 0
+        matched_total = 0
+
+        for row in rows:
+            window_from = row["starts_at"] - timedelta(hours=3)
+            window_to = row["ends_at"] + timedelta(hours=3)
+
+            # 관련 뉴스 후보 (후보 이름 포함 + 시간대 ±3h)
+            candidates_news = session.execute(sql_text("""
+                SELECT id::text AS id, title, url, sentiment, published_at
+                  FROM news_articles
+                 WHERE election_id = cast(:eid as uuid)
+                   AND candidate_id = cast(:cand_id as uuid)
+                   AND (
+                        (published_at IS NOT NULL AND published_at BETWEEN :wfrom AND :wto)
+                     OR (published_at IS NULL AND collected_at BETWEEN :wfrom AND :wto)
+                   )
+                   AND is_relevant = true
+                 ORDER BY published_at DESC NULLS LAST, collected_at DESC
+                 LIMIT 10
+            """), {
+                "eid": row["eid"], "cand_id": row["cand_id"],
+                "wfrom": window_from, "wto": window_to,
+            }).mappings().all()
+
+            if not candidates_news:
+                # 빈 배열로 저장해서 재처리 방지 (다음 실행에서는 skip)
+                session.execute(sql_text("""
+                    UPDATE candidate_schedules
+                       SET media_coverage = '[]'::jsonb
+                     WHERE id = cast(:sid as uuid)
+                """), {"sid": row["id"]})
+                processed += 1
+                continue
+
+            # AI 판정 — 1회 호출로 전체 필터
+            prompt = f"""당신은 선거 캠프의 일정-미디어 매칭 전문가입니다.
+후보 '{row['cand_name']}'의 다음 일정이 있습니다:
+
+일정: {row['title']}
+시간: {row['starts_at'].strftime('%Y-%m-%d %H:%M')}
+장소: {row['admin_dong'] or row['location'] or '미상'}
+
+아래는 이 일정 시간대 ±3시간 이내에 수집된 뉴스 후보들입니다.
+이 중 **정말 이 일정과 관련된** 기사만 JSON 배열로 답해주세요.
+
+뉴스 후보:
+"""
+            for i, n in enumerate(candidates_news):
+                prompt += f"\n[{i}] {n['title']}\n  URL: {n['url'][:120]}\n"
+            prompt += """
+응답 형식 (JSON만, 다른 텍스트 금지):
+[{"idx": 0, "reason": "일정과 관련된 이유 한 줄", "confidence": 0.0~1.0}, ...]
+
+관련 없으면 빈 배열 []. 단순한 후보 이름 언급이지만 일정과 무관하면 제외.
+"""
+            try:
+                ai_resp = _run_async(call_claude_text(prompt, timeout=60, context="schedule_media_match", model_tier="standard"))
+            except Exception:
+                ai_resp = None
+
+            selected = []
+            if ai_resp:
+                try:
+                    # 코드 블록 제거
+                    clean = ai_resp.strip()
+                    if clean.startswith("```"):
+                        clean = clean.split("```")[1]
+                        if clean.startswith("json"):
+                            clean = clean[4:]
+                    verdicts = _json.loads(clean)
+                    for v in verdicts:
+                        idx = v.get("idx")
+                        if isinstance(idx, int) and 0 <= idx < len(candidates_news):
+                            n = candidates_news[idx]
+                            selected.append({
+                                "type": "news",
+                                "id": n["id"],
+                                "title": n["title"],
+                                "url": n["url"],
+                                "sentiment": n.get("sentiment"),
+                                "confidence": float(v.get("confidence", 0.7)),
+                                "reason": (v.get("reason") or "")[:150],
+                            })
+                except Exception as e:
+                    logger.warning("media_match_parse_fail", error=str(e)[:100], sched_id=row["id"])
+
+            # 저장 (빈 배열이어도 저장 → 재처리 방지)
+            session.execute(sql_text("""
+                UPDATE candidate_schedules
+                   SET media_coverage = cast(:cov as jsonb)
+                 WHERE id = cast(:sid as uuid)
+            """), {"sid": row["id"], "cov": _json.dumps(selected, ensure_ascii=False)})
+            processed += 1
+            matched_total += len(selected)
+
+            logger.info(
+                "media_match_done",
+                sched_id=row["id"], title=row["title"][:30],
+                candidates=len(candidates_news), matched=len(selected),
+            )
+
+        session.commit()
+        return {"status": "ok", "processed": processed, "matched": matched_total}
+    except Exception as e:
+        logger.error("media_match_error", error=str(e)[:200])
+        return {"status": "error", "error": str(e)[:200]}
+    finally:
+        session.close()
+
+
 @celery_app.task(name="schedules_v2.morning_result_reminder_prep")
 def morning_result_reminder_prep():
     """어제 `status=done AND result_summary IS NULL` 건수를 Redis에 캐시.

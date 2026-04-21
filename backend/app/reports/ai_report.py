@@ -562,6 +562,84 @@ async def _build_report_data(
         "history_summary": history_summary,
         "now_kst": now_kst.strftime("%Y-%m-%d %H:%M"),
         "sections_data": sections_data,
+        "recent_schedules": await _collect_recent_schedules(db, election_id, our_cand_id, now_kst),
+    }
+
+
+async def _collect_recent_schedules(
+    db: AsyncSession, election_id: str, our_cand_id: str | None, now_kst: datetime,
+) -> dict:
+    """최근 7일 완료 + 향후 7일 예정 일정 수집 (AI 보고서 컨텍스트용)."""
+    if not our_cand_id:
+        return {"past": [], "upcoming": [], "dong_visits": []}
+
+    from sqlalchemy import text as sql_text
+    from datetime import timezone as dtz
+
+    utc_now = now_kst.astimezone(dtz.utc)
+    past_from = utc_now - timedelta(days=7)
+    future_to = utc_now + timedelta(days=7)
+
+    # 최근 7일 완료 (결과 입력 포함)
+    past_rows = (await db.execute(sql_text("""
+        SELECT title, starts_at, ends_at, category, location,
+               admin_sigungu, admin_dong,
+               status, result_mood, result_summary, attended_count
+          FROM candidate_schedules
+         WHERE candidate_id = cast(:cid as uuid)
+           AND starts_at >= :from_ts AND starts_at <= :now_ts
+           AND status != 'canceled'
+         ORDER BY starts_at DESC
+         LIMIT 30
+    """), {"cid": our_cand_id, "from_ts": past_from, "now_ts": utc_now})).mappings().all()
+
+    # 향후 7일 예정
+    upcoming_rows = (await db.execute(sql_text("""
+        SELECT title, starts_at, ends_at, category, location,
+               admin_sigungu, admin_dong, visibility
+          FROM candidate_schedules
+         WHERE candidate_id = cast(:cid as uuid)
+           AND starts_at > :now_ts AND starts_at <= :to_ts
+           AND status != 'canceled'
+         ORDER BY starts_at ASC
+         LIMIT 30
+    """), {"cid": our_cand_id, "now_ts": utc_now, "to_ts": future_to})).mappings().all()
+
+    # 최근 30일 동별 방문
+    dong_from = utc_now - timedelta(days=30)
+    dong_rows = (await db.execute(sql_text("""
+        SELECT admin_sigungu, admin_dong, COUNT(*)::int AS visits,
+               MAX(starts_at) AS last_visit
+          FROM candidate_schedules
+         WHERE candidate_id = cast(:cid as uuid)
+           AND admin_dong IS NOT NULL
+           AND status != 'canceled'
+           AND starts_at >= :from_ts AND starts_at <= :now_ts
+         GROUP BY admin_sigungu, admin_dong
+         ORDER BY visits DESC, last_visit DESC
+    """), {"cid": our_cand_id, "from_ts": dong_from, "now_ts": utc_now})).mappings().all()
+
+    def fmt(row):
+        s = row["starts_at"]
+        return {
+            "title": row["title"],
+            "when": s.astimezone(dtz(timedelta(hours=9))).strftime("%m/%d %H:%M") if s else "",
+            "category": row["category"],
+            "location": row["location"],
+            "dong": f"{row['admin_sigungu']} {row['admin_dong']}" if row.get("admin_dong") else None,
+            **({k: row[k] for k in ("status", "result_mood", "result_summary", "attended_count") if k in row and row.get(k) is not None}),
+            **({"visibility": row["visibility"]} if "visibility" in row else {}),
+        }
+
+    return {
+        "past": [fmt(r) for r in past_rows],
+        "upcoming": [fmt(r) for r in upcoming_rows],
+        "dong_visits": [
+            {"dong": f"{r['admin_sigungu']} {r['admin_dong']}",
+             "visits": r["visits"],
+             "last_visit_days": (utc_now - r["last_visit"]).days if r["last_visit"] else None}
+            for r in dong_rows
+        ],
     }
 
 
