@@ -114,91 +114,78 @@ class CollectionScheduler:
     @staticmethod
     def _get_schedule_templates(plan: str) -> list[dict]:
         """
-        요금제별 스케줄 템플릿.
-        All plans use the 06/08/13/14/17/18 pattern.
-        Higher plans add more collection frequency.
+        요금제별 스케줄 템플릿. CLAUDE.md 2.2.5 규정:
+          07:00  수집 + 오전 브리핑 (DB 통계 요약만)
+          13:00  수집 + 오후 브리핑 (DB 통계 요약만)
+          17:30  마감 수집 (보고서 전 데이터 확보)
+          18:00  일일 종합 보고서 (Opus 16섹션 + PDF + 텔레그램)
+          월 09:00  주간 전략 보고서
         """
-        # Standard pattern for all plans
         standard = [
             {
-                "name": "오전 수집 (06:00)",
-                "type": "full_collection",
-                "times": ["06:00"],
-                "config": {"description": "전체 수집 (뉴스+커뮤니티+유튜브+트렌드+댓글)"},
-            },
-            {
-                "name": "오전 브리핑 (08:00)",
-                "type": "briefing",
-                "times": ["08:00"],
+                "name": "오전 수집+브리핑 (07:00)",
+                "type": "full_with_briefing",
+                "times": ["07:00"],
                 "config": {"briefing_type": "morning", "send_telegram": True},
             },
             {
-                "name": "오후 수집 (13:00)",
-                "type": "full_collection",
+                "name": "오후 수집+브리핑 (13:00)",
+                "type": "full_with_briefing",
                 "times": ["13:00"],
-                "config": {"description": "전체 수집 (뉴스+커뮤니티+유튜브+트렌드+댓글)"},
-            },
-            {
-                "name": "오후 브리핑 (14:00)",
-                "type": "briefing",
-                "times": ["14:00"],
                 "config": {"briefing_type": "afternoon", "send_telegram": True},
             },
             {
-                "name": "마감 수집 (17:00)",
+                "name": "마감 수집 (17:30)",
                 "type": "full_collection",
-                "times": ["17:00"],
-                "config": {"description": "전체 수집 (뉴스+커뮤니티+유튜브+트렌드+댓글)"},
+                "times": ["17:30"],
+                "config": {},
             },
             {
-                "name": "일일 보고서 (18:00)",
+                "name": "일일 종합 보고서 (18:00)",
                 "type": "briefing",
                 "times": ["18:00"],
                 "config": {"briefing_type": "daily", "send_telegram": True},
             },
+            {
+                "name": "주간 전략 보고서 (월 09:00)",
+                "type": "weekly_report",
+                "times": ["09:00"],
+                "config": {"day_of_week": "monday"},
+            },
         ]
 
         if plan == "basic":
-            # Basic: just morning/evening collection + daily report
+            # Basic: 일일 보고서만 (오전/오후 브리핑 제외)
             return [
                 {
-                    "name": "오전 수집 (06:00)",
+                    "name": "마감 수집 (17:30)",
                     "type": "full_collection",
-                    "times": ["06:00"],
+                    "times": ["17:30"],
                     "config": {},
                 },
                 {
-                    "name": "마감 수집 (17:00)",
-                    "type": "full_collection",
-                    "times": ["17:00"],
-                    "config": {},
-                },
-                {
-                    "name": "일일 보고서 (18:00)",
+                    "name": "일일 종합 보고서 (18:00)",
                     "type": "briefing",
                     "times": ["18:00"],
                     "config": {"briefing_type": "daily", "send_telegram": True},
                 },
             ]
 
-        elif plan == "pro":
-            return standard
-
-        elif plan == "enterprise":
-            # Enterprise: standard + midday collection + extra alert times
+        if plan == "enterprise":
+            # Enterprise: standard + 추가 수집 2회
             return standard + [
                 {
-                    "name": "추가 수집 (10:00)",
+                    "name": "추가 수집 (10:30)",
                     "type": "full_collection",
-                    "times": ["10:00"],
-                    "config": {"description": "추가 수집"},
+                    "times": ["10:30"],
+                    "config": {},
                 },
                 {
                     "name": "추가 수집 (15:30)",
                     "type": "full_collection",
                     "times": ["15:30"],
-                    "config": {"description": "추가 수집"},
+                    "config": {},
                 },
             ]
 
-        return standard  # Default: pro pattern
+        return standard  # pro / default

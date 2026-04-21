@@ -167,8 +167,8 @@ function ReportsInner() {
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 min-w-0">
-          {/* 목록 */}
-          <div className="space-y-2 max-h-[300px] lg:max-h-[700px] overflow-y-auto overflow-x-hidden min-w-0">
+          {/* 목록 — 모바일에서 selected 있으면 숨김 */}
+          <div className={`space-y-2 lg:max-h-[700px] overflow-y-auto overflow-x-hidden min-w-0 ${selected ? 'hidden lg:block' : ''}`}>
             {reports.slice(0, 30).map(r => (
               <button key={r.id} onClick={() => loadDetail(r.id)}
                 className={`w-full text-left p-3 rounded-lg border transition min-w-0 ${
@@ -189,9 +189,14 @@ function ReportsInner() {
           </div>
 
           {/* 내용 */}
-          <div className="lg:col-span-2 min-w-0 overflow-hidden">
+          <div className={`lg:col-span-2 min-w-0 overflow-hidden ${!selected ? 'hidden lg:block' : ''}`}>
             {selected ? (
               <div className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 sm:p-5 min-w-0 overflow-hidden">
+                {/* 모바일 뒤로가기 */}
+                <button onClick={() => setSelected(null)}
+                  className="lg:hidden text-sm text-blue-500 mb-3 flex items-center gap-1">
+                  ← 목록으로
+                </button>
                 <div className="flex items-start justify-between mb-3 pb-3 border-b border-[var(--card-border)] flex-wrap gap-2">
                   <div>
                     <h3 className="font-bold">{selected.title}</h3>
@@ -210,7 +215,14 @@ function ReportsInner() {
                           if (res.ok) {
                             const blob = await res.blob();
                             const url = URL.createObjectURL(blob);
-                            window.open(url, '_blank');
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.target = '_blank';
+                            a.rel = 'noopener';
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            setTimeout(() => URL.revokeObjectURL(url), 30000);
                           }
                         }}
                           className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700">
@@ -222,10 +234,14 @@ function ReportsInner() {
                           });
                           if (res.ok) {
                             const blob = await res.blob();
+                            const url = URL.createObjectURL(blob);
                             const a = document.createElement('a');
-                            a.href = URL.createObjectURL(blob);
+                            a.href = url;
                             a.download = `${selected.title || 'report'}.pdf`;
+                            document.body.appendChild(a);
                             a.click();
+                            document.body.removeChild(a);
+                            setTimeout(() => URL.revokeObjectURL(url), 1000);
                           }
                         }}
                           className="px-3 py-1.5 border border-[var(--card-border)] text-[var(--foreground)] rounded-lg text-xs hover:bg-[var(--muted-bg)]">

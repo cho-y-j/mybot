@@ -1809,33 +1809,47 @@ def weekly_report(self, tenant_id: str, election_id: str):
 
 
 def _run_briefing(tenant_id: str, election_id: str, briefing_type: str) -> dict:
-    """브리핑 공통 로직: AI 보고서 생성 → PDF 생성 → DB 저장 → 텔레그램 발송."""
+    """브리핑 공통 로직: briefing_type별 생성 → PDF(일일만) → DB 저장 → 텔레그램 발송.
+
+    규정 (CLAUDE.md 1.22, 2.2.5):
+      - morning/afternoon: AI 호출 없이 DB 통계 기반 수치 요약만 (_generate_briefing_text)
+      - daily: Opus 16섹션 전략 보고서 (_generate_report_async) + PDF
+      - weekly: 별도 _run_weekly_report에서 처리
+    """
     import uuid as uuid_mod
     from app.elections.models import Report, Election
 
     session = get_sync_session()
     try:
-        # 1. AI 보고서 생성 시도
         report_text = ""
         ai_generated = False
 
-        try:
-            # generate_ai_report is async — run it
-            result = _run_async(_generate_report_async(tenant_id, election_id))
-            report_text = result.get("text", "")
-            ai_generated = result.get("ai_generated", False)
-        except Exception as e:
-            logger.warning("briefing_ai_error", error=str(e), type=briefing_type)
+        if briefing_type == "daily":
+            # 일일 보고서만 Opus 16섹션 AI 생성
+            try:
+                result = _run_async(_generate_report_async(tenant_id, election_id, "daily"))
+                report_text = result.get("text", "")
+                ai_generated = result.get("ai_generated", False)
+            except Exception as e:
+                logger.warning("briefing_ai_error", error=str(e), type=briefing_type)
 
-        # 2. AI 실패시 데이터 기반 보고서 (via telegram reporter)
-        if not report_text:
+            if not report_text:
+                try:
+                    report_text = _run_async(
+                        _generate_briefing_text(tenant_id, election_id, briefing_type)
+                    )
+                except Exception as e:
+                    logger.error("briefing_fallback_error", error=str(e))
+                    report_text = f"보고서 생성 실패: {str(e)[:200]}"
+        else:
+            # morning/afternoon: AI 호출 없이 DB 통계 기반 수치 요약 (토큰 0)
             try:
                 report_text = _run_async(
                     _generate_briefing_text(tenant_id, election_id, briefing_type)
                 )
             except Exception as e:
-                logger.error("briefing_fallback_error", error=str(e))
-                report_text = f"보고서 생성 실패: {str(e)[:200]}"
+                logger.error("briefing_text_error", error=str(e), type=briefing_type)
+                report_text = f"브리핑 생성 실패: {str(e)[:200]}"
 
         # 3. PDF 생성 (daily 보고서만)
         pdf_path = None
@@ -2423,13 +2437,15 @@ async def _verify_sentiment_with_opus(tenant_id: str, election_id: str) -> int:
         return verified
 
 
-async def _generate_report_async(tenant_id: str, election_id: str) -> dict:
-    """AI 보고서 생성 (async context)."""
+async def _generate_report_async(
+    tenant_id: str, election_id: str, report_type: str = "daily",
+) -> dict:
+    """AI 보고서 생성 (async context). report_type: daily | weekly (morning/afternoon은 호출 금지 — 토큰 낭비)."""
     from app.database import async_session_factory
     from app.reports.ai_report import generate_ai_report
 
     async with async_session_factory() as db:
-        return await generate_ai_report(db, tenant_id, election_id)
+        return await generate_ai_report(db, tenant_id, election_id, report_type=report_type)
 
 
 async def _collect_candidates_data(tenant_id: str, election_id: str) -> list:

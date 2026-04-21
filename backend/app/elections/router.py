@@ -543,39 +543,36 @@ async def create_default_schedules(
 
 
 def _get_default_schedule_templates(plan: str) -> list[dict]:
-    """요금제별 기본 스케줄. 기존 프로토타입의 14개 스케줄 기반."""
+    """요금제별 기본 스케줄. CLAUDE.md 2.2.5 규정 (onboarding과 동일).
+
+      07:00  full_with_briefing (morning)  — 수집+DB통계 브리핑
+      13:00  full_with_briefing (afternoon) — 수집+DB통계 브리핑
+      17:30  full_collection  — 보고서 전 데이터 확보
+      18:00  briefing (daily) — Opus 16섹션 전략 보고서 + PDF
+      월 09:00  weekly_report  — 주간 전략 보고서
+    """
+    standard = [
+        {"name": "오전 수집+브리핑 (07:00)", "type": "full_with_briefing", "times": ["07:00"],
+         "config": {"briefing_type": "morning", "send_telegram": True}},
+        {"name": "오후 수집+브리핑 (13:00)", "type": "full_with_briefing", "times": ["13:00"],
+         "config": {"briefing_type": "afternoon", "send_telegram": True}},
+        {"name": "마감 수집 (17:30)", "type": "full_collection", "times": ["17:30"],
+         "config": {}},
+        {"name": "일일 종합 보고서 (18:00)", "type": "briefing", "times": ["18:00"],
+         "config": {"briefing_type": "daily", "send_telegram": True}},
+        {"name": "주간 전략 보고서 (월 09:00)", "type": "weekly_report", "times": ["09:00"],
+         "config": {"day_of_week": "monday"}},
+    ]
+
     basic = [
-        {"name": "오전 뉴스 수집", "type": "news", "times": ["09:00"]},
-        {"name": "오후 뉴스 수집", "type": "news", "times": ["18:00"]},
+        {"name": "마감 수집 (17:30)", "type": "full_collection", "times": ["17:30"], "config": {}},
+        {"name": "일일 종합 보고서 (18:00)", "type": "briefing", "times": ["18:00"],
+         "config": {"briefing_type": "daily", "send_telegram": True}},
     ]
 
-    pro = [
-        {"name": "오전 브리핑", "type": "briefing", "times": ["09:00"],
-         "config": {"sections": ["news", "sentiment", "trends", "alerts"]}},
-        {"name": "뉴스 수집 (오전)", "type": "news", "times": ["09:30"]},
-        {"name": "지역언론 수집 (오전)", "type": "news", "times": ["09:30"],
-         "config": {"sources": ["local"]}},
-        {"name": "커뮤니티 모니터링", "type": "community", "times": ["10:00"]},
-        {"name": "검색 트렌드 (오전)", "type": "trends", "times": ["10:00"]},
-        {"name": "경쟁자 약점 추적", "type": "news", "times": ["10:30"],
-         "config": {"focus": "negative"}},
-        {"name": "유튜브 모니터링 (오전)", "type": "youtube", "times": ["11:00"]},
-        {"name": "오후 브리핑", "type": "briefing", "times": ["14:00"],
-         "config": {"sections": ["news", "sentiment", "hot_issues"]}},
-        {"name": "뉴스 수집 (오후)", "type": "news", "times": ["14:30"]},
-        {"name": "지역언론 수집 (오후)", "type": "news", "times": ["14:30"],
-         "config": {"sources": ["local"]}},
-        {"name": "검색 트렌드 (오후)", "type": "trends", "times": ["15:30"]},
-        {"name": "유튜브 모니터링 (오후)", "type": "youtube", "times": ["16:00"]},
-        {"name": "일일 보고서", "type": "briefing", "times": ["18:00"],
-         "config": {"type": "daily_full", "send_pdf": True, "send_telegram": True}},
+    enterprise = standard + [
+        {"name": "추가 수집 (10:30)", "type": "full_collection", "times": ["10:30"], "config": {}},
+        {"name": "추가 수집 (15:30)", "type": "full_collection", "times": ["15:30"], "config": {}},
     ]
 
-    enterprise = pro + [
-        {"name": "실시간 뉴스 (2시간)", "type": "news",
-         "times": ["08:00", "10:00", "12:00", "14:00", "16:00", "18:00", "20:00"]},
-        {"name": "위기 감지 알림", "type": "alert",
-         "times": ["09:00", "12:00", "15:00", "18:00"]},
-    ]
-
-    return {"basic": basic, "pro": pro, "enterprise": enterprise}.get(plan, basic)
+    return {"basic": basic, "pro": standard, "enterprise": enterprise}.get(plan, standard)

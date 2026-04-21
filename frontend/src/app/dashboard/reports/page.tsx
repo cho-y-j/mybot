@@ -269,19 +269,24 @@ export default function ReportsPage() {
                         className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
                         {loadingPdf ? '...' : showPdf ? '텍스트' : 'PDF'}
                       </button>
-                      <a href={pdfUrl} target="_blank"
+                      <button
                         className="px-3 py-1.5 bg-violet-600 text-white rounded-lg text-sm hover:bg-violet-700"
-                        onClick={async (e) => {
-                          e.preventDefault();
+                        onClick={async () => {
                           const res = await fetch(pdfUrl, { headers: { Authorization: `Bearer ${(sessionStorage.getItem('access_token') || localStorage.getItem('access_token'))}` } });
                           if (res.ok) {
                             const blob = await res.blob();
                             const url = URL.createObjectURL(blob);
-                            window.open(url);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `${selectedReport?.title || 'report'}.pdf`;
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            setTimeout(() => URL.revokeObjectURL(url), 1000);
                           }
                         }}>
                         다운로드
-                      </a>
+                      </button>
                     </>
                   )}
                 </div>
@@ -311,7 +316,17 @@ export default function ReportsPage() {
                   </div>
                 </div>
               ) : showPdf && pdfBlobUrl ? (
-                <iframe src={pdfBlobUrl} className="w-full rounded-lg border h-[400px] lg:h-[700px]" />
+                <div>
+                  {/* iframe PDF는 모바일(iOS Safari 등)에서 안 뜨는 경우가 많음 — 새 탭 열기 버튼 병행 */}
+                  <div className="lg:hidden mb-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded text-xs">
+                    모바일에서 PDF가 안 보이면 아래 버튼으로 새 탭에서 여세요.
+                    <a href={pdfBlobUrl} target="_blank" rel="noopener"
+                      className="block mt-2 px-3 py-2 bg-blue-600 text-white rounded text-center">
+                      PDF 새 탭에서 열기
+                    </a>
+                  </div>
+                  <iframe src={pdfBlobUrl} className="w-full rounded-lg border h-[400px] lg:h-[700px] hidden lg:block" />
+                </div>
               ) : (
                 <pre className="text-sm whitespace-pre-wrap font-sans bg-[var(--muted-bg)] p-4 rounded-lg max-h-[calc(100vh-200px)] lg:max-h-[600px] overflow-y-auto leading-relaxed">
                   {selectedReport.content || selectedReport.content_text || '(내용 없음)'}
