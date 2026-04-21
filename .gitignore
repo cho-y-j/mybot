@@ -69,3 +69,4 @@ backend/celerybeat-schedule-*
 report_*.pdf
 .playwright-mcp/
 dashboard_*.png
+backend/data/geo/*.geojson

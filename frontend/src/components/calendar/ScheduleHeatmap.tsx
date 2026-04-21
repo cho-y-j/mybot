@@ -62,6 +62,7 @@ const LeafletMap: any = dynamic(
 const TileLayer = dynamic(() => import('react-leaflet').then((m) => m.TileLayer), { ssr: false });
 const CircleMarker = dynamic(() => import('react-leaflet').then((m) => m.CircleMarker), { ssr: false });
 const Popup = dynamic(() => import('react-leaflet').then((m) => m.Popup), { ssr: false });
+const GeoJSON: any = dynamic(() => import('react-leaflet').then((m) => m.GeoJSON), { ssr: false });
 
 interface Props {
   electionId: string;
@@ -72,6 +73,7 @@ interface Props {
 export default function ScheduleHeatmap({ electionId, onSelectSchedule, onAddForLocation }: Props) {
   const [points, setPoints] = useState<any[]>([]);
   const [heatmap, setHeatmap] = useState<any[]>([]);
+  const [geojson, setGeojson] = useState<any>(null);
   const [days, setDays] = useState(60);
   const [loading, setLoading] = useState(true);
   const [selectedDong, setSelectedDong] = useState<string | null>(null);
@@ -81,21 +83,91 @@ export default function ScheduleHeatmap({ electionId, onSelectSchedule, onAddFor
   useEffect(() => {
     if (!electionId) return;
     setLoading(true);
+    const auth = () => ({
+      headers: { Authorization: `Bearer ${(sessionStorage.getItem('access_token') || localStorage.getItem('access_token'))}` },
+    });
     Promise.all([
-      fetch(`/api/candidate-schedules/${electionId}/points?days=${days}`, {
-        headers: { Authorization: `Bearer ${(sessionStorage.getItem('access_token') || localStorage.getItem('access_token'))}` },
-      }).then((r) => r.json()),
-      fetch(`/api/candidate-schedules/${electionId}/heatmap?days=${days}`, {
-        headers: { Authorization: `Bearer ${(sessionStorage.getItem('access_token') || localStorage.getItem('access_token'))}` },
-      }).then((r) => r.json()),
+      fetch(`/api/candidate-schedules/${electionId}/points?days=${days}`, auth()).then((r) => r.json()),
+      fetch(`/api/candidate-schedules/${electionId}/heatmap?days=${days}`, auth()).then((r) => r.json()),
+      fetch(`/api/candidate-schedules/${electionId}/geojson?days=${days}`, auth()).then((r) => r.json()),
     ])
-      .then(([p, h]) => {
+      .then(([p, h, g]) => {
         setPoints(p.items || []);
         setHeatmap(h.items || []);
+        setGeojson(g);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [electionId, days]);
+
+  // 소외도 점수 분포 — 색상 스케일 정규화용
+  const maxPopulation = useMemo(() => {
+    if (!geojson?.features) return 1;
+    return Math.max(1, ...geojson.features.map((f: any) => f.properties.population || 0));
+  }, [geojson]);
+
+  // 폴리곤 색상 로직 — 방문 유무 + 인구 대비
+  const polygonStyle = (feature: any) => {
+    const p = feature.properties;
+    const visits = p.visits || 0;
+    const pop = p.population || 0;
+    const popRatio = maxPopulation > 0 ? pop / maxPopulation : 0;
+
+    let fillColor = '#e5e7eb'; // 기본 회색 (인구 0 또는 데이터 없음)
+    if (visits > 0) {
+      // 방문한 동 — 파란 계열 (방문 많을수록 진함)
+      if (visits >= 5) fillColor = '#1d4ed8';
+      else if (visits >= 3) fillColor = '#3b82f6';
+      else fillColor = '#60a5fa';
+    } else if (pop > 0) {
+      // 미방문 — 인구 비율에 따라 빨강 계열 (인구 많을수록 진한 경고)
+      if (popRatio >= 0.6) fillColor = '#dc2626';       // 진빨강
+      else if (popRatio >= 0.3) fillColor = '#f87171';  // 빨강
+      else if (popRatio >= 0.1) fillColor = '#fca5a5';  // 연빨강
+      else fillColor = '#fecaca';                        // 매우 연한 빨강
+    }
+
+    const isSelected = selectedDong && p.dong_short === selectedDong;
+    return {
+      fillColor,
+      fillOpacity: 0.55,
+      weight: isSelected ? 2.5 : 0.8,
+      color: isSelected ? '#1e40af' : '#94a3b8',
+      opacity: 0.9,
+    };
+  };
+
+  const onEachFeature = (feature: any, layer: any) => {
+    const p = feature.properties;
+    const pop = p.population ? p.population.toLocaleString('ko-KR') : '—';
+    const lastStr = p.last_visit_at
+      ? `마지막 ${Math.floor((Date.now() - new Date(p.last_visit_at).getTime()) / 86400000)}일 전`
+      : '방문 없음';
+    layer.bindPopup(`
+      <div style="font-size:12px;line-height:1.5">
+        <div style="font-weight:600">${p.adm_nm}</div>
+        <div>방문 ${p.visits}회 · ${lastStr}</div>
+        <div>인구 ${pop}명</div>
+      </div>
+    `);
+    layer.on({
+      click: () => setSelectedDong(p.dong_short),
+    });
+  };
+
+  // TOP 5 소외 지역 — 인구 많은데 방문 적은 순
+  const outreachTop5 = useMemo(() => {
+    if (!geojson?.features) return [];
+    return [...geojson.features]
+      .filter((f: any) => (f.properties.population || 0) > 1000)  // 매우 적은 동 제외
+      .sort((a: any, b: any) => {
+        const scoreA = (a.properties.population || 0) - (a.properties.visits || 0) * 5000;
+        const scoreB = (b.properties.population || 0) - (b.properties.visits || 0) * 5000;
+        return scoreB - scoreA;
+      })
+      .slice(0, 5)
+      .map((f: any) => f.properties);
+  }, [geojson]);
 
   // 지도 중심 계산 (점들의 평균 or 충북 기본값)
   const center: LatLngExpression = useMemo(() => {
@@ -149,6 +221,15 @@ export default function ScheduleHeatmap({ electionId, onSelectSchedule, onAddFor
                 url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
                 maxZoom={19}
               />
+              {/* 행정동 폴리곤 히트맵 (방문·인구 기반 색상) */}
+              {geojson && (
+                <GeoJSON
+                  key={`${electionId}-${days}`}
+                  data={geojson}
+                  style={polygonStyle}
+                  onEachFeature={onEachFeature}
+                />
+              )}
               {filteredPoints.map((p) => (
                 <CircleMarker
                   key={p.id}
@@ -191,15 +272,54 @@ export default function ScheduleHeatmap({ electionId, onSelectSchedule, onAddFor
 
         {/* 동별 사이드바 */}
         <div className="space-y-3 lg:max-h-[500px] overflow-y-auto">
-          <div className="border border-[var(--card-border)] rounded-xl p-3 bg-[var(--card-bg)]">
-            <p className="text-sm font-semibold mb-2">방문 동 ({heatmap.length})</p>
-            {heatmap.length === 0 ? (
-              <p className="text-xs text-[var(--muted)]">
-                아직 방문한 동이 없어요. 일정을 추가하면 자동으로 지오코딩되어 여기 표시됩니다.
-              </p>
+          {/* TOP 5 소외 지역 (인구 많은데 방문 적음) */}
+          <div className="border border-rose-500/30 bg-rose-500/5 rounded-xl p-3">
+            <p className="text-sm font-semibold mb-1">소외 지역 TOP 5</p>
+            <p className="text-[10px] text-[var(--muted)] mb-2">인구 많은데 방문이 적은 동 (최근 {days}일)</p>
+            {outreachTop5.length === 0 ? (
+              <p className="text-xs text-[var(--muted)]">데이터 준비 중…</p>
             ) : (
               <ul className="space-y-1">
-                {heatmap.map((h) => {
+                {outreachTop5.map((f: any, i: number) => (
+                  <li key={i}>
+                    <button
+                      onClick={() => setSelectedDong(selectedDong === f.dong_short ? null : f.dong_short)}
+                      className={`w-full text-left px-2 py-1.5 rounded border text-xs transition ${
+                        selectedDong === f.dong_short
+                          ? 'border-rose-500 bg-rose-500/10'
+                          : 'border-rose-500/30 hover:border-rose-500'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium truncate">{f.dong_short}</span>
+                        <span className="text-[10px] text-rose-500 whitespace-nowrap">
+                          {f.visits === 0 ? '방문 0회' : `${f.visits}회`}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-[var(--muted)] mt-0.5">
+                        {f.sggnm} · 인구 {(f.population || 0).toLocaleString('ko-KR')}명
+                      </div>
+                      {onAddForLocation && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onAddForLocation(`${f.sggnm} ${f.dong_short}`); }}
+                          className="mt-1 text-[10px] text-rose-500 hover:underline"
+                        >
+                          + 이 동에 일정 추가
+                        </button>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* 방문한 동 */}
+          {heatmap.length > 0 && (
+            <div className="border border-[var(--card-border)] rounded-xl p-3 bg-[var(--card-bg)]">
+              <p className="text-sm font-semibold mb-2">방문 동 ({heatmap.length})</p>
+              <ul className="space-y-1">
+                {heatmap.slice(0, 10).map((h) => {
                   const key = `${h.admin_sigungu}-${h.admin_dong}`;
                   const lastDays = h.last_visit_at
                     ? Math.floor((Date.now() - new Date(h.last_visit_at).getTime()) / 86400000)
@@ -216,34 +336,30 @@ export default function ScheduleHeatmap({ electionId, onSelectSchedule, onAddFor
                       >
                         <div className="flex items-center justify-between">
                           <span className="font-medium">{h.admin_dong}</span>
-                          <span className="text-[10px] text-[var(--muted)]">{h.visits}회</span>
+                          <span className="text-[10px] text-blue-500">{h.visits}회</span>
                         </div>
                         <div className="text-[10px] text-[var(--muted)] mt-0.5">
-                          {h.admin_sigungu}
-                          {lastDays !== null && ` · 마지막 ${lastDays}일 전`}
+                          {h.admin_sigungu}{lastDays !== null && ` · 마지막 ${lastDays}일 전`}
                         </div>
-                        {onAddForLocation && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); onAddForLocation(`${h.admin_sigungu} ${h.admin_dong}`); }}
-                            className="mt-1 text-[10px] text-blue-500 hover:underline"
-                          >
-                            + 이 동에 일정 추가
-                          </button>
-                        )}
                       </button>
                     </li>
                   );
                 })}
               </ul>
-            )}
-          </div>
+            </div>
+          )}
 
-          <div className="border border-amber-500/30 bg-amber-500/5 rounded-xl p-3 text-xs text-[var(--muted)]">
-            <p className="font-semibold text-amber-600 dark:text-amber-400 mb-1">Phase 3 MVP 안내</p>
-            <p>
-              읍면동 경계 폴리곤 히트맵 + TOP 5 소외 지역 자동 추천(AI 기반)은 다음 단계에서 추가됩니다.
-              현재는 일정에 입력된 좌표 기준으로 방문 동을 집계합니다.
-            </p>
+          {/* 범례 */}
+          <div className="border border-[var(--card-border)] rounded-xl p-3 text-xs">
+            <p className="font-semibold mb-2">범례</p>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2"><span className="w-4 h-3 rounded" style={{ background: '#1d4ed8' }} /> 방문 5회+</div>
+              <div className="flex items-center gap-2"><span className="w-4 h-3 rounded" style={{ background: '#3b82f6' }} /> 방문 3~4회</div>
+              <div className="flex items-center gap-2"><span className="w-4 h-3 rounded" style={{ background: '#60a5fa' }} /> 방문 1~2회</div>
+              <div className="flex items-center gap-2"><span className="w-4 h-3 rounded" style={{ background: '#dc2626' }} /> 인구 많 · 미방문</div>
+              <div className="flex items-center gap-2"><span className="w-4 h-3 rounded" style={{ background: '#f87171' }} /> 인구 중 · 미방문</div>
+              <div className="flex items-center gap-2"><span className="w-4 h-3 rounded" style={{ background: '#fecaca' }} /> 인구 적 · 미방문</div>
+            </div>
           </div>
         </div>
       </div>

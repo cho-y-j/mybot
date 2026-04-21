@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     KAKAO_REST_API_KEY: str = ""      # https://developers.kakao.com REST API 키
     KAKAO_JS_API_KEY: str = ""        # 프론트엔드 지도 렌더용 (공개)
 
+    # --- KOSIS (국가통계포털 — 인구 데이터) ---
+    KOSIS_API_KEY: str = ""           # kosis.kr OpenAPI 인증키
+
     # --- Admin ---
     ADMIN_EMAIL: str = "admin@electionpulse.kr"
     ADMIN_INITIAL_PASSWORD: str = "CHANGE-THIS"

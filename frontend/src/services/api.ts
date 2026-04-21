@@ -704,6 +704,15 @@ class ApiClient {
     });
   }
 
+  getElectionGeojson(electionId: string, params: { candidate_id?: string; days?: number; precision?: number } = {}) {
+    const q = new URLSearchParams();
+    if (params.candidate_id) q.set('candidate_id', params.candidate_id);
+    if (params.days) q.set('days', String(params.days));
+    if (params.precision) q.set('precision', String(params.precision));
+    const qs = q.toString() ? `?${q.toString()}` : '';
+    return this.request<any>(`/candidate-schedules/${electionId}/geojson${qs}`);
+  }
+
   getScheduleSettings() {
     return this.request<{ schedule_default_public: boolean }>('/candidate-schedules/settings/me');
   }
