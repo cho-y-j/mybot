@@ -23,7 +23,42 @@ const COLOR_HEX: Record<ScheduleCategory, string> = {
 };
 
 // react-leaflet 4/5는 SSR 불호환 — dynamic import
-const MapContainer = dynamic(() => import('react-leaflet').then((m) => m.MapContainer), { ssr: false });
+// 컨테이너 전체를 하나의 dynamic 컴포넌트로 감싸 invalidateSize + 중심 재설정을 내부에서 처리
+const LeafletMap: any = dynamic(
+  async () => {
+    const RL = await import('react-leaflet');
+
+    const InnerController = ({ center }: { center: [number, number] }) => {
+      const map = RL.useMap();
+      useEffect(() => {
+        // 탭 전환·컨테이너 display:none 상태에서 Leaflet이 0×0 크기를 캐시한 경우
+        // 실제 크기를 재측정 + 중심 좌표로 이동
+        const t = setTimeout(() => {
+          map.invalidateSize();
+          map.setView(center, map.getZoom());
+        }, 80);
+        return () => clearTimeout(t);
+      }, [map, center]);
+      return null;
+    };
+
+    const Wrapper = ({ center, zoom, children }: any) => (
+      <RL.MapContainer
+        center={center}
+        zoom={zoom}
+        style={{ height: '100%', width: '100%' }}
+        scrollWheelZoom
+      >
+        <InnerController center={center} />
+        {children}
+      </RL.MapContainer>
+    );
+
+    return Wrapper as any;
+  },
+  { ssr: false, loading: () => <div className="flex items-center justify-center h-full text-sm text-[var(--muted)]">지도 불러오는 중…</div> },
+);
+
 const TileLayer = dynamic(() => import('react-leaflet').then((m) => m.TileLayer), { ssr: false });
 const CircleMarker = dynamic(() => import('react-leaflet').then((m) => m.CircleMarker), { ssr: false });
 const Popup = dynamic(() => import('react-leaflet').then((m) => m.Popup), { ssr: false });
@@ -107,11 +142,12 @@ export default function ScheduleHeatmap({ electionId, onSelectSchedule, onAddFor
         {/* 지도 */}
         <div className="lg:col-span-2 h-[500px] rounded-xl overflow-hidden border border-[var(--card-border)]">
           {typeof window !== 'undefined' && (
-            // @ts-ignore — react-leaflet types 내부 Props 이슈
-            <MapContainer center={center} zoom={12} style={{ height: '100%', width: '100%' }} scrollWheelZoom>
+            <LeafletMap center={center} zoom={12}>
+              {/* OSM 타일 — URL 좌표 순서 {z}/{x}/{y} (표준) */}
               <TileLayer
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                url="https://{s}.tile.openstreetmap.org/{z}/{y}/{x}.png"
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+                maxZoom={19}
               />
               {filteredPoints.map((p) => (
                 <CircleMarker
@@ -149,7 +185,7 @@ export default function ScheduleHeatmap({ electionId, onSelectSchedule, onAddFor
                   </Popup>
                 </CircleMarker>
               ))}
-            </MapContainer>
+            </LeafletMap>
           )}
         </div>
 
