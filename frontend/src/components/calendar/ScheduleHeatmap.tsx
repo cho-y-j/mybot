@@ -10,7 +10,7 @@
  *
  * 폴리곤 기반 읍면동 경계 + 인구 대비 히트는 Phase 4에서 GeoJSON 확보 후 추가.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import type { LatLngExpression } from 'leaflet';
 import { api } from '@/services/api';
@@ -41,17 +41,7 @@ export default function ScheduleHeatmap({ electionId, onSelectSchedule, onAddFor
   const [loading, setLoading] = useState(true);
   const [selectedDong, setSelectedDong] = useState<string | null>(null);
 
-  // Leaflet CSS — 처음 로드 시 1회만 주입
-  useEffect(() => {
-    const linkId = 'leaflet-css';
-    if (!document.getElementById(linkId)) {
-      const link = document.createElement('link');
-      link.id = linkId;
-      link.rel = 'stylesheet';
-      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-      document.head.appendChild(link);
-    }
-  }, []);
+  // Leaflet CSS는 globals.css에 번들 포함 — 런타임 주입 불필요
 
   useEffect(() => {
     if (!electionId) return;
