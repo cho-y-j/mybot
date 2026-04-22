@@ -285,30 +285,37 @@ async def _build_report_data(
     our = next((c for c in candidates if c.is_our_candidate), None)
     d_day = (election.election_date - today).days
 
-    # ── 후보별 뉴스 통계 ──
+    # 교육감/교육위원 선거는 공직선거법상 정당 공천 금지 → party 필드 있어도 무시
+    _is_nonpartisan = (election.election_type or "") in ("superintendent", "edu_board")
+
+    # ── 후보별 뉴스 통계 (is_relevant=True 필터 필수 — 동명이인/무관 제외) ──
     candidate_news = []
     for c in candidates:
         today_cnt = (await db.execute(
             select(func.count()).where(
                 NewsArticle.candidate_id == c.id,
+                NewsArticle.is_relevant == True,
                 func.date(NewsArticle.collected_at) == today,
             )
         )).scalar() or 0
         yesterday_cnt = (await db.execute(
             select(func.count()).where(
                 NewsArticle.candidate_id == c.id,
+                NewsArticle.is_relevant == True,
                 func.date(NewsArticle.collected_at) == yesterday,
             )
         )).scalar() or 0
         week_cnt = (await db.execute(
             select(func.count()).where(
                 NewsArticle.candidate_id == c.id,
+                NewsArticle.is_relevant == True,
                 func.date(NewsArticle.collected_at) >= week_ago,
             )
         )).scalar() or 0
         pos = (await db.execute(
             select(func.count()).where(
                 NewsArticle.candidate_id == c.id,
+                NewsArticle.is_relevant == True,
                 func.date(NewsArticle.collected_at) == today,
                 NewsArticle.sentiment == "positive",
             )
@@ -316,23 +323,36 @@ async def _build_report_data(
         neg = (await db.execute(
             select(func.count()).where(
                 NewsArticle.candidate_id == c.id,
+                NewsArticle.is_relevant == True,
                 func.date(NewsArticle.collected_at) == today,
                 NewsArticle.sentiment == "negative",
             )
         )).scalar() or 0
         total_all = (await db.execute(
-            select(func.count()).where(NewsArticle.candidate_id == c.id)
+            select(func.count()).where(
+                NewsArticle.candidate_id == c.id,
+                NewsArticle.is_relevant == True,
+            )
         )).scalar() or 0
         total_neg = (await db.execute(
             select(func.count()).where(
                 NewsArticle.candidate_id == c.id,
+                NewsArticle.is_relevant == True,
                 NewsArticle.sentiment == "negative",
             )
         )).scalar() or 0
 
+        _alignment_kor = {
+            "conservative": "보수", "progressive": "진보",
+            "centrist": "중도", "independent": "무소속",
+        }.get(c.party_alignment or "", "미지정")
+
         candidate_news.append({
             "name": c.name,
-            "party": c.party or "무소속",
+            # 교육감은 party 무시(공천 금지 선거) — alignment가 유일 사실
+            "party": "무소속(교육감·정당공천금지)" if _is_nonpartisan else (c.party or "무소속"),
+            "party_alignment": c.party_alignment or "",
+            "alignment_kor": _alignment_kor,
             "is_ours": c.is_our_candidate,
             "today": today_cnt,
             "yesterday": yesterday_cnt,
@@ -343,12 +363,13 @@ async def _build_report_data(
             "total_neg": total_neg,
         })
 
-    # ── 최근 뉴스 (URL 포함) ──
+    # ── 최근 뉴스 (is_relevant=True 필터 필수) ──
     recent_news = (await db.execute(
         select(NewsArticle, Candidate.name)
         .join(Candidate, NewsArticle.candidate_id == Candidate.id)
         .where(
             NewsArticle.election_id == election_id,
+            NewsArticle.is_relevant == True,
         )
         .order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.collected_at.desc())
         .limit(15)
@@ -365,12 +386,13 @@ async def _build_report_data(
             "date": (n.published_at or n.collected_at).strftime("%m/%d") if (n.published_at or n.collected_at) else "",
         })
 
-    # ── 부정 뉴스 ──
+    # ── 부정 뉴스 (is_relevant=True 필터 필수) ──
     negative_news = (await db.execute(
         select(NewsArticle, Candidate.name)
         .join(Candidate, NewsArticle.candidate_id == Candidate.id)
         .where(
             NewsArticle.election_id == election_id,
+            NewsArticle.is_relevant == True,
             NewsArticle.sentiment == "negative",
         )
         .order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.collected_at.desc())
@@ -382,21 +404,26 @@ async def _build_report_data(
         "date": (n.published_at or n.collected_at).strftime("%m/%d") if (n.published_at or n.collected_at) else "",
     } for n, cname in negative_news]
 
-    # ── 커뮤니티 ──
+    # ── 커뮤니티 (is_relevant=True 필터 필수) ──
     community_stats = []
     for c in candidates:
         cnt = (await db.execute(
-            select(func.count()).where(CommunityPost.candidate_id == c.id)
+            select(func.count()).where(
+                CommunityPost.candidate_id == c.id,
+                CommunityPost.is_relevant == True,
+            )
         )).scalar() or 0
         pos_cnt = (await db.execute(
             select(func.count()).where(
                 CommunityPost.candidate_id == c.id,
+                CommunityPost.is_relevant == True,
                 CommunityPost.sentiment == "positive",
             )
         )).scalar() or 0
         neg_cnt = (await db.execute(
             select(func.count()).where(
                 CommunityPost.candidate_id == c.id,
+                CommunityPost.is_relevant == True,
                 CommunityPost.sentiment == "negative",
             )
         )).scalar() or 0
@@ -405,11 +432,14 @@ async def _build_report_data(
             "positive": pos_cnt, "negative": neg_cnt,
         })
 
-    # 최근 커뮤니티 글
+    # 최근 커뮤니티 글 (is_relevant=True 필터 필수)
     recent_community = (await db.execute(
         select(CommunityPost, Candidate.name)
         .join(Candidate, CommunityPost.candidate_id == Candidate.id)
-        .where(CommunityPost.election_id == election_id)
+        .where(
+            CommunityPost.election_id == election_id,
+            CommunityPost.is_relevant == True,
+        )
         .order_by(CommunityPost.collected_at.desc())
         .limit(10)
     )).all()
@@ -420,15 +450,19 @@ async def _build_report_data(
         "issue": p.issue_category or "",
     } for p, cname in recent_community]
 
-    # ── 유튜브 ──
+    # ── 유튜브 (is_relevant=True 필터 필수) ──
     youtube_stats = []
     for c in candidates:
         vid_cnt = (await db.execute(
-            select(func.count()).where(YouTubeVideo.candidate_id == c.id)
+            select(func.count()).where(
+                YouTubeVideo.candidate_id == c.id,
+                YouTubeVideo.is_relevant == True,
+            )
         )).scalar() or 0
         total_views = (await db.execute(
             select(func.coalesce(func.sum(YouTubeVideo.views), 0)).where(
-                YouTubeVideo.candidate_id == c.id
+                YouTubeVideo.candidate_id == c.id,
+                YouTubeVideo.is_relevant == True,
             )
         )).scalar() or 0
         youtube_stats.append({
@@ -442,7 +476,10 @@ async def _build_report_data(
         for c in candidates:
             # 후보별 유튜브 댓글 — 해당 후보 비디오의 댓글
             vids = (await db.execute(
-                select(YouTubeVideo.video_id).where(YouTubeVideo.candidate_id == c.id)
+                select(YouTubeVideo.video_id).where(
+                    YouTubeVideo.candidate_id == c.id,
+                    YouTubeVideo.is_relevant == True,
+                )
             )).scalars().all()
             if vids:
                 total_comments = (await db.execute(
@@ -546,6 +583,7 @@ async def _build_report_data(
             "d_day": d_day,
             "region": f"{election.region_sido or ''} {election.region_sigungu or ''}".strip(),
             "type": election.election_type,
+            "is_nonpartisan": _is_nonpartisan,
         },
         "our_candidate": our.name if our else None,
         "candidates": [c.name for c in candidates],
@@ -682,10 +720,23 @@ def _generate_fallback_report(data: dict) -> str:
     )
 
 
+IDENTITY_RULES = """
+[후보 정체성 판단 절대 규칙 — 위반 시 보고서 전면 재작성]
+1. 각 후보의 '성향(등록값)'은 캠프가 직접 등록한 확정 사실이다. 보고서 전체에서 이 값만 근거로 사용하라.
+2. 동명이인 혼동 절대 금지 — 같은 이름의 유명 정치인·공인·기업인과 이 선거 후보를 동일인으로 단정하지 마라.
+   예1) 이 선거의 '윤건영'을 더불어민주당 국회의원 윤건영과 동일인 취급 금지.
+   예2) 이 선거의 '김성근'을 야구감독/기업인 김성근과 동일인 취급 금지.
+3. 후보를 '진보/보수/민주당/국민의힘' 프레임으로 서술할 때 위 등록값과 반드시 일치해야 한다. 등록값과 반대 이념으로 서술하면 보고서 신뢰도 0.
+4. 정당 공천 금지 선거(교육감·교육위원)에서는 '○○당 강세' '민주당 우세' 같은 정당 구도 분석을 절대 쓰지 마라. 후보 개인의 등록 성향으로만 분석하라.
+5. 수집 뉴스의 AI 요약이 '[동명이인/무관]' 태그로 시작하면 해당 기사는 근거로 쓰지 마라(이미 시스템에서 필터링됐어야 하지만 잔존 시 스킵).
+"""
+
+
 async def _call_claude_for_report(factsheet: str, system_prompt: str = None) -> Optional[str]:
     """Claude CLI로 AI 보고서 생성 — ai_service로 위임."""
     from app.services.ai_service import call_claude_text
-    prompt = f"{system_prompt or REPORT_PROMPT_DAILY}\n\n[수집 데이터 팩트시트]\n{factsheet}"
+    base = system_prompt or REPORT_PROMPT_DAILY
+    prompt = f"{base}\n{IDENTITY_RULES}\n\n[수집 데이터 팩트시트]\n{factsheet}"
     # Sonnet으로 생성 (안정적), Opus 검증은 별도 단계에서
     # Opus 우선 (품질), 타임아웃 넉넉히 (스케줄 실행이라 기다릴 필요 없음)
     result = await call_claude_text(prompt, timeout=600, context="ai_report_generation")

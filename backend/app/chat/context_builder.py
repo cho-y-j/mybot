@@ -293,23 +293,60 @@ def _detect_intents(question: str) -> list[str]:
     return detected
 
 
+_ALIGNMENT_KOR = {
+    "conservative": "보수",
+    "progressive": "진보",
+    "centrist": "중도",
+    "independent": "무소속",
+}
+
+
+def _fmt_candidate(c, is_nonpartisan: bool) -> str:
+    """후보 한 명 표기 — 등록된 성향(보수/진보/중도/무소속)을 반드시 명시.
+
+    교육감 선거는 공직선거법상 정당 공천 금지 → party 필드는 무시하고 성향만 사용.
+    동명이인 유명 정치인(예: '윤건영' → 국회의원, '김성근' → 야구감독)과 혼동 방지.
+    """
+    align_kor = _ALIGNMENT_KOR.get(c.party_alignment or "", "성향 미지정")
+    if is_nonpartisan:
+        return f"{c.name} [정당: 무소속·정당공천금지 선거 | 성향(등록값): {align_kor}]"
+    party_str = c.party or "무소속"
+    return f"{c.name} [정당: {party_str} | 성향(등록값): {align_kor}]"
+
+
 def _build_election_info(election, candidates, d_day) -> str:
-    """선거 기본 정보."""
+    """선거 기본 정보 — 후보 성향은 '등록값'만 근거로 사용하도록 명시."""
     if not election:
         return ""
+    # 교육감·교육위원 선거는 정당 공천 금지 (공직선거법 제47조의2, 지방교육자치법)
+    is_nonpartisan = (election.election_type or "") in ("superintendent", "edu_board")
     our = next((c for c in candidates if c.is_our_candidate), None)
     lines = [
         "=== 선거 기본 정보 ===",
         f"선거: {election.name}",
         f"선거일: {election.election_date} (D-{d_day})",
         f"지역: {election.region_sido or ''} {election.region_sigungu or ''}",
+        f"유형: {election.election_type or ''}",
         f"후보 수: {len(candidates)}명",
     ]
+    if is_nonpartisan:
+        lines.append(
+            "※ 이 선거는 정당 공천 금지 선거입니다. 정당 소속 여부로 후보를 분류하지 마십시오. "
+            "후보의 정치 성향은 아래 '성향(등록값)'만 사실이며, 이름이 같은 다른 정치인과 절대 혼동해선 안 됩니다."
+        )
     if our:
-        lines.append(f"우리 후보: {our.name} ({our.party or '무소속'})")
+        lines.append(f"우리 후보: {_fmt_candidate(our, is_nonpartisan)}")
     for c in candidates:
         marker = " ⭐(우리)" if c.is_our_candidate else ""
-        lines.append(f"  - {c.name} ({c.party or '무소속'}){marker}")
+        lines.append(f"  - {_fmt_candidate(c, is_nonpartisan)}{marker}")
+    lines.append(
+        "\n[후보 정체성 판단 절대 규칙]\n"
+        "1. 각 후보의 '성향(등록값)'은 캠프가 직접 등록한 확정 사실이다. 이것만 근거로 판단하라.\n"
+        "2. 이름이 같은 다른 유명 정치인(사전 학습 데이터·WebSearch 결과)과 절대 혼동하지 마라. "
+        "예: 이 선거의 '윤건영'이 다른 선거·다른 시대 '윤건영'과 같은 인물이라고 단정 금지.\n"
+        "3. 후보를 '진보/보수/민주당/국민의힘'으로 부를 때는 위 등록값과 일치해야 한다. 등록값과 반대로 서술하면 오답이다.\n"
+        "4. 교육감·교육위원 선거는 정당 공천 금지이므로 '○○당 강세' 같은 정당 프레임을 쓰지 마라."
+    )
     return "\n".join(lines)
 
 

@@ -1,11 +1,23 @@
 === 선거: {{ election.name }} (D-{{ election.d_day }}) ===
 지역: {{ election.region }}, 선거일: {{ election.date }}
+{% if election.is_nonpartisan %}※ 정당 공천 금지 선거 (교육감/교육위원). 정당 프레임('○○당 강세' 등) 사용 금지. 후보 성향은 아래 '성향(등록값)'만 사실.{% endif %}
 우리 후보: {{ our_candidate or '미지정' }}
-전체 후보: {{ candidates|join(', ') }}
 
-=== 후보별 뉴스 현황 ===
+=== 후보별 정체성 (성향은 캠프 등록값이 확정 사실) ===
 {% for cn in candidate_news %}
-{{ cn.name }}{{ " (우리)" if cn.is_ours else "" }}: 오늘 {{ cn.today }}건({{ "+%d"|format(cn.today - cn.yesterday) if cn.today > cn.yesterday else cn.today - cn.yesterday }}), 주간 {{ cn.week }}건, 전체 {{ cn.total }}건 | 오늘 긍정 {{ cn.today_pos }} 부정 {{ cn.today_neg }}
+- {{ cn.name }}{{ " (우리)" if cn.is_ours else "" }} | 정당: {{ cn.party }} | 성향(등록값): {{ cn.alignment_kor }}
+{% endfor %}
+
+[후보 정체성 판단 절대 규칙]
+1. 각 후보의 '성향(등록값)'은 캠프가 직접 등록한 확정 사실이다. 보고서 전체에서 이것만 근거로 사용하라.
+2. 이름이 같은 다른 유명 정치인(사전 학습 데이터·WebSearch 결과)과 절대 혼동하지 마라. 예: 이 선거의 '윤건영'을 국회의원 윤건영(더불어민주당)과 동일인으로 단정 금지.
+3. 후보를 '진보/보수/민주당/국민의힘' 프레임으로 서술할 때 위 등록값과 일치해야 한다. 등록값과 반대로 서술하면 오답이며 보고서 신뢰도가 0이 된다.
+4. 정당 공천 금지 선거(교육감·교육위원)에서는 '○○당 강세' 같은 정당 구도 분석을 하지 마라.
+5. 수집 기사의 동명이인 요약이 섞여 있을 수 있으니(예: 기업인 김성근), 제목·요약에 직무·소속이 다르게 나오면 해당 후보 관련 근거로 쓰지 마라.
+
+=== 후보별 뉴스 현황 (동명이인·무관 자동 제외됨) ===
+{% for cn in candidate_news %}
+{{ cn.name }}{{ " (우리)" if cn.is_ours else "" }} [{{ cn.alignment_kor }}]: 오늘 {{ cn.today }}건({{ "+%d"|format(cn.today - cn.yesterday) if cn.today > cn.yesterday else cn.today - cn.yesterday }}), 주간 {{ cn.week }}건, 전체 {{ cn.total }}건 | 오늘 긍정 {{ cn.today_pos }} 부정 {{ cn.today_neg }}
 {% endfor %}
 
 === 최근 주요 뉴스 ===

@@ -56,7 +56,7 @@ async def get_election_facts(tenant_id: str, election_id: str) -> ElectionFacts:
             e_name, e_type, e_sido, e_sigungu, e_date = row
 
             cands = (await db.execute(_sql("""
-                SELECT c.id, c.name, c.party, c.role,
+                SELECT c.id, c.name, c.party, c.role, c.party_alignment,
                        (te.our_candidate_id = c.id) AS is_ours
                 FROM candidates c
                 LEFT JOIN tenant_elections te
@@ -65,11 +65,17 @@ async def get_election_facts(tenant_id: str, election_id: str) -> ElectionFacts:
                 ORDER BY c.priority
             """), {"tid": tenant_id, "eid": election_id})).all()
 
+            _align_kor = {"conservative": "보수", "progressive": "진보", "centrist": "중도", "independent": "무소속"}
             our = None
             rivals = []
             for c in cands:
-                d = {"id": str(c[0]), "name": c[1], "party": c[2] or "무소속", "role": c[3] or ""}
-                if c[4]:
+                d = {
+                    "id": str(c[0]), "name": c[1],
+                    "party": c[2] or "무소속", "role": c[3] or "",
+                    "party_alignment": c[4] or "",
+                    "alignment_kor": _align_kor.get(c[4] or "", "성향 미지정"),
+                }
+                if c[5]:
                     our = d
                 else:
                     rivals.append(d)
@@ -380,15 +386,30 @@ async def build_context(
     citations = []
 
     if facts:
-        rivals_str = ", ".join(f"{r['name']}({r['party']})" for r in facts.get("rivals", []))
+        _is_np = (facts.get("type") or "") in ("superintendent", "edu_board")
+
+        def _fmt_r(r):
+            a = r.get("alignment_kor") or "성향 미지정"
+            if _is_np:
+                return f"{r['name']} [무소속·정당공천금지 | 성향(등록값): {a}]"
+            return f"{r['name']} [정당: {r.get('party') or '무소속'} | 성향(등록값): {a}]"
+
+        rivals_str = ", ".join(_fmt_r(r) for r in facts.get("rivals", []))
         our = facts.get("our") or {}
+        our_line = _fmt_r(our) if our else "-"
+        nonpartisan_note = (
+            "\n※ 정당 공천 금지 선거. 정당 프레임(○○당 강세) 사용 금지. 후보 성향은 위 '성향(등록값)'만 사실."
+            if _is_np else ""
+        )
         sections.append(
-            f"=== 선거 기본 정보 ===\n"
+            f"=== 선거 기본 정보 ==={nonpartisan_note}\n"
             f"선거: {facts.get('name')} (D-{facts.get('d_day', 0)})\n"
             f"지역: {facts.get('sido','')} {facts.get('sigungu','')}\n"
             f"유형: {facts.get('type','')}\n"
-            f"우리 후보: {our.get('name','-')} ({our.get('party','')})\n"
-            f"경쟁 후보: {rivals_str or '-'}"
+            f"우리 후보: {our_line}\n"
+            f"경쟁 후보: {rivals_str or '-'}\n"
+            "[후보 정체성 판단 절대 규칙] 각 후보의 '성향(등록값)'은 캠프가 등록한 확정 사실이다. "
+            "이름이 같은 다른 정치인(사전 학습·WebSearch 결과)과 절대 혼동하지 마라. 등록값과 반대되는 이념(보수↔진보) 서술 금지."
         )
 
     for key in ("rag", "survey", "profile", "history", "memory"):

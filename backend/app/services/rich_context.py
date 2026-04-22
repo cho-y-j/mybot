@@ -55,15 +55,33 @@ async def build_rich_context(
     competitors = [c for c in candidates if not c.is_our_candidate]
     d_day = (election.election_date - date.today()).days if election.election_date else 0
 
-    comp_strs = [f"{c.name}({c.party or '무소속'})" for c in competitors]
+    # 후보 성향은 '등록값'만 사실 — 이름 동일 다른 정치인과 혼동 금지
+    _align_kor = {"conservative": "보수", "progressive": "진보", "centrist": "중도", "independent": "무소속"}
+    _is_nonpartisan = (election.election_type or "") in ("superintendent", "edu_board")
+
+    def _fmt(c):
+        a = _align_kor.get(c.party_alignment or "", "성향 미지정")
+        if _is_nonpartisan:
+            return f"{c.name} [정당: 무소속·정당공천금지 선거 | 성향(등록값): {a}]"
+        return f"{c.name} [정당: {c.party or '무소속'} | 성향(등록값): {a}]"
+
+    comp_strs = [_fmt(c) for c in competitors]
     info = [
         "=== 선거 기본 정보 ===",
         f"선거: {election.name} (D-{d_day})",
         f"지역: {election.region_sido or ''} {election.region_sigungu or ''}",
         f"유형: {election.election_type}",
-        f"우리 후보: {our.name if our else '-'} ({our.party if our and our.party else '무소속'})",
-        f"경쟁 후보: {', '.join(comp_strs)}",
+        f"우리 후보: {_fmt(our) if our else '-'}",
+        f"경쟁 후보: {', '.join(comp_strs) if comp_strs else '-'}",
     ]
+    if _is_nonpartisan:
+        info.append(
+            "※ 정당 공천 금지 선거. 정당 프레임(○○당 강세 등) 금지. 후보 성향은 위 '성향(등록값)'만 사실."
+        )
+    info.append(
+        "[후보 정체성 판단 절대 규칙] 각 후보의 '성향(등록값)'은 캠프가 직접 등록한 확정 사실이다. "
+        "이름이 같은 다른 정치인(사전 학습·WebSearch)과 절대 혼동하지 말고, 등록값과 반대되는 이념 분류(보수↔진보) 서술을 하지 마라."
+    )
     sections.append("\n".join(info))
 
     # 2. RAG 벡터 검색 — 주제와 관련된 데이터 (유사도 하한 0.55 엄수 → 무관 섹션 오염 차단)
@@ -209,6 +227,13 @@ async def build_rich_context(
 # ────────────────────────────────────────────────────────────
 
 LEGAL_SAFETY_PROMPT = """
+[후보 정체성 판단 절대 규칙 — 최우선]
+★ 각 후보의 '성향(등록값)'은 캠프가 등록한 확정 사실이다. 이 값만 근거로 쓴다.
+★ 이름이 같은 다른 유명 정치인·공인(사전 학습·WebSearch 결과)과 절대 혼동 금지. 동일인 단정 금지.
+★ 후보를 '진보/보수/민주당/국민의힘' 프레임으로 서술할 때 위 등록값과 반드시 일치해야 한다. 반대로 서술하면 콘텐츠 신뢰도 0.
+★ 교육감·교육위원 선거는 정당 공천 금지 → '○○당 강세/약세' 같은 정당 구도 서술 금지. 개인 등록 성향만 사용.
+★ 수집 자료에 '[동명이인/무관]' 태그가 보이면 해당 자료는 근거로 인용하지 말 것.
+
 [선거법 준수 필수 — 절대 위반 금지]
 1. **허위사실 공표 금지 (제250조)**: 확인되지 않은 사실 단정 금지. 출처 없는 의혹 주장 금지.
 2. **후보자 비방 금지 (제110조)**: 경쟁 후보에 대한 비방/모욕/인신공격 금지.
