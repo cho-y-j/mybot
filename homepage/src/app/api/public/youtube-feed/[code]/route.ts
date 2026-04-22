@@ -9,6 +9,7 @@
 import { NextRequest } from "next/server";
 import { successResponse, errorResponse } from "@/lib/api-response";
 import { prisma } from "@/lib/db";
+import { resolveYoutubeChannelId } from "@/lib/youtube-channel";
 
 const API_KEY = process.env.YOUTUBE_API_KEY || "";
 const PER_CHANNEL = 10;
@@ -50,10 +51,11 @@ export async function GET(_req: NextRequest, { params }: { params: { code: strin
     });
     if (!user || !user.isActive) return errorResponse("사이트를 찾을 수 없습니다", 404);
 
-    const [channels, overrides] = await Promise.all([
+    const [rawChannels, overrides] = await Promise.all([
+      // channelId NULL이어도 channelUrl 있으면 아래에서 자동 해결하므로 포함
       prisma.externalChannel.findMany({
-        where: { userId: user.id, platform: "youtube", isActive: true, channelId: { not: null } },
-        select: { channelId: true },
+        where: { userId: user.id, platform: "youtube", isActive: true },
+        select: { id: true, channelId: true, channelUrl: true },
       }),
       prisma.feedOverride.findMany({
         where: { userId: user.id, feedType: "youtube" },
@@ -61,10 +63,25 @@ export async function GET(_req: NextRequest, { params }: { params: { code: strin
       }),
     ]);
 
-    if (channels.length === 0) return successResponse({ items: [] });
+    // channelId NULL인 행은 URL로 자동 해결 → DB에 back-fill (self-healing)
+    const channelIds: string[] = [];
+    for (const c of rawChannels) {
+      if (c.channelId) { channelIds.push(c.channelId); continue; }
+      if (!c.channelUrl) continue;
+      const resolved = await resolveYoutubeChannelId(c.channelUrl, API_KEY);
+      if (resolved) {
+        channelIds.push(resolved);
+        await prisma.externalChannel.update({
+          where: { id: c.id },
+          data: { channelId: resolved },
+        }).catch(() => {});
+      }
+    }
+
+    if (channelIds.length === 0) return successResponse({ items: [] });
 
     const all = (
-      await Promise.all(channels.map((c) => fetchChannelUploads(c.channelId!)))
+      await Promise.all(channelIds.map((id) => fetchChannelUploads(id)))
     ).flat();
 
     const overMap = new Map(overrides.map((o) => [o.sourceKey, o]));

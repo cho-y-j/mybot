@@ -8,6 +8,7 @@ import { NextRequest } from "next/server";
 import { successResponse, errorResponse } from "@/lib/api-response";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/middleware";
+import { resolveYoutubeChannelId } from "@/lib/youtube-channel";
 
 const VALID_PLATFORMS = new Set(["youtube", "naver_blog", "instagram", "tistory", "brunch"]);
 
@@ -28,7 +29,7 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json();
   const platform = String(body.platform || "").trim();
-  const channelId = String(body.channelId || "").trim() || null;
+  let channelId = String(body.channelId || "").trim() || null;
   const channelUrl = String(body.channelUrl || "").trim() || null;
   const isActive = body.isActive ?? true;
 
@@ -37,6 +38,13 @@ export async function POST(req: NextRequest) {
   }
   if (!channelId && !channelUrl) {
     return errorResponse("channelId 또는 channelUrl 하나는 필수입니다", 400);
+  }
+
+  // YouTube는 URL(@handle, /channel/UCxxx, /c/..., /user/...)에서 channelId 자동 해결
+  // NULL로 저장하면 /api/public/youtube-feed가 해당 행을 건너뛰어 영상이 안 나옴
+  if (platform === "youtube" && !channelId && channelUrl) {
+    const resolved = await resolveYoutubeChannelId(channelUrl, process.env.YOUTUBE_API_KEY || "");
+    if (resolved) channelId = resolved;
   }
 
   const created = await prisma.externalChannel.create({
