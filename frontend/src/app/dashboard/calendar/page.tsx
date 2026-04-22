@@ -71,6 +71,25 @@ export default function CalendarPage() {
     }
   }, [election?.id]);
 
+  /** 타임라인에서 빈 시간 슬롯 클릭 → 오늘 {hour}:00에 1시간짜리 일정 즉시 생성 */
+  const handleQuickAdd = useCallback(async (hour: number, title: string) => {
+    if (!election?.id) return;
+    const candidateId = election.our_candidate_id || candidates[0]?.id;
+    if (!candidateId) return;
+    const now = new Date();
+    const startsAt = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, 0, 0);
+    const endsAt = new Date(startsAt);
+    endsAt.setHours(endsAt.getHours() + 1);
+    await api.createCandidateSchedule(election.id, {
+      candidate_id: candidateId,
+      title,
+      starts_at: startsAt.toISOString(),
+      ends_at: endsAt.toISOString(),
+      category: 'other',
+    });
+    await load();
+  }, [election?.id, election?.our_candidate_id, candidates, load]);
+
   /** 달력 뷰에서 월 이동 시 호출 — 현재 로드 범위 밖이면 확장 로드 */
   const handleCalendarRange = useCallback(async (fromIso: string, toIso: string) => {
     if (!election?.id) return [];
@@ -232,7 +251,9 @@ export default function CalendarPage() {
                 <span className="font-semibold">오늘 하루 타임라인 ({todayItems.length}건)</span>
                 <span className="text-xs text-[var(--muted)]">{showTimeline ? '닫기' : '펼치기'}</span>
               </button>
-              {showTimeline && <DayTimeline items={todayItems} onPick={setSelected} />}
+              {showTimeline && (
+                <DayTimeline items={todayItems} onPick={setSelected} onQuickAdd={handleQuickAdd} />
+              )}
             </div>
           )}
 
@@ -334,22 +355,51 @@ export default function CalendarPage() {
 }
 
 
-/** 오늘 하루 타임라인 — 06:00~22:00 세로 축 */
-function DayTimeline({ items, onPick }: { items: any[]; onPick: (s: any) => void }) {
+/** 오늘 하루 타임라인 — 06:00~22:00 세로 축 + 빈 슬롯 클릭 즉시 추가 */
+function DayTimeline({
+  items, onPick, onQuickAdd,
+}: {
+  items: any[];
+  onPick: (s: any) => void;
+  onQuickAdd: (hour: number, title: string) => Promise<void>;
+}) {
   const HOURS = Array.from({ length: 17 }, (_, i) => 6 + i); // 06~22
+  const [editingHour, setEditingHour] = useState<number | null>(null);
+  const [editText, setEditText] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const commit = async () => {
+    const title = editText.trim();
+    if (editingHour === null || !title || saving) return;
+    setSaving(true);
+    setErr(null);
+    try {
+      await onQuickAdd(editingHour, title);
+      setEditingHour(null);
+      setEditText('');
+    } catch (e: any) {
+      setErr(e?.message || '저장 실패');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const cancel = () => { setEditingHour(null); setEditText(''); setErr(null); };
 
   return (
     <div className="p-3">
       <div className="relative">
-        {HOURS.map((h) => (
-          <div key={h} className="flex items-start gap-3 py-2 border-t border-[var(--card-border)] first:border-t-0">
-            <div className="w-10 text-xs text-[var(--muted)] shrink-0 pt-0.5">
-              {String(h).padStart(2, '0')}:00
-            </div>
-            <div className="flex-1 min-h-[40px] space-y-1">
-              {items
-                .filter((s) => new Date(s.starts_at).getHours() === h)
-                .map((s) => (
+        {HOURS.map((h) => {
+          const hourItems = items.filter((s) => new Date(s.starts_at).getHours() === h);
+          const hh = String(h).padStart(2, '0');
+          return (
+            <div key={h} className="flex items-start gap-3 py-2 border-t border-[var(--card-border)] first:border-t-0">
+              <div className="w-10 text-xs text-[var(--muted)] shrink-0 pt-0.5">
+                {hh}:00
+              </div>
+              <div className="flex-1 min-h-[40px] space-y-1">
+                {hourItems.map((s) => (
                   <button
                     key={s.id}
                     onClick={() => onPick(s)}
@@ -364,10 +414,55 @@ function DayTimeline({ items, onPick }: { items: any[]; onPick: (s: any) => void
                     </span>
                   </button>
                 ))}
+
+                {editingHour === h ? (
+                  <div className="space-y-1">
+                    <div className="flex gap-2">
+                      <input
+                        autoFocus
+                        value={editText}
+                        onChange={(e) => setEditText(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') { e.preventDefault(); commit(); }
+                          else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+                        }}
+                        disabled={saving}
+                        placeholder={`${hh}:00 일정 제목 (Enter 저장 · Esc 취소)`}
+                        className="flex-1 px-3 py-2 rounded border border-blue-500 text-sm bg-[var(--card-bg)] focus:outline-none"
+                      />
+                      <button
+                        onClick={commit}
+                        disabled={!editText.trim() || saving}
+                        className="px-3 py-2 bg-blue-600 text-white rounded text-sm font-medium disabled:opacity-50"
+                      >
+                        {saving ? '저장…' : '저장'}
+                      </button>
+                      <button
+                        onClick={cancel}
+                        disabled={saving}
+                        className="px-2 py-2 text-sm text-[var(--muted)] hover:text-[var(--foreground)]"
+                      >
+                        취소
+                      </button>
+                    </div>
+                    {err && <p className="text-xs text-rose-500">{err}</p>}
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => { setEditingHour(h); setEditText(''); setErr(null); }}
+                    className="w-full text-left text-xs text-[var(--muted)]/60 hover:text-blue-500 hover:bg-blue-500/5 rounded px-3 py-1.5 border border-dashed border-transparent hover:border-blue-300 transition"
+                  >
+                    + {hh}:00에 일정 추가 (1시간 · 기타)
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
+      <p className="text-xs text-[var(--muted)] mt-3">
+        빠른 추가는 1시간·카테고리 “기타”로 저장됩니다. 저장 후 카드를 눌러 상세 수정하세요.
+      </p>
     </div>
   );
 }

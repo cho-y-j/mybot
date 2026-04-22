@@ -28,28 +28,33 @@ const LeafletMap: any = dynamic(
   async () => {
     const RL = await import('react-leaflet');
 
-    const InnerController = ({ center }: { center: [number, number] }) => {
+    const InnerController = ({ center, bounds }: { center: [number, number]; bounds?: [[number, number], [number, number]] | null }) => {
       const map = RL.useMap();
+      const boundsKey = bounds ? bounds.flat().join(',') : '';
       useEffect(() => {
         // 탭 전환·컨테이너 display:none 상태에서 Leaflet이 0×0 크기를 캐시한 경우
-        // 실제 크기를 재측정 + 중심 좌표로 이동
+        // 실제 크기를 재측정 + bounds 우선(선거 지역 전체 fit), 없으면 center/zoom 유지
         const t = setTimeout(() => {
           map.invalidateSize();
-          map.setView(center, map.getZoom());
+          if (bounds) {
+            map.fitBounds(bounds as any, { padding: [20, 20], maxZoom: 13 });
+          } else {
+            map.setView(center, map.getZoom());
+          }
         }, 80);
         return () => clearTimeout(t);
-      }, [map, center]);
+      }, [map, center, boundsKey]);
       return null;
     };
 
-    const Wrapper = ({ center, zoom, children }: any) => (
+    const Wrapper = ({ center, zoom, bounds, children }: any) => (
       <RL.MapContainer
         center={center}
         zoom={zoom}
         style={{ height: '100%', width: '100%' }}
         scrollWheelZoom
       >
-        <InnerController center={center} />
+        <InnerController center={center} bounds={bounds} />
         {children}
       </RL.MapContainer>
     );
@@ -169,7 +174,7 @@ export default function ScheduleHeatmap({ electionId, onSelectSchedule, onAddFor
       .map((f: any) => f.properties);
   }, [geojson]);
 
-  // 지도 중심 계산 (점들의 평균 or 충북 기본값)
+  // 지도 중심 계산 (점들의 평균 or 충북 기본값 — bounds 없을 때 fallback)
   const center: LatLngExpression = useMemo(() => {
     if (points.length === 0) return [36.635, 127.489]; // 충북 청주 기본
     let sumLat = 0, sumLng = 0;
@@ -179,6 +184,29 @@ export default function ScheduleHeatmap({ electionId, onSelectSchedule, onAddFor
     }
     return [sumLat / points.length, sumLng / points.length];
   }, [points]);
+
+  // GeoJSON 전체 경계 — 선거 지역(예: 충북 전체)이 화면에 딱 들어오도록 fitBounds에 사용
+  const geoBounds = useMemo<[[number, number], [number, number]] | null>(() => {
+    if (!geojson?.features || geojson.features.length === 0) return null;
+    let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+    const walk = (c: any) => {
+      if (typeof c[0] === 'number') {
+        const [lng, lat] = c;
+        if (lat < minLat) minLat = lat;
+        if (lat > maxLat) maxLat = lat;
+        if (lng < minLng) minLng = lng;
+        if (lng > maxLng) maxLng = lng;
+      } else {
+        for (const inner of c) walk(inner);
+      }
+    };
+    for (const f of geojson.features) {
+      const g = f?.geometry;
+      if (g?.coordinates) walk(g.coordinates);
+    }
+    if (!isFinite(minLat)) return null;
+    return [[minLat, minLng], [maxLat, maxLng]];
+  }, [geojson]);
 
   // 선택 동 일정만 필터
   const filteredPoints = useMemo(() =>
@@ -214,7 +242,7 @@ export default function ScheduleHeatmap({ electionId, onSelectSchedule, onAddFor
         {/* 지도 */}
         <div className="lg:col-span-2 h-[500px] rounded-xl overflow-hidden border border-[var(--card-border)]">
           {typeof window !== 'undefined' && (
-            <LeafletMap center={center} zoom={12}>
+            <LeafletMap center={center} zoom={12} bounds={geoBounds}>
               {/* OSM 타일 — URL 좌표 순서 {z}/{x}/{y} (표준) */}
               <TileLayer
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
