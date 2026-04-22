@@ -2352,6 +2352,21 @@ function SiteInfoPanel({
           {/* 공유 썸네일 */}
           <div className="rounded-lg border border-white/10 bg-[var(--card-bg)]/50 p-3 space-y-2">
             <p className="text-xs font-bold text-[var(--muted)] uppercase tracking-wider">공유 썸네일 (SNS 미리보기)</p>
+            <div className="rounded-md bg-blue-500/10 border border-blue-500/20 p-2 text-[11px] leading-relaxed text-blue-200/90">
+              카카오톡·페북 등에 링크 공유 시 보이는 대표 이미지입니다. 업로드 안 하면 순서대로 자동 선택:
+              <span className="block mt-1 text-blue-100/80">
+                1) 이 썸네일 → 2) Hero 배경 이미지 → 3) 후보 프로필 사진
+              </span>
+              <span className="block mt-1 text-blue-200/70">
+                {form.ogImageUrl
+                  ? "현재: 업로드한 이미지 사용 중"
+                  : settings.heroImageUrl
+                    ? "현재: Hero 배경 이미지 사용 중 (대체)"
+                    : settings.profileImageUrl
+                      ? "현재: 후보 프로필 사진 사용 중 (대체)"
+                      : "현재: 지정된 이미지 없음 — 봇이 페이지의 아무 이미지나 고름 (대체로 YouTube 썸네일)"}
+              </span>
+            </div>
             <input
               ref={ogFileRef}
               type="file"

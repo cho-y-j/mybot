@@ -271,6 +271,26 @@ async function getSiteData(codeOrSlug: string): Promise<SiteData | null> {
   };
 }
 
+const SITE_ORIGIN = "https://ai.on1.kr";
+
+/** 상대 경로(/api/site/uploads/...)를 절대 URL로. 카카오·페북 봇이 읽으려면 절대 URL 필수. */
+function toAbsoluteUrl(url: string): string {
+  return url.startsWith("http") ? url : `${SITE_ORIGIN}${url}`;
+}
+
+/**
+ * 공유 썸네일(og:image) 자동 선택.
+ * 우선순위: 사용자가 지정한 OG 이미지 → hero 배경 → 후보 프로필 사진
+ * 셋 다 없으면 og:image 생략 → 봇이 HTML에서 아무 이미지(=유튜브 썸네일 등)를 골라가지만,
+ * 그건 사용자가 hero 최소 한 장이라도 올리면 즉시 해결됨.
+ */
+function pickOgImage(settings: { ogImageUrl: string | null; heroImageUrl: string | null; profileImageUrl: string | null }): { url: string; source: "og" | "hero" | "profile" } | null {
+  if (settings.ogImageUrl) return { url: toAbsoluteUrl(settings.ogImageUrl), source: "og" };
+  if (settings.heroImageUrl) return { url: toAbsoluteUrl(settings.heroImageUrl), source: "hero" };
+  if (settings.profileImageUrl) return { url: toAbsoluteUrl(settings.profileImageUrl), source: "profile" };
+  return null;
+}
+
 export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
@@ -283,17 +303,25 @@ export async function generateMetadata({
     settings.ogDescription ??
     `${user.name}${settings.positionTitle ? ` ${settings.positionTitle}` : ""} 후보의 공식 홍보 사이트`;
 
+  const ogImage = pickOgImage(settings);
+
   return {
     title,
     description,
+    metadataBase: new URL(SITE_ORIGIN),
     openGraph: {
       title,
       description,
-      ...(settings.ogImageUrl && {
-        images: [{ url: settings.ogImageUrl.startsWith("http") ? settings.ogImageUrl : `https://k.on1.kr${settings.ogImageUrl}` }],
-      }),
+      url: `${SITE_ORIGIN}/${params.code}`,
+      ...(ogImage && { images: [{ url: ogImage.url, width: 1200, height: 630 }] }),
       locale: "ko_KR",
       type: "website",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      ...(ogImage && { images: [ogImage.url] }),
     },
   };
 }
