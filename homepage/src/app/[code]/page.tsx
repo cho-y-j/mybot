@@ -145,6 +145,19 @@ async function getSiteData(codeOrSlug: string): Promise<SiteData | null> {
 
   if (!user) return null;
 
+  // mybot 후보자 데이터 (public.candidates) — 홈페이지 site_settings보다 우선.
+  // mybot에서 후보자 관리로 party/role 바꾸면 홈페이지 즉시 반영 (이중 저장·수동 동기화 불필요).
+  const ourCandidate = user.electionId
+    ? await prisma.$queryRawUnsafe<Array<{ party: string | null; party_alignment: string | null; role: string | null }>>(
+        `SELECT party, party_alignment, role FROM public.candidates
+          WHERE election_id = $1::uuid AND is_our_candidate = true
+          LIMIT 1`,
+        user.electionId,
+      ).catch(() => [])
+    : [];
+  const candidateParty = ourCandidate[0]?.party || null;
+  const candidateRole = ourCandidate[0]?.role || null;
+
   const [settings, profiles, pledges, gallery, schedules, contacts, news, videos, blocks] =
     await Promise.all([
       prisma.siteSetting.findUnique({ where: { userId: user.id } }),
@@ -197,8 +210,9 @@ async function getSiteData(codeOrSlug: string): Promise<SiteData | null> {
       profileImageUrl: settings?.profileImageUrl ?? null,
       heroSlogan: settings?.heroSlogan ?? null,
       heroSubSlogan: settings?.heroSubSlogan ?? null,
-      partyName: settings?.partyName ?? null,
-      positionTitle: settings?.positionTitle ?? null,
+      // mybot 후보자 데이터를 우선. mybot에 값 있으면 그걸 쓰고, 없으면 홈페이지 설정값으로 fallback.
+      partyName: candidateParty ?? settings?.partyName ?? null,
+      positionTitle: candidateRole ?? settings?.positionTitle ?? null,
       subtitle: settings?.subtitle ?? null,
       introText: settings?.introText ?? null,
       primaryColor: settings?.primaryColor ?? "#C9151E",
