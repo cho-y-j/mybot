@@ -3130,7 +3130,7 @@ function CareerEditor({
                   <p className="text-xs font-medium text-blue-400">항목 수정</p>
                   <div className="flex gap-2">
                     <select
-                      className={`${inputClass} w-24`}
+                      className={`${inputClass} !w-24`}
                       value={editForm.type}
                       onChange={(e) => setEditForm({ ...editForm, type: e.target.value })}
                     >
@@ -3261,7 +3261,7 @@ function CareerEditor({
         <p className="text-xs font-medium text-[var(--muted)]">새 항목 추가</p>
         <div className="flex gap-2">
           <select
-            className={`${inputClass} w-24`}
+            className={`${inputClass} !w-24`}
             value={newItem.type}
             onChange={(e) => setNewItem({ ...newItem, type: e.target.value })}
           >
@@ -4223,7 +4223,7 @@ function ScheduleEditor({
                       onChange={(e) => setEditForm({ ...editForm, date: e.target.value })}
                     />
                     <input
-                      className={`${inputClass} w-24`}
+                      className={`${inputClass} !w-24`}
                       value={editForm.time}
                       onChange={(e) => setEditForm({ ...editForm, time: e.target.value })}
                       placeholder="시간"
@@ -4333,7 +4333,7 @@ function ScheduleEditor({
             onChange={(e) => setForm({ ...form, date: e.target.value })}
           />
           <input
-            className={`${inputClass} w-24`}
+            className={`${inputClass} !w-24`}
             value={form.time}
             onChange={(e) => setForm({ ...form, time: e.target.value })}
             placeholder="시간"
@@ -4519,7 +4519,7 @@ function NewsEditor({
           type="number"
           min={1}
           max={99}
-          className={`${inputClass} w-20 text-center`}
+          className={`${inputClass} !w-20 text-center`}
           value={showCount}
           onChange={(e) => {
             const v = parseInt(e.target.value, 10);
@@ -4561,7 +4561,7 @@ function NewsEditor({
                     />
                     <input
                       type="date"
-                      className={`${inputClass} w-40`}
+                      className={`${inputClass} !w-40`}
                       value={editForm.publishedDate}
                       onChange={(e) => setEditForm({ ...editForm, publishedDate: e.target.value })}
                     />
@@ -4719,7 +4719,7 @@ function NewsEditor({
           />
           <input
             type="date"
-            className={`${inputClass} w-40`}
+            className={`${inputClass} !w-40`}
             value={form.publishedDate}
             onChange={(e) =>
               setForm({ ...form, publishedDate: e.target.value })
@@ -4896,7 +4896,7 @@ function VideosEditor({
           type="number"
           min={1}
           max={30}
-          className={`${inputClass} w-20 text-center`}
+          className={`${inputClass} !w-20 text-center`}
           value={vidShowCount}
           onChange={(e) => {
             const v = parseInt(e.target.value, 10);
@@ -5170,7 +5170,7 @@ function BlogEditor({
         <label className={labelClass}>공개 사이트 노출 갯수</label>
         <input
           type="number" min={1} max={30}
-          className={`${inputClass} w-20 text-center`}
+          className={`${inputClass} !w-20 text-center`}
           value={blogShowCount}
           onChange={(e) => {
             const v = parseInt(e.target.value, 10);
@@ -5239,7 +5239,7 @@ function BlogEditor({
         <p className="text-xs font-medium text-[var(--muted)]">블로그 추가</p>
         <div className="flex gap-2">
           <select
-            className={`${inputClass} w-32`}
+            className={`${inputClass} !w-32`}
             value={newPlatform}
             onChange={(e) => setNewPlatform(e.target.value as typeof newPlatform)}
           >
@@ -5542,7 +5542,7 @@ function ContactsEditor({
                   <p className="text-xs font-medium text-blue-400">연락처 수정</p>
                   <div className="flex gap-2">
                     <select
-                      className={`${inputClass} w-28`}
+                      className={`${inputClass} !w-28`}
                       value={editForm.type}
                       onChange={(e) => setEditForm({ ...editForm, type: e.target.value })}
                     >
@@ -5669,7 +5669,7 @@ function ContactsEditor({
         <p className="text-xs font-medium text-[var(--muted)]">새 연락처 추가</p>
         <div className="flex gap-2">
           <select
-            className={`${inputClass} w-28`}
+            className={`${inputClass} !w-28`}
             value={form.type}
             onChange={(e) => setForm({ ...form, type: e.target.value })}
           >
