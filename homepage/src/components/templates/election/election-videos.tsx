@@ -10,7 +10,14 @@ interface Props {
   showCount?: number;
 }
 
-type DisplayVideo = { videoId: string; title?: string | null; sortOrder: number; id: string | number };
+type DisplayVideo = {
+  videoId: string;
+  title?: string | null;
+  id: string | number;
+  publishedAt?: string | null;
+  pinOrder?: number | null;
+  isManual: boolean;
+};
 
 export default function ElectionVideos({ videos, code, sectionTitle, showCount = 4 }: Props) {
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -25,11 +32,13 @@ export default function ElectionVideos({ videos, code, sectionTitle, showCount =
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (!alive) return;
-        const items = (d?.data?.items || []).map((v: { video_id: string; title?: string }, i: number) => ({
+        const items: DisplayVideo[] = (d?.data?.items || []).map((v: { video_id: string; title?: string; published_at?: string; pin_order?: number | null }) => ({
           id: `feed-${v.video_id}`,
           videoId: v.video_id,
           title: v.title,
-          sortOrder: 10000 + i, // 수동 등록(<1000)보다 뒤
+          publishedAt: v.published_at || null,
+          pinOrder: v.pin_order ?? null,
+          isManual: false,
         }));
         setFeed(items);
       })
@@ -37,15 +46,40 @@ export default function ElectionVideos({ videos, code, sectionTitle, showCount =
     return () => { alive = false; };
   }, [code]);
 
-  // 수동 등록 고정 영상 먼저 + 채널 피드 (중복 제거)
+  // 수동 영상(isManual=true)과 채널 피드(isManual=false) 중복 제거 후 병합
   const manualIds = new Set(videos.map((v) => v.videoId));
-  const merged: DisplayVideo[] = [
-    ...videos.map((v) => ({ id: v.id, videoId: v.videoId, title: v.title, sortOrder: v.sortOrder })),
-    ...feed.filter((f) => !manualIds.has(f.videoId)),
-  ];
+  const manualList: DisplayVideo[] = videos.map((v) => ({
+    id: v.id,
+    videoId: v.videoId,
+    title: v.title,
+    publishedAt: null, // 수동 등록은 날짜 없음
+    pinOrder: null,    // 수동은 자체 sortOrder 드래그 순서 사용
+    isManual: true,
+  }));
+  const merged = [...manualList, ...feed.filter((f) => !manualIds.has(f.videoId))];
   if (merged.length === 0) return null;
 
-  const sorted = [...merged].sort((a, b) => a.sortOrder - b.sortOrder);
+  // 정렬 규칙 (사용자 불만 "순서 엉망" 수정):
+  // 1) 핀된 것 먼저 (pinOrder ASC — 음수일수록 최근 핀이라 위로)
+  // 2) 그 다음 수동 등록 영상 (videos.sort_order — 드래그 순서)
+  // 3) 마지막 채널 자동 피드 (publishedAt DESC — 최신 먼저)
+  const sorted = [...merged].sort((a, b) => {
+    const aPinned = a.pinOrder != null;
+    const bPinned = b.pinOrder != null;
+    if (aPinned && !bPinned) return -1;
+    if (!aPinned && bPinned) return 1;
+    if (aPinned && bPinned) return (a.pinOrder ?? 0) - (b.pinOrder ?? 0);
+    // 둘 다 미핀: 수동 > 피드 순
+    if (a.isManual && !b.isManual) return -1;
+    if (!a.isManual && b.isManual) return 1;
+    if (a.isManual && b.isManual) {
+      const av = videos.find((v) => String(v.id) === String(a.id));
+      const bv = videos.find((v) => String(v.id) === String(b.id));
+      return (av?.sortOrder ?? 0) - (bv?.sortOrder ?? 0);
+    }
+    // 둘 다 피드: 날짜 DESC
+    return (b.publishedAt || "").localeCompare(a.publishedAt || "");
+  });
   const visible = showAll ? sorted : sorted.slice(0, showCount);
 
   return (

@@ -84,7 +84,7 @@ interface Channel {
   isActive: boolean;
 }
 
-/** YouTube Data API → /api/site/youtube-feed 응답의 개별 영상 (관리자용, hidden 플래그 포함) */
+/** YouTube Data API → /api/site/youtube-feed 응답의 개별 영상 (관리자용, hidden·pin 플래그 포함) */
 interface YoutubeFeedItem {
   video_id: string;
   title: string;
@@ -92,15 +92,17 @@ interface YoutubeFeedItem {
   channel?: string | null;
   published_at?: string | null;
   hidden?: boolean;
+  pin_order?: number | null;
 }
 
-/** 블로그 피드 관리자 응답 (hidden 플래그 포함) */
+/** 블로그 피드 관리자 응답 (hidden·pin 플래그 포함) */
 interface BlogFeedItem {
   url: string;
   title: string;
   platform?: string;
   published_at?: string | null;
   hidden?: boolean;
+  pin_order?: number | null;
 }
 
 interface ContactItem {
@@ -4555,6 +4557,26 @@ function NewsEditor({
     onSaved();
   }
 
+  // 상단 고정 토글 — pinOrder = -Date.now() (최근 고정이 위). 해제 시 null.
+  async function toggleAiPin(item: NewsItem) {
+    if (item.sourceType !== "ai" || !item.sourceKey) return;
+    onSaving();
+    const currentlyPinned = item.pinOrder != null;
+    const nextPin = currentlyPinned ? null : -Math.floor(Date.now() / 1000);
+    await apiFetch("/api/site/feed-overrides", {
+      method: "POST",
+      body: JSON.stringify({
+        feedType: "ai_news",
+        sourceKey: item.sourceKey,
+        pinOrder: nextPin,
+      }),
+    });
+    setItems((prev) =>
+      prev.map((i) => (i.sourceKey === item.sourceKey ? { ...i, pinOrder: nextPin } : i))
+    );
+    onSaved();
+  }
+
   return (
     <div className="space-y-3">
       {/* Show count config */}
@@ -4693,14 +4715,32 @@ function NewsEditor({
                     AI
                   </span>
                 )}
+                {item.pinOrder != null && (
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-500/30 text-blue-100 whitespace-nowrap">
+                    상단 고정
+                  </span>
+                )}
                 <span className={`flex-1 text-sm truncate ${isHidden ? "text-[var(--muted)] line-through" : "text-[var(--foreground)]"}`}>
                   {item.title}
                 </span>
                 {item.source && (
                   <span className="text-xs text-[var(--muted)] whitespace-nowrap">{item.source}</span>
                 )}
-                {/* AI: hide 토글만 / Manual: 수정 + 삭제 */}
+                {/* AI: 핀 + 숨기기 / Manual: 수정 + 삭제 */}
                 {isAi ? (
+                  <>
+                  <button
+                    onClick={() => toggleAiPin(item)}
+                    className={`transition-colors ${
+                      item.pinOrder != null ? "text-blue-400 hover:text-blue-300" : "text-[var(--muted)] hover:text-blue-400"
+                    }`}
+                    title={item.pinOrder != null ? "상단 고정 해제" : "상단에 고정"}
+                  >
+                    {/* Pushpin icon */}
+                    <svg className="h-4 w-4" fill={item.pinOrder != null ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 5l14 14M9 3l12 12-3 3-4-4-4 4-1-1 4-4-4-4 3-3M9 3L3 9l6 6" />
+                    </svg>
+                  </button>
                   <button
                     onClick={() => toggleAiHide(item)}
                     className={`transition-colors ${
@@ -4719,6 +4759,7 @@ function NewsEditor({
                       </svg>
                     )}
                   </button>
+                  </>
                 ) : (
                   <>
                     <button
@@ -5090,7 +5131,9 @@ function VideosEditor({
                 className={`flex gap-2 rounded-lg border px-2 py-2 transition-colors ${
                   v.hidden
                     ? "border-white/5 bg-[var(--background)]/30 opacity-50"
-                    : "border-white/5 bg-[var(--card-bg)]/30"
+                    : v.pin_order != null
+                      ? "border-blue-400/40 bg-blue-500/10"
+                      : "border-white/5 bg-[var(--card-bg)]/30"
                 }`}
               >
                 <a
@@ -5104,12 +5147,38 @@ function VideosEditor({
                     <img src={v.thumbnail} alt="" className="w-16 h-10 object-cover rounded flex-shrink-0" />
                   )}
                   <div className="flex-1 min-w-0">
-                    <div className={`text-xs line-clamp-2 leading-tight ${v.hidden ? "text-[var(--muted)] line-through" : "text-[var(--foreground)]"}`}>
-                      {v.title}
+                    <div className="flex items-center gap-1">
+                      {v.pin_order != null && (
+                        <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-blue-500/30 text-blue-100 shrink-0">
+                          상단 고정
+                        </span>
+                      )}
+                      <div className={`text-xs line-clamp-2 leading-tight ${v.hidden ? "text-[var(--muted)] line-through" : "text-[var(--foreground)]"}`}>
+                        {v.title}
+                      </div>
                     </div>
                     <div className="text-[10px] text-[var(--muted)] mt-0.5">{v.channel || ""}</div>
                   </div>
                 </a>
+                <button
+                  onClick={async () => {
+                    const currentlyPinned = v.pin_order != null;
+                    const nextPin = currentlyPinned ? null : -Math.floor(Date.now() / 1000);
+                    await apiFetch("/api/site/feed-overrides", {
+                      method: "POST",
+                      body: JSON.stringify({ feedType: "youtube", sourceKey: v.video_id, pinOrder: nextPin }),
+                    });
+                    setFeed((prev) => prev.map((x) => (x.video_id === v.video_id ? { ...x, pin_order: nextPin } : x)));
+                  }}
+                  className={`shrink-0 self-center transition-colors ${
+                    v.pin_order != null ? "text-blue-400 hover:text-blue-300" : "text-[var(--muted)] hover:text-blue-400"
+                  }`}
+                  title={v.pin_order != null ? "상단 고정 해제" : "상단에 고정"}
+                >
+                  <svg className="h-4 w-4" fill={v.pin_order != null ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 5l14 14M9 3l12 12-3 3-4-4-4 4-1-1 4-4-4-4 3-3M9 3L3 9l6 6" />
+                  </svg>
+                </button>
                 <button
                   onClick={async () => {
                     const nextHidden = !v.hidden;
@@ -5359,11 +5428,18 @@ function BlogEditor({
                 className={`flex gap-2 rounded-lg border px-2 py-2 transition-colors ${
                   p.hidden
                     ? "border-white/5 bg-[var(--background)]/30 opacity-50"
-                    : "border-white/5 bg-[var(--card-bg)]/30"
+                    : p.pin_order != null
+                      ? "border-blue-400/40 bg-blue-500/10"
+                      : "border-white/5 bg-[var(--card-bg)]/30"
                 }`}
               >
                 <a href={p.url} target="_blank" rel="noreferrer" className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5 mb-0.5">
+                    {p.pin_order != null && (
+                      <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-blue-500/30 text-blue-100">
+                        상단 고정
+                      </span>
+                    )}
                     {p.platform && (
                       <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-green-500/20 text-green-300">
                         {platformLabel(p.platform)}
@@ -5379,6 +5455,25 @@ function BlogEditor({
                     {p.title}
                   </div>
                 </a>
+                <button
+                  onClick={async () => {
+                    const currentlyPinned = p.pin_order != null;
+                    const nextPin = currentlyPinned ? null : -Math.floor(Date.now() / 1000);
+                    await apiFetch("/api/site/feed-overrides", {
+                      method: "POST",
+                      body: JSON.stringify({ feedType: "blog", sourceKey: p.url, pinOrder: nextPin }),
+                    });
+                    setFeed((prev) => prev.map((x) => (x.url === p.url ? { ...x, pin_order: nextPin } : x)));
+                  }}
+                  className={`shrink-0 self-center transition-colors ${
+                    p.pin_order != null ? "text-blue-400 hover:text-blue-300" : "text-[var(--muted)] hover:text-blue-400"
+                  }`}
+                  title={p.pin_order != null ? "상단 고정 해제" : "상단에 고정"}
+                >
+                  <svg className="h-4 w-4" fill={p.pin_order != null ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 5l14 14M9 3l12 12-3 3-4-4-4 4-1-1 4-4-4-4 3-3M9 3L3 9l6 6" />
+                  </svg>
+                </button>
                 <button
                   onClick={async () => {
                     const nextHidden = !p.hidden;

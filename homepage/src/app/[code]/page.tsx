@@ -27,7 +27,10 @@ async function mergeAiNews(
     sortOrder: n.sortOrder,
   }));
 
-  if (!electionId) return manual;
+  if (!electionId) {
+    // 수동 뉴스만 있어도 "핀(음수 sortOrder) → 날짜 DESC" 규칙은 동일 적용
+    return sortByPinThenDate(manual).slice(0, 30);
+  }
 
   try {
     const [aiRows, overrides] = await Promise.all([
@@ -50,20 +53,42 @@ async function mergeAiNews(
     const overMap = new Map(overrides.map((o) => [o.sourceKey, o]));
     const aiList = aiRows
       .filter((r) => !overMap.get(r.url)?.hidden)
-      .map((r, i) => ({
-        id: -1 - i, // manual과 구분
-        title: r.title,
-        source: r.source,
-        url: r.url,
-        imageUrl: null,
-        publishedDate: r.published_at ? new Date(r.published_at).toISOString().split("T")[0] : null,
-        sortOrder: overMap.get(r.url)?.pinOrder ?? 1000 + i,
-      }));
+      .map((r, i) => {
+        const pin = overMap.get(r.url)?.pinOrder ?? null;
+        return {
+          id: -1 - i,
+          title: r.title,
+          source: r.source,
+          url: r.url,
+          imageUrl: null,
+          publishedDate: r.published_at ? new Date(r.published_at).toISOString().split("T")[0] : null,
+          // 음수 sortOrder = 핀 상단 (최근 핀이 더 음수), 양수 = 일반 (날짜 정렬 사용)
+          sortOrder: pin != null ? pin : 0,
+          _pinned: pin != null,
+        };
+      });
 
-    return [...manual, ...aiList].sort((a, b) => a.sortOrder - b.sortOrder).slice(0, 30);
+    // 수동은 _pinned=false, sortOrder는 그대로 (드래그 순서 유지)
+    const manualWithFlag = manual.map((m) => ({ ...m, _pinned: false }));
+    return sortByPinThenDate([...manualWithFlag, ...aiList]).slice(0, 30);
   } catch {
-    return manual;
+    return sortByPinThenDate(manual).slice(0, 30);
   }
+}
+
+/**
+ * 공용 정렬: 1) 핀된 것 먼저 (sortOrder ASC — 최근 핀이 더 음수라 위로)
+ *          2) 그 다음 publishedDate DESC (최신 먼저)
+ *          3) publishedDate 없으면 뒤로
+ */
+function sortByPinThenDate<T extends { _pinned?: boolean; sortOrder?: number; publishedDate?: string | null }>(items: T[]): T[] {
+  return [...items].sort((a, b) => {
+    if (a._pinned && !b._pinned) return -1;
+    if (!a._pinned && b._pinned) return 1;
+    if (a._pinned && b._pinned) return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+    // 둘 다 미핀: 날짜 내림차순
+    return (b.publishedDate || "").localeCompare(a.publishedDate || "");
+  });
 }
 
 

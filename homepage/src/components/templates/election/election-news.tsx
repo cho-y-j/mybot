@@ -19,8 +19,8 @@ export default function ElectionNews({ news, sectionTitle, showCount = 3 }: Prop
 
   if (news.length === 0) return null;
 
-  const sorted = [...news].sort((a, b) => a.sortOrder - b.sortOrder);
-  const visible = showAll ? sorted : sorted.slice(0, showCount);
+  // page.tsx mergeAiNews 가 이미 "핀 먼저, 그 다음 날짜 DESC"로 정렬해서 넘겨줌. 재정렬 금지.
+  const visible = showAll ? news : news.slice(0, showCount);
 
   return (
     <section id="news" className="mx-auto max-w-4xl px-6 py-16 sm:py-20">
@@ -86,7 +86,7 @@ export default function ElectionNews({ news, sectionTitle, showCount = 3 }: Prop
       </div>
 
       {/* Show more button */}
-      {sorted.length > showCount && !showAll && (
+      {news.length > showCount && !showAll && (
         <div className="mt-6 text-center">
           <button
             onClick={() => setShowAll(true)}
