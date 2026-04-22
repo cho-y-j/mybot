@@ -84,22 +84,45 @@ async def analyze_batch_strategic(
 ▶ 단순 정보/제3자/지역 일반 뉴스 = neutral
 
 ★★ sentiment 감성 분류 규칙 (절대 준수) ★★
-sentiment는 기사의 객관적 톤이다. neutral 남발 금지! 대부분의 선거 기사는 positive 또는 negative다.
+sentiment는 **그 콘텐츠에 등장하는 '당사자(기사 주인공 후보)'에 대한 기자의 객관적 톤**이다.
+우리 후보인지 경쟁 후보인지, 우리에게 유리한지 불리한지는 **sentiment에 영향을 주지 않는다.** (전략적 유불리는 strategic_value가 담당)
 
-- strength (우리 후보 능동 행동) → sentiment = positive (공약발표, 시민면담, 입장표명 등)
-- weakness (우리 후보 위기) → sentiment = negative (의혹, 비판, 논란 등)
-- opportunity (경쟁자 리스크) → sentiment = negative (비판적 보도 톤)
-- threat (경쟁자 위협) → sentiment = positive (성과/동원 긍정 보도 톤)
-- neutral (제3자/일반 뉴스) → sentiment = neutral
+핵심 원칙: **확신이 70% 미만이면 무조건 neutral로 분류한다. 확실한 positive/negative 신호가 있을 때만 positive/negative.**
+- neutral 남발 금지 같은 경고는 없다. 모르면 neutral이 옳다.
+- "기자 톤이 positive인지 negative인지 모르겠다" → neutral.
 
-★ neutral은 정말 팩트만 나열하고 어떤 판단도 없는 기사에만 써라.
-★ "~를 발표했다", "~를 약속했다" = positive. "~가 논란이다", "~에 반발" = negative.
-★ 의심스러우면 positive 또는 negative 중 하나를 골라라. neutral은 최후의 수단이다.
+positive (당사자에게 우호적 톤):
+  ▶ 본인 발표·공약·정책 제시·현장 방문·시민 공감·수상·성과·협약·지지 표명
+  ▶ 공개된 활동이 순조롭게 진행·전달되는 톤
+  예) "김진균, 괴산 공약 공개" → positive (김진균 기준)
+  예) "윤건영, 창신초 엘리베이터 설치 공감" → positive (윤건영 기준: 방문·공감은 긍정 활동)
+  예) "김성근 예비후보 공약 발표" → positive (김성근 기준)
+
+negative (당사자에게 비판적 톤):
+  ▶ 본인 대상 의혹·논란·반발·사고·실수·법적 이슈·사퇴 요구·공격 받음
+  ▶ 기자 문장에 비판·지적·문제 제기가 명시적으로 들어감
+  예) "OO 후보 부동산 투기 의혹" → negative
+  예) "OO 후보 발언에 시민단체 반발" → negative
+  예) "OO 컷오프 — 자격 미달 지적" → negative
+
+neutral (중립 톤):
+  ▶ 단일화 논의·토론 일정·정책 배경 설명·선거 공지·사실 전달
+  ▶ 기자 톤이 중립적이거나 긍·부정 신호가 약함
+  ▶ **70% 확신 없으면 여기로 온다**
+  예) "조동욱, 진보 성향 후보 단일화 논의 제안" → neutral (정치 행위 제안, 톤 중립)
+  예) "반(反) OO 단일화 시동" → neutral (사실 전달)
+  예) "교육감 선거 토론회 27일 개최" → neutral
+  예) "충북교육청, 2026년 공무원 임용시험 공고" → neutral (후보와 무관한 행정 공지)
+
+★ 같은 기사여도 기준 후보별로 sentiment가 다를 수 있다. 당사자 기준 톤만 판정하라.
+★ strategic_value(전략 사분면)와 sentiment는 **완전히 독립**이다. 서로 덮어쓰지 마라.
+  - opportunity(우리에게 기회=경쟁자 약점)여도 기사 톤이 중립이면 sentiment=neutral이 맞다.
+  - threat(우리에게 위협=경쟁자 성과)여도 기사 톤 자체는 positive(경쟁자 기준)면 positive.
 
 ★★ 분류 필드 ★★
 1. is_relevant: 동명이인/무관 콘텐츠 검증 (산은캐피탈 사외이사, 야구선수, 군 병장, 다른 지역 정치인 등은 false)
 2. is_about_our_candidate: 우리 후보 본인/우리 캠프 관련이면 true. 경쟁 후보 단독 관련이면 false.
-3. sentiment: 위 감성 규칙에 따라 positive/negative/neutral (neutral 남발 금지!)
+3. sentiment: 위 감성 규칙에 따라 positive/negative/neutral (모르면 neutral)
 4. strategic_value: 위 사건/행동 구분 룰에 따라 strength/weakness/opportunity/threat/neutral
 5. action_type:
    - strength → promote (확산)
@@ -180,17 +203,12 @@ JSON array만 출력하세요. 다른 텍스트 절대 금지."""
                 r["sentiment_score"] = 0.0
             if not isinstance(r.get("topics"), list):
                 r["topics"] = []
-            # ★ strategic_value-sentiment 정합성 보정 (AI가 neutral 남발 시 교정)
-            sval = r["strategic_value"]
-            sent = r["sentiment"]
-            if sval in ("strength", "threat") and sent == "neutral":
-                r["sentiment"] = "positive"
-                if r["sentiment_score"] == 0.0:
-                    r["sentiment_score"] = 0.5
-            elif sval in ("weakness", "opportunity") and sent == "neutral":
-                r["sentiment"] = "negative"
-                if r["sentiment_score"] == 0.0:
-                    r["sentiment_score"] = -0.5
+            # 주의: sentiment와 strategic_value는 완전 독립이다.
+            # 전략 사분면(strength/weakness/opportunity/threat)으로 sentiment를 덮어쓰지 않는다.
+            # 과거: opportunity/weakness → negative, strength/threat → positive 로 강제 변환했으나
+            #       "조동욱 단일화 제안"(중립 톤) → negative 등 오분류가 발생해 제거함.
+            # sentiment는 AI가 기사 기자 톤으로 판정한 값만 사용한다. 확신 없으면 neutral 유지.
+
             # 무관 콘텐츠 강제 중립화
             if not r["is_relevant"]:
                 r["sentiment"] = "neutral"

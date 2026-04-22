@@ -116,8 +116,13 @@ async def _screen_batch(
 1. is_relevant: 이 글이 {region_clause}{election_type} 선거의 우리 후보/경쟁후보와 관련된 글인가?
 2. homonym_detected: 같은 이름의 다른 사람이면 정체 (없으면 null)
 3. block_type: "channel_block" | "source_video" | "source_url" | "none"
-4. sentiment: positive / negative / neutral
-5. strategic_value: strength / weakness / opportunity / threat / neutral
+4. sentiment: **당사자(기사 주인공 후보)에 대한 기자 톤만** 판정 (positive / negative / neutral)
+   - 확신 70% 미만이면 neutral. "모르면 neutral"이 원칙.
+   - 우리 후보인지 경쟁자인지, 우리에게 유·불리인지는 **sentiment에 영향 없음** (그건 strategic_value 담당).
+   - positive 예: 공약 발표·현장 방문·공감·성과·수상
+   - negative 예: 대상 의혹·논란·비판·반발·사고
+   - neutral 예: 단일화 논의·토론 일정·선거 공지·사실 전달
+5. strategic_value: strength / weakness / opportunity / threat / neutral (우리 캠프 관점 사분면, sentiment와 독립)
 6. summary: 핵심 1문장 요약
 7. threat_level: none / low / medium / high
 
