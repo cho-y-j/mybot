@@ -2336,7 +2336,7 @@ function SiteInfoPanel({
                 setOgUploading(true);
                 const fd = new FormData();
                 fd.append("file", file);
-                const res = await fetch("/api/upload/og", { method: "POST", body: fd });
+                const res = await fetch("/api/site/upload/og", { method: "POST", body: fd });
                 const json = await res.json();
                 setOgUploading(false);
                 if (json.success) {
@@ -2366,7 +2366,7 @@ function SiteInfoPanel({
                 className={`${btnSecondary} inline-flex items-center gap-1`}
                 onClick={async () => {
                   if (!showOgLibrary) {
-                    const res = await apiFetch<{ id: number; storedPath: string; originalName: string; fileType: string; createdAt: string }[]>("/api/upload");
+                    const res = await apiFetch<{ id: number; storedPath: string; originalName: string; fileType: string; createdAt: string }[]>("/api/site/upload");
                     if (res.success && res.data) setOgLibraryFiles(res.data);
                   }
                   setShowOgLibrary(!showOgLibrary);
@@ -2690,7 +2690,7 @@ function HeroEditor({
               setHeroUploading(true);
               const fd = new FormData();
               fd.append("file", file);
-              const res = await fetch("/api/upload/hero", { method: "POST", body: fd });
+              const res = await fetch("/api/site/upload/hero", { method: "POST", body: fd });
               const json = await res.json();
               setHeroUploading(false);
               if (json.success) {
@@ -2712,7 +2712,7 @@ function HeroEditor({
             className={`${btnSecondary} inline-flex items-center gap-1`}
             onClick={async () => {
               if (!showLibrary) {
-                const res = await apiFetch<{ id: number; storedPath: string; originalName: string; fileType: string; createdAt: string }[]>("/api/upload");
+                const res = await apiFetch<{ id: number; storedPath: string; originalName: string; fileType: string; createdAt: string }[]>("/api/site/upload");
                 if (res.success && res.data) setLibraryFiles(res.data);
               }
               setShowLibrary(!showLibrary);
@@ -2942,7 +2942,7 @@ function IntroEditor({
               setProfileUploading(true);
               const fd = new FormData();
               fd.append("file", file);
-              const res = await fetch("/api/upload/image", { method: "POST", body: fd });
+              const res = await fetch("/api/site/upload/image", { method: "POST", body: fd });
               const json = await res.json();
               setProfileUploading(false);
               if (json.success) {
@@ -2964,7 +2964,7 @@ function IntroEditor({
             className={`${btnSecondary} inline-flex items-center gap-1`}
             onClick={async () => {
               if (!showProfileLibrary) {
-                const res = await apiFetch<{ id: number; storedPath: string; originalName: string; fileType: string; createdAt: string }[]>("/api/upload");
+                const res = await apiFetch<{ id: number; storedPath: string; originalName: string; fileType: string; createdAt: string }[]>("/api/site/upload");
                 if (res.success && res.data) setProfileLibraryFiles(res.data);
               }
               setShowProfileLibrary(!showProfileLibrary);
@@ -3422,7 +3422,7 @@ function GoalsEditor({
     setPledgeUploading(true);
     const fd = new FormData();
     fd.append("file", file);
-    const uploadRes = await fetch("/api/upload/image", { method: "POST", body: fd });
+    const uploadRes = await fetch("/api/site/upload/image", { method: "POST", body: fd });
     const uploadJson = await uploadRes.json();
     if (uploadJson.success) {
       setEditForm((prev) => ({ ...prev, imageUrl: uploadJson.data.url }));
@@ -3508,7 +3508,7 @@ function GoalsEditor({
                         className={`${btnSecondary} text-xs`}
                         onClick={async () => {
                           if (!showPledgeLibrary) {
-                            const res = await apiFetch<{ id: number; storedPath: string; originalName: string; fileType: string; createdAt: string }[]>("/api/upload");
+                            const res = await apiFetch<{ id: number; storedPath: string; originalName: string; fileType: string; createdAt: string }[]>("/api/site/upload");
                             if (res.success && res.data) setPledgeLibraryFiles(res.data);
                           }
                           setShowPledgeLibrary(!showPledgeLibrary);
@@ -3911,7 +3911,7 @@ function GalleryEditor({
             for (const file of Array.from(files)) {
               const fd = new FormData();
               fd.append("file", file);
-              const uploadRes = await fetch("/api/upload/image", { method: "POST", body: fd });
+              const uploadRes = await fetch("/api/site/upload/image", { method: "POST", body: fd });
               const uploadJson = await uploadRes.json();
               if (uploadJson.success) {
                 const addRes = await apiFetch<GalleryItem>("/api/site/gallery", {
@@ -3956,7 +3956,7 @@ function GalleryEditor({
             className={`${btnSecondary} inline-flex items-center gap-1`}
             onClick={async () => {
               if (!showGalleryLibrary) {
-                const res = await apiFetch<{ id: number; storedPath: string; originalName: string; fileType: string; createdAt: string }[]>("/api/upload");
+                const res = await apiFetch<{ id: number; storedPath: string; originalName: string; fileType: string; createdAt: string }[]>("/api/site/upload");
                 if (res.success && res.data) setGalleryLibraryFiles(res.data);
               }
               setShowGalleryLibrary(!showGalleryLibrary);
@@ -5352,7 +5352,7 @@ function DonationEditor({
             setUploading(true);
             const fd = new FormData();
             fd.append("file", file);
-            const res = await fetch("/api/upload/image", { method: "POST", body: fd });
+            const res = await fetch("/api/site/upload/image", { method: "POST", body: fd });
             const json = await res.json();
             setUploading(false);
             if (json.success) {
@@ -5375,7 +5375,7 @@ function DonationEditor({
             className={btnSecondary}
             onClick={async () => {
               if (!showLibrary) {
-                const res = await apiFetch<typeof libraryFiles>("/api/upload");
+                const res = await apiFetch<typeof libraryFiles>("/api/site/upload");
                 if (res.success && res.data) setLibraryFiles(res.data);
               }
               setShowLibrary(!showLibrary);

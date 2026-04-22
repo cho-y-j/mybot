@@ -72,8 +72,16 @@ export function validateFile(
 }
 
 /**
+ * 업로드 URL은 /api/site/uploads/... 로 서빙.
+ * NPM은 /api/site/* 를 ep_homepage로 라우팅하고, Route Handler가 public/uploads/에서
+ * 런타임에 파일을 직접 읽어 응답. Next.js standalone은 시작 후 추가된 public 파일을
+ * 자동 서빙하지 않기 때문에 일반 정적 경로는 쓸 수 없음.
+ */
+const URL_PREFIX = "/api/site/uploads";
+
+/**
  * Saves a processed image buffer to disk.
- * Returns the relative URL path (e.g. /uploads/userCode/gallery/1234-abcd.webp).
+ * Returns the web-accessible URL (/_mh_assets/uploads/userCode/type/filename.webp).
  */
 export async function saveFile(
   buffer: Buffer,
@@ -90,15 +98,23 @@ export async function saveFile(
   const filePath = path.join(dir, filename);
   await fs.writeFile(filePath, buffer);
 
-  return `/uploads/${userCode}/${type}/${filename}`;
+  return `${URL_PREFIX}/${userCode}/${type}/${filename}`;
 }
 
 /**
- * Deletes a file from disk given its relative URL path.
- * Validates that the resolved path stays within the uploads directory
- * to prevent path-traversal attacks.
+ * Deletes a file from disk given its web URL or legacy relative path.
+ * Supports both `/_mh_assets/uploads/...` (new) and `/uploads/...` (legacy).
  */
-export async function deleteFile(relativePath: string): Promise<void> {
+export async function deleteFile(storedUrl: string): Promise<void> {
+  // 새 URL(/api/site/uploads/...) → 디스크 경로(public/uploads/...)로 역매핑
+  // 레거시 /_mh_assets/uploads/... 와 /uploads/... 도 모두 지원 (과거 업로드 호환)
+  let relativePath = storedUrl;
+  if (relativePath.startsWith(URL_PREFIX + "/")) {
+    relativePath = "/uploads" + relativePath.slice(URL_PREFIX.length);
+  } else if (relativePath.startsWith("/_mh_assets/uploads/")) {
+    relativePath = "/uploads" + relativePath.slice("/_mh_assets/uploads".length);
+  }
+
   const uploadsDir = path.resolve(process.cwd(), "public", "uploads");
   const filePath = path.resolve(process.cwd(), "public", relativePath);
 

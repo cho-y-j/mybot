@@ -27,6 +27,27 @@ const nextConfig = {
           { key: 'Permissions-Policy', value: 'geolocation=(), microphone=(), camera=()' },
         ],
       },
+      // 관리자/로그인 페이지는 배포 즉시 반영되어야 함. Next.js App Router 기본
+      // s-maxage=31536000이 브라우저로 전파되면 배포 후 옛 chunk 404로 UI 깨짐
+      // (mybot CLAUDE.md 1.25 동일 룰 — 2026-04-22 homepage에도 적용)
+      {
+        source: '/:code/admin/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
+        ],
+      },
+      {
+        source: '/:code/admin',
+        headers: [
+          { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
+        ],
+      },
+      {
+        source: '/super-admin/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
+        ],
+      },
     ];
   },
 };

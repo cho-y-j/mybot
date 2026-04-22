@@ -49,7 +49,7 @@ function ImageUploadField({
     formData.append("file", file);
 
     try {
-      const res = await fetch(`/api/upload/${uploadType}`, { method: "POST", body: formData });
+      const res = await fetch(`/api/site/upload/${uploadType}`, { method: "POST", body: formData });
       const data = await res.json();
       if (data.success) {
         onChange(data.data.url);
@@ -1187,7 +1187,7 @@ function GalleryTab() {
                   setUploading(true);
                   const fd = new FormData();
                   fd.append("file", file);
-                  const res = await fetch("/api/upload/image", { method: "POST", body: fd });
+                  const res = await fetch("/api/site/upload/image", { method: "POST", body: fd });
                   const json = await res.json();
                   setUploading(false);
                   if (json.success) {
@@ -1538,7 +1538,7 @@ function DonationTab() {
             setUploading(true);
             const fd = new FormData();
             fd.append("file", file);
-            const res = await fetch("/api/upload/image", { method: "POST", body: fd });
+            const res = await fetch("/api/site/upload/image", { method: "POST", body: fd });
             const json = await res.json();
             setUploading(false);
             if (json.success) {
