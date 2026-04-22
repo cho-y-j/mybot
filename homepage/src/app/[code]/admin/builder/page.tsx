@@ -1655,11 +1655,31 @@ function NewsPreview({ block, news }: { block: Block; news: NewsItem[] }) {
    VIDEOS Preview
    ═══════════════════════════════════════════════ */
 function VideosPreview({ block, videos }: { block: Block; videos: VideoItem[] }) {
-  if (videos.length === 0) {
+  const params = useParams();
+  const code = params.code as string;
+  const [feed, setFeed] = useState<Array<{ video_id: string; title?: string }>>([]);
+
+  useEffect(() => {
+    if (!code) return;
+    fetch(`/api/public/youtube-feed/${code}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setFeed(d?.data?.items || []))
+      .catch(() => {});
+  }, [code]);
+
+  const manualIds = new Set(videos.map((v) => v.videoId));
+  const merged: Array<{ id: string | number; videoId: string; title?: string | null; sortOrder: number }> = [
+    ...videos.map((v) => ({ id: v.id!, videoId: v.videoId, title: v.title, sortOrder: v.sortOrder || 0 })),
+    ...feed
+      .filter((f) => !manualIds.has(f.video_id))
+      .map((f, i) => ({ id: `feed-${f.video_id}`, videoId: f.video_id, title: f.title, sortOrder: 10000 + i })),
+  ];
+
+  if (merged.length === 0) {
     return <EmptySection label="영상" icon="solar:videocamera-record-linear" />;
   }
 
-  const sorted = [...videos].sort(
+  const sorted = [...merged].sort(
     (a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)
   );
 

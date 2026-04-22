@@ -76,7 +76,7 @@ export default function ElectionTemplate({ data }: Props) {
 
         <ElectionNews news={data.news} />
 
-        <ElectionVideos videos={data.videos} />
+        <ElectionVideos videos={data.videos} code={user.code} />
 
         <ElectionContacts
           contacts={data.contacts}
@@ -181,6 +181,7 @@ export default function ElectionTemplate({ data }: Props) {
         <ElectionVideos
           key="videos"
           videos={data.videos}
+          code={user.code}
           sectionTitle={blockTitle("videos")}
           showCount={(videosContent?.showCount as number) || 4}
         />

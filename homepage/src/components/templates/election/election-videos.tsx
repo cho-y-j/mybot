@@ -1,21 +1,51 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { SiteData } from "@/types/site";
 
 interface Props {
   videos: SiteData["videos"];
+  code?: string;
   sectionTitle?: string;
   showCount?: number;
 }
 
-export default function ElectionVideos({ videos, sectionTitle, showCount = 4 }: Props) {
+type DisplayVideo = { videoId: string; title?: string | null; sortOrder: number; id: string | number };
+
+export default function ElectionVideos({ videos, code, sectionTitle, showCount = 4 }: Props) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [feed, setFeed] = useState<DisplayVideo[]>([]);
 
-  if (videos.length === 0) return null;
+  // 등록한 YouTube 채널의 최신 영상 자동 표시 (수동 등록 영상과 병합)
+  useEffect(() => {
+    if (!code) return;
+    let alive = true;
+    fetch(`/api/public/youtube-feed/${code}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!alive) return;
+        const items = (d?.data?.items || []).map((v: { video_id: string; title?: string }, i: number) => ({
+          id: `feed-${v.video_id}`,
+          videoId: v.video_id,
+          title: v.title,
+          sortOrder: 10000 + i, // 수동 등록(<1000)보다 뒤
+        }));
+        setFeed(items);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [code]);
 
-  const sorted = [...videos].sort((a, b) => a.sortOrder - b.sortOrder);
+  // 수동 등록 고정 영상 먼저 + 채널 피드 (중복 제거)
+  const manualIds = new Set(videos.map((v) => v.videoId));
+  const merged: DisplayVideo[] = [
+    ...videos.map((v) => ({ id: v.id, videoId: v.videoId, title: v.title, sortOrder: v.sortOrder })),
+    ...feed.filter((f) => !manualIds.has(f.videoId)),
+  ];
+  if (merged.length === 0) return null;
+
+  const sorted = [...merged].sort((a, b) => a.sortOrder - b.sortOrder);
   const visible = showAll ? sorted : sorted.slice(0, showCount);
 
   return (
