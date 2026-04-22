@@ -342,11 +342,12 @@ async def _naver_autofetch(
     수집 항목:
     - YouTube 채널 URL → external_channels (platform=youtube)
     - 네이버 블로그 URL → external_channels (platform=naver_blog)
+    - Instagram / Facebook / Twitter · X URL → homepage.contacts
     - 대표 공약 5~7개 → pledges (기존 0개일 때만)
 
     Claude WebSearch 사용 (이미 권한 있음).
     """
-    result = {"channels": 0, "pledges": 0}
+    result = {"channels": 0, "pledges": 0, "contacts": 0}
 
     # 이미 있으면 스킵
     ch_cnt = (await db.execute(text(
@@ -358,9 +359,12 @@ async def _naver_autofetch(
     pf_cnt = (await db.execute(text(
         "SELECT COUNT(*) FROM homepage.profiles WHERE user_id = :uid"
     ), {"uid": homepage_user_id})).scalar() or 0
+    ct_cnt = (await db.execute(text(
+        "SELECT COUNT(*) FROM homepage.contacts WHERE user_id = :uid"
+    ), {"uid": homepage_user_id})).scalar() or 0
     result["profiles"] = 0
 
-    if ch_cnt > 0 and pl_cnt > 0 and pf_cnt > 0:
+    if ch_cnt > 0 and pl_cnt > 0 and pf_cnt > 0 and ct_cnt > 0:
         return result  # 이미 수동 입력됐으면 건드리지 않음
 
     try:
@@ -381,9 +385,12 @@ async def _naver_autofetch(
 ## 수집 항목
 1. **YouTube 채널 URL**: `/channel/UCxxx`, `/@handle`, `/user/xxx` 형식 중 하나. URL 직접 본 경우만.
 2. **네이버 블로그 URL**: `blog.naver.com/{{id}}` 형식. 다른 블로그(티스토리/브런치)도 찾으면 별도 반환.
-3. **대표 공약 5~7개** (선관위 등록 공약 우선)
-4. **학력 5개 이내** (대학/대학원)
-5. **경력 8개 이내** (현직 → 과거, "현 ~" / "전 ~" 형식)
+3. **Instagram URL**: `instagram.com/handle` 형식. 본인이 운영하는 공식 계정만.
+4. **Facebook URL**: `facebook.com/handle` 또는 `facebook.com/people/name/id` 형식. 본인 공식 페이지만.
+5. **Twitter · X URL**: `twitter.com/handle` 또는 `x.com/handle` 형식 (선택).
+6. **대표 공약 5~7개** (선관위 등록 공약 우선)
+7. **학력 5개 이내** (대학/대학원)
+8. **경력 8개 이내** (현직 → 과거, "현 ~" / "전 ~" 형식)
 
 ## 원칙
 - 확신도 `high`: 공식 홈페이지, 본인 인증된 SNS, 언론 보도 2군데 이상 확인된 경우
@@ -401,6 +408,10 @@ async def _naver_autofetch(
   "tistory_url": "xxx.tistory.com",
   "brunch_url": "brunch.co.kr/@xxx",
   "blog_confidence": "high|medium|low|none",
+  "instagram_url": "https://www.instagram.com/handle",
+  "facebook_url": "https://www.facebook.com/handle",
+  "twitter_url": "https://x.com/handle",
+  "sns_confidence": "high|medium|low|none",
   "pledges": [{{"title": "...", "description": "..."}}],
   "education": ["..."],
   "career": ["..."]
@@ -417,9 +428,13 @@ async def _naver_autofetch(
             region=region,
             has_youtube=bool(data and data.get("youtube_url")),
             has_blog=bool(data and data.get("blog_url")),
+            has_instagram=bool(data and data.get("instagram_url")),
+            has_facebook=bool(data and data.get("facebook_url")),
+            has_twitter=bool(data and data.get("twitter_url")),
             pledges_count=len(data.get("pledges") or []) if isinstance(data, dict) else 0,
             yt_conf=data.get("youtube_confidence") if isinstance(data, dict) else None,
             blog_conf=data.get("blog_confidence") if isinstance(data, dict) else None,
+            sns_conf=data.get("sns_confidence") if isinstance(data, dict) else None,
             data_keys=list(data.keys()) if isinstance(data, dict) else None,
         )
         if not data or not isinstance(data, dict):
@@ -462,6 +477,41 @@ async def _naver_autofetch(
                 VALUES (:uid, 'brunch', :cid, :curl, true, NOW())
             """), {"uid": homepage_user_id, "cid": brunch_id, "curl": brunch_url})
             result["channels"] += 1
+
+        # Instagram · Facebook · Twitter/X → homepage.contacts (기존 연락처 0개일 때만)
+        # 동명이인 리스크: sns_confidence 가 high·medium 일 때만 저장. low/none 은 건너뜀.
+        sns_conf = (data.get("sns_confidence") or "").lower()
+        if ct_cnt == 0 and sns_conf in ("high", "medium"):
+            sns_candidates = [
+                ("instagram", data.get("instagram_url"),
+                 r"instagram\.com/([a-zA-Z0-9_.]{2,30})", "@{m}"),
+                ("facebook", data.get("facebook_url"),
+                 r"facebook\.com/(?!people/)([a-zA-Z0-9._%-]+)", "{m}"),
+                ("facebook", data.get("facebook_url"),
+                 r"facebook\.com/people/([^/?]+)", "{m}"),
+                ("twitter", data.get("twitter_url"),
+                 r"(?:twitter|x)\.com/([a-zA-Z0-9_]{2,30})", "@{m}"),
+            ]
+            seen_types: set[str] = set()
+            next_order = 0
+            for ctype, url, pattern, label_fmt in sns_candidates:
+                if not url or ctype in seen_types:
+                    continue
+                m = _re.search(pattern, url)
+                if not m:
+                    continue
+                handle = m.group(1)
+                value = label_fmt.format(m=handle)
+                await db.execute(text("""
+                    INSERT INTO homepage.contacts (user_id, type, value, url, sort_order, created_at)
+                    VALUES (:uid, :t, :v, :u, :so, NOW())
+                """), {
+                    "uid": homepage_user_id, "t": ctype, "v": value[:200],
+                    "u": url[:500], "so": next_order,
+                })
+                result["contacts"] += 1
+                seen_types.add(ctype)
+                next_order += 1
 
         # 공약 추가 (기존 0개일 때만)
         pledges = data.get("pledges") or []
