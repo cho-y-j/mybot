@@ -68,6 +68,7 @@ const TileLayer = dynamic(() => import('react-leaflet').then((m) => m.TileLayer)
 const CircleMarker = dynamic(() => import('react-leaflet').then((m) => m.CircleMarker), { ssr: false });
 const Popup = dynamic(() => import('react-leaflet').then((m) => m.Popup), { ssr: false });
 const GeoJSON: any = dynamic(() => import('react-leaflet').then((m) => m.GeoJSON), { ssr: false });
+const Polygon: any = dynamic(() => import('react-leaflet').then((m) => m.Polygon), { ssr: false });
 
 interface Props {
   electionId: string;
@@ -185,6 +186,31 @@ export default function ScheduleHeatmap({ electionId, onSelectSchedule, onAddFor
     return [sumLat / points.length, sumLng / points.length];
   }, [points]);
 
+  // 선거 지역 바깥을 가릴 마스크 다각형 — 지도 세계 외곽 ring + 각 동 ring을 '구멍'으로 사용
+  // 결과: 지역 안쪽은 타일/폴리곤 정상 표시, 바깥쪽은 밝은 회색으로 덮임
+  const maskPositions = useMemo<[number, number][][] | null>(() => {
+    if (!geojson?.features || geojson.features.length === 0) return null;
+    const worldRing: [number, number][] = [
+      [-85, -180], [-85, 180], [85, 180], [85, -180], [-85, -180],
+    ];
+    const holes: [number, number][][] = [];
+    for (const f of geojson.features) {
+      const g = f?.geometry;
+      if (!g) continue;
+      const pushRing = (ring: any[]) => {
+        if (!Array.isArray(ring) || ring.length < 3) return;
+        holes.push(ring.map(([lng, lat]: [number, number]) => [lat, lng] as [number, number]));
+      };
+      if (g.type === 'Polygon') {
+        pushRing(g.coordinates?.[0]);
+      } else if (g.type === 'MultiPolygon') {
+        for (const poly of g.coordinates || []) pushRing(poly?.[0]);
+      }
+    }
+    if (holes.length === 0) return null;
+    return [worldRing, ...holes];
+  }, [geojson]);
+
   // GeoJSON 전체 경계 — 선거 지역(예: 충북 전체)이 화면에 딱 들어오도록 fitBounds에 사용
   const geoBounds = useMemo<[[number, number], [number, number]] | null>(() => {
     if (!geojson?.features || geojson.features.length === 0) return null;
@@ -249,6 +275,19 @@ export default function ScheduleHeatmap({ electionId, onSelectSchedule, onAddFor
                 url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
                 maxZoom={19}
               />
+              {/* 선거 지역 바깥 마스크 — 타일을 가려 해당 지역만 도드라지게 보이도록 */}
+              {maskPositions && (
+                <Polygon
+                  positions={maskPositions as any}
+                  pathOptions={{
+                    fillColor: '#f1f5f9',
+                    fillOpacity: 0.92,
+                    color: '#cbd5e1',
+                    weight: 1,
+                    interactive: false,
+                  }}
+                />
+              )}
               {/* 행정동 폴리곤 히트맵 (방문·인구 기반 색상) */}
               {geojson && (
                 <GeoJSON
