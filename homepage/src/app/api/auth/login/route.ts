@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { verifyPassword, createSession, applySessionCookies } from "@/lib/auth";
 import { errorResponse } from "@/lib/api-response";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { checkLocked, recordFailedLogin, clearLoginLock, LOCK_MINUTES } from "@/lib/login-lock";
 
 function buildLoginResponse(
   sessionId: string,
@@ -29,9 +30,11 @@ export async function POST(request: NextRequest) {
       request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
       "unknown";
 
-    const rateLimit = checkRateLimit(`login:${ip}`, 20, 15 * 60 * 1000);
-    if (!rateLimit.allowed) {
-      return errorResponse("로그인 시도 횟수를 초과했습니다. 15분 후 다시 시도해주세요", 429);
+    // IP 제한은 자동화 공격 방어용으로만 느슨히 유지 (같은 IP 5분에 100회 이상 차단).
+    // 실제 비번 실패 횟수 관리는 아래 계정별 locked_until 로직으로.
+    const ipLimit = checkRateLimit(`login:${ip}`, 100, 5 * 60 * 1000);
+    if (!ipLimit.allowed) {
+      return errorResponse("너무 많은 요청이 감지됐습니다. 잠시 후 다시 시도해주세요", 429);
     }
     const userAgent = request.headers.get("user-agent") || "";
     const remember = rememberMe ?? false;
@@ -39,7 +42,7 @@ export async function POST(request: NextRequest) {
     if (userType === "super_admin") {
       const admin = await prisma.superAdmin.findUnique({ where: { username } });
       if (!admin || !(await verifyPassword(password, admin.passwordHash))) {
-        return errorResponse(`아이디 또는 비밀번호가 올바르지 않습니다 (남은 시도: ${rateLimit.remaining}회)`, 401);
+        return errorResponse("아이디 또는 비밀번호가 올바르지 않습니다", 401);
       }
 
       const sessionId = await createSession(admin.id, "super_admin", remember, ip, userAgent);
@@ -56,11 +59,25 @@ export async function POST(request: NextRequest) {
     if (userType === "user") {
       const user = await prisma.user.findUnique({ where: { code: username } });
       if (!user || !user.isActive) {
-        return errorResponse(`아이디 또는 비밀번호가 올바르지 않습니다 (남은 시도: ${rateLimit.remaining}회)`, 401);
+        return errorResponse("아이디 또는 비밀번호가 올바르지 않습니다", 401);
       }
+
+      // 계정별 잠금 체크
+      const lock = checkLocked(user);
+      if (lock.locked) {
+        return errorResponse(`로그인 시도가 너무 많아 계정이 ${lock.remainingMinutes}분간 잠겼습니다. 잠시 후 다시 시도해주세요`, 423);
+      }
+
       if (!(await verifyPassword(password, user.passwordHash))) {
-        return errorResponse(`아이디 또는 비밀번호가 올바르지 않습니다 (남은 시도: ${rateLimit.remaining}회)`, 401);
+        const fail = await recordFailedLogin(user.id);
+        if (fail.justLocked) {
+          return errorResponse(`연속 5회 실패 — 계정이 ${LOCK_MINUTES}분간 잠겼습니다. 잠시 후 다시 시도해주세요`, 423);
+        }
+        return errorResponse(`아이디 또는 비밀번호가 올바르지 않습니다 (남은 시도: ${fail.remaining}회)`, 401);
       }
+
+      // 성공 — 잠금·카운터 해제
+      await clearLoginLock(user.id);
 
       const sessionId = await createSession(user.id, "user", remember, ip, userAgent);
       await prisma.activityLog.create({
