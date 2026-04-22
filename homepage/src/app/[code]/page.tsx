@@ -126,9 +126,14 @@ async function mergeCandidateSchedules(
 }
 
 
-async function getSiteData(code: string): Promise<SiteData | null> {
-  const user = await prisma.user.findUnique({
-    where: { code, isActive: true },
+async function getSiteData(codeOrSlug: string): Promise<SiteData | null> {
+  // URL 세그먼트는 slug(사용자 지정) 우선 조회 → 없으면 code(자동 생성)로 fallback.
+  // 두 주소가 영구 공존 — 기존 5403b830 링크 보호 + 새 짧은 slug 지원.
+  const user = await prisma.user.findFirst({
+    where: {
+      OR: [{ slug: codeOrSlug }, { code: codeOrSlug }],
+      isActive: true,
+    },
     select: {
       id: true,
       name: true,
@@ -180,7 +185,7 @@ async function getSiteData(code: string): Promise<SiteData | null> {
   return {
     user: {
       name: user.name,
-      code,
+      code: codeOrSlug,
       templateType: user.templateType,
       plan: user.plan,
     },

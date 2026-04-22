@@ -81,6 +81,7 @@ export async function getSession(
     id: user.id,
     userType: "user",
     code: user.code,
+    slug: user.slug,
     name: user.name,
   };
 }

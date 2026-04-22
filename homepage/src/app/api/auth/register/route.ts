@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { hashPassword, createSession, applySessionCookies } from "@/lib/auth";
 import { errorResponse } from "@/lib/api-response";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { validateSlug } from "@/lib/reserved-slugs";
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,31 +22,31 @@ export async function POST(request: NextRequest) {
       return errorResponse("사이트 코드, 이름, 비밀번호는 필수입니다", 400);
     }
 
-    // 코드 형식 검증 (영문 소문자 + 숫자, 3~20자)
-    if (!/^[a-z0-9]{3,20}$/.test(code)) {
-      return errorResponse("사이트 코드는 영문 소문자와 숫자 3~20자만 가능합니다", 400);
-    }
-
     if (password.length < 8) {
       return errorResponse("비밀번호는 8자 이상이어야 합니다", 400);
     }
 
-    // 코드 중복 검사
-    const existing = await prisma.user.findUnique({ where: { code } });
+    // slug 규칙과 동일하게 검증 (영소문자+숫자+하이픈, 3~30자, 예약어 차단)
+    const sv = validateSlug(code);
+    if (!sv.ok) {
+      return errorResponse(`사이트 주소: ${sv.reason}`, 400);
+    }
+    const normalized = sv.normalized;
+
+    // code + slug 양쪽 모두 중복 금지 — 동일 URL로 접근되기 때문
+    const existing = await prisma.user.findFirst({
+      where: { OR: [{ code: normalized }, { slug: normalized }] },
+    });
     if (existing) {
-      return errorResponse("이미 사용 중인 코드입니다. 다른 코드를 입력해주세요.", 409);
+      return errorResponse("이미 사용 중인 주소입니다. 다른 값을 입력해주세요.", 409);
     }
 
-    // 예약어 체크
-    const reserved = ["admin", "super-admin", "api", "signup", "login", "demo", "_next", "favicon"];
-    if (reserved.includes(code)) {
-      return errorResponse("사용할 수 없는 코드입니다", 400);
-    }
-
-    // 사용자 + 사이트 설정 생성
+    // 사용자 + 사이트 설정 생성. code를 slug로도 저장해서 URL 일관성 유지
     const user = await prisma.user.create({
       data: {
-        code,
+        code: normalized,
+        slug: normalized,
+        slugChangedAt: new Date(),
         name,
         phone: phone || null,
         passwordHash: await hashPassword(password),

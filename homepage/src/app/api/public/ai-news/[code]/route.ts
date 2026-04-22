@@ -8,6 +8,7 @@
  *
  * 채널이 없거나 뉴스 0건이면 items:[] 반환 (UI에서 빈 공간 유지).
  */
+import { whereCodeOrSlug } from "@/lib/find-user";
 import { NextRequest } from "next/server";
 import { successResponse, errorResponse } from "@/lib/api-response";
 import { prisma } from "@/lib/db";
@@ -18,8 +19,8 @@ export async function GET(
 ) {
   try {
     const { code } = params;
-    const user = await prisma.user.findUnique({
-      where: { code },
+    const user = await prisma.user.findFirst({
+      where: whereCodeOrSlug(code),
       select: { id: true, isActive: true, electionId: true },
     });
     if (!user || !user.isActive) return errorResponse("사이트를 찾을 수 없습니다", 404);

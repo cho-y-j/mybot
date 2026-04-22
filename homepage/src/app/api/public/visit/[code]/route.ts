@@ -1,3 +1,4 @@
+import { whereCodeOrSlug } from "@/lib/find-user";
 import { NextRequest } from "next/server";
 import { successResponse, errorResponse } from "@/lib/api-response";
 import { prisma } from "@/lib/db";
@@ -15,8 +16,8 @@ export async function POST(
   try {
     const { code } = params;
 
-    const user = await prisma.user.findUnique({
-      where: { code },
+    const user = await prisma.user.findFirst({
+      where: whereCodeOrSlug(code),
       select: { id: true, isActive: true },
     });
 

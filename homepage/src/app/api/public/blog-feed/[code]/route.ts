@@ -6,6 +6,7 @@
  * - FeedOverride(feedType=blog) 반영 (숨김/핀 순서)
  * - RSS 실패/없음 → items:[] (UI 빈 공간)
  */
+import { whereCodeOrSlug } from "@/lib/find-user";
 import { NextRequest } from "next/server";
 import { successResponse, errorResponse } from "@/lib/api-response";
 import { prisma } from "@/lib/db";
@@ -63,8 +64,8 @@ async function fetchRss(url: string) {
 export async function GET(_req: NextRequest, { params }: { params: { code: string } }) {
   try {
     const { code } = params;
-    const user = await prisma.user.findUnique({
-      where: { code },
+    const user = await prisma.user.findFirst({
+      where: whereCodeOrSlug(code),
       select: { id: true, isActive: true },
     });
     if (!user || !user.isActive) return errorResponse("사이트를 찾을 수 없습니다", 404);

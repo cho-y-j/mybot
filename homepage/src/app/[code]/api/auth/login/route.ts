@@ -31,7 +31,10 @@ export async function POST(
     }
     const userAgent = request.headers.get("user-agent") || "";
 
-    const user = await prisma.user.findUnique({ where: { code } });
+    // URL 세그먼트는 slug(지정 주소) 또는 code(자동 주소) 어느 쪽이든 허용
+    const user = await prisma.user.findFirst({
+      where: { OR: [{ slug: code }, { code }] },
+    });
     if (!user || !user.isActive) {
       return errorResponse(
         `비밀번호가 올바르지 않습니다 (남은 시도: ${rateLimit.remaining}회)`,

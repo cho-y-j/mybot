@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { IconifyIcon } from "@/components/ui/iconify-icon";
@@ -28,28 +28,39 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false);
   const [codeAvailable, setCodeAvailable] = useState<boolean | null>(null);
   const [codeChecking, setCodeChecking] = useState(false);
+  const [codeReason, setCodeReason] = useState<string>("");
 
   function update(key: string, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }));
-    if (key === "code") setCodeAvailable(null);
+    if (key === "code") {
+      setCodeAvailable(null);
+      setCodeReason("");
+    }
   }
 
-  async function checkCode() {
-    if (!form.code || !/^[a-z0-9]{3,20}$/.test(form.code)) {
-      setError("코드는 영문 소문자와 숫자 3~20자만 가능합니다");
-      return;
-    }
+  // 300ms 디바운스 자동 체크 — 예약어·형식·중복 한 번에
+  useEffect(() => {
+    const code = form.code.trim();
+    if (!code) { setCodeAvailable(null); setCodeReason(""); return; }
+    if (code.length < 3) { setCodeAvailable(null); setCodeReason(""); return; }
+
     setCodeChecking(true);
-    try {
-      const res = await fetch(`/api/public/site/${form.code}`);
-      setCodeAvailable(res.status === 404);
-      if (res.status !== 404) setError("이미 사용 중인 코드입니다");
-      else setError("");
-    } catch {
-      setCodeAvailable(null);
-    }
-    setCodeChecking(false);
-  }
+    const timer = setTimeout(async () => {
+      try {
+        const r = await fetch(`/api/public/slug/check?value=${encodeURIComponent(code)}`);
+        const d = await r.json();
+        setCodeAvailable(!!d?.data?.available);
+        setCodeReason(d?.data?.reason || "");
+      } catch {
+        setCodeAvailable(null);
+        setCodeReason("");
+      } finally {
+        setCodeChecking(false);
+      }
+    }, 300);
+
+    return () => { clearTimeout(timer); setCodeChecking(false); };
+  }, [form.code]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -146,35 +157,34 @@ export default function SignupPage() {
 
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-zinc-400">
-                  사이트 주소 (코드) *
+                  사이트 주소 *
                 </label>
-                <div className="flex gap-2">
-                  <div className="flex flex-1 items-center rounded-xl border border-white/10 bg-zinc-900 px-3">
-                    <span className="text-sm text-zinc-600">myhome.kr/</span>
-                    <input
-                      type="text"
-                      value={form.code}
-                      onChange={(e) => update("code", e.target.value.toLowerCase().replace(/[^a-z0-9]/g, ""))}
-                      className="flex-1 bg-transparent py-3 text-sm text-zinc-100 outline-none"
-                      placeholder="mycode"
-                      maxLength={20}
-                      required
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={checkCode}
-                    disabled={codeChecking || form.code.length < 3}
-                    className="shrink-0 rounded-xl bg-zinc-800 px-4 py-3 text-sm text-zinc-300 hover:bg-zinc-700 disabled:opacity-50"
-                  >
-                    {codeChecking ? "확인 중..." : "중복확인"}
-                  </button>
+                <div className="flex items-center rounded-xl border border-white/10 bg-zinc-900 px-3">
+                  <span className="text-sm text-zinc-600">ai.on1.kr/</span>
+                  <input
+                    type="text"
+                    value={form.code}
+                    onChange={(e) => update("code", e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+                    className="flex-1 bg-transparent py-3 text-sm text-zinc-100 outline-none"
+                    placeholder="jinkyun"
+                    maxLength={30}
+                    required
+                  />
+                  {form.code.length >= 3 && (
+                    <span className={`ml-2 text-xs ${
+                      codeChecking ? "text-zinc-500" :
+                      codeAvailable === true ? "text-green-400" :
+                      codeAvailable === false ? "text-red-400" : "text-zinc-500"
+                    }`}>
+                      {codeChecking ? "확인 중…" : codeAvailable === true ? "사용 가능" : codeAvailable === false ? "불가" : ""}
+                    </span>
+                  )}
                 </div>
-                {codeAvailable === true && (
-                  <p className="mt-1 text-xs text-green-400">사용 가능한 코드입니다</p>
-                )}
-                {codeAvailable === false && (
-                  <p className="mt-1 text-xs text-red-400">이미 사용 중인 코드입니다</p>
+                <p className="mt-1 text-xs text-zinc-500">
+                  영소문자·숫자·하이픈(-), 3~30자. 나중에 관리자 설정에서 변경 가능
+                </p>
+                {codeAvailable === false && codeReason && (
+                  <p className="mt-1 text-xs text-red-400">{codeReason}</p>
                 )}
               </div>
 
@@ -232,8 +242,17 @@ export default function SignupPage() {
                 <button type="button" onClick={() => setStep(1)}
                   className="rounded-xl border border-white/10 bg-zinc-800 px-6 py-3 text-sm text-zinc-300 hover:bg-zinc-700">이전</button>
                 <button type="button"
-                  onClick={() => { if (form.code && form.name) setStep(3); else setError("코드와 이름은 필수입니다"); }}
-                  className="flex-1 rounded-xl bg-accent px-6 py-3 text-sm font-semibold text-zinc-950 hover:scale-[1.01] active:scale-[0.99]">다음</button>
+                  onClick={() => {
+                    if (!form.name) { setError("이름은 필수입니다"); return; }
+                    if (!form.code || codeAvailable !== true) {
+                      setError(codeReason || "사용 가능한 사이트 주소를 입력하세요");
+                      return;
+                    }
+                    setError("");
+                    setStep(3);
+                  }}
+                  disabled={codeAvailable !== true || !form.name}
+                  className="flex-1 rounded-xl bg-accent px-6 py-3 text-sm font-semibold text-zinc-950 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed">다음</button>
               </div>
             </div>
           )}
@@ -249,7 +268,7 @@ export default function SignupPage() {
                 <div className="space-y-1 text-sm">
                   <div className="flex justify-between">
                     <span className="text-zinc-500">사이트 주소</span>
-                    <span className="font-mono text-zinc-200">myhome.kr/{form.code}</span>
+                    <span className="font-mono text-zinc-200">ai.on1.kr/{form.code}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-zinc-500">이름</span>
