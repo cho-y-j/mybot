@@ -4577,6 +4577,41 @@ function NewsEditor({
     onSaved();
   }
 
+  // 고정된 AI 항목끼리 위/아래 순서 변경 — 인접 핀 아이템과 pin_order 값 swap.
+  async function swapAiPinOrder(item: NewsItem, direction: "up" | "down") {
+    if (!item.sourceKey || item.pinOrder == null) return;
+    const pinned = items
+      .filter((i) => i.sourceType === "ai" && i.pinOrder != null && i.sourceKey)
+      .sort((a, b) => (a.pinOrder ?? 0) - (b.pinOrder ?? 0));
+    const idx = pinned.findIndex((i) => i.sourceKey === item.sourceKey);
+    const targetIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= pinned.length) return;
+    const other = pinned[targetIdx];
+    if (!other.sourceKey || other.pinOrder == null) return;
+
+    onSaving();
+    const myNew = other.pinOrder;
+    const otherNew = item.pinOrder;
+    await Promise.all([
+      apiFetch("/api/site/feed-overrides", {
+        method: "POST",
+        body: JSON.stringify({ feedType: "ai_news", sourceKey: item.sourceKey, pinOrder: myNew }),
+      }),
+      apiFetch("/api/site/feed-overrides", {
+        method: "POST",
+        body: JSON.stringify({ feedType: "ai_news", sourceKey: other.sourceKey, pinOrder: otherNew }),
+      }),
+    ]);
+    setItems((prev) =>
+      prev.map((i) => {
+        if (i.sourceKey === item.sourceKey) return { ...i, pinOrder: myNew };
+        if (i.sourceKey === other.sourceKey) return { ...i, pinOrder: otherNew };
+        return i;
+      })
+    );
+    onSaved();
+  }
+
   return (
     <div className="space-y-3">
       {/* Show count config */}
@@ -4726,9 +4761,37 @@ function NewsEditor({
                 {item.source && (
                   <span className="text-xs text-[var(--muted)] whitespace-nowrap">{item.source}</span>
                 )}
-                {/* AI: 핀 + 숨기기 / Manual: 수정 + 삭제 */}
+                {/* AI: 핀된 항목은 위/아래 순서 + 핀 + 숨기기 / Manual: 수정 + 삭제 */}
                 {isAi ? (
                   <>
+                  {item.pinOrder != null && (() => {
+                    const pinned = items.filter((i) => i.sourceType === "ai" && i.pinOrder != null).sort((a, b) => (a.pinOrder ?? 0) - (b.pinOrder ?? 0));
+                    const pinIdx = pinned.findIndex((i) => i.sourceKey === item.sourceKey);
+                    return (
+                      <div className="flex flex-col gap-0.5">
+                        <button
+                          onClick={() => swapAiPinOrder(item, "up")}
+                          disabled={pinIdx <= 0}
+                          className="text-blue-400 hover:text-blue-300 disabled:opacity-20"
+                          title="핀 순서 위로"
+                        >
+                          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => swapAiPinOrder(item, "down")}
+                          disabled={pinIdx < 0 || pinIdx >= pinned.length - 1}
+                          className="text-blue-400 hover:text-blue-300 disabled:opacity-20"
+                          title="핀 순서 아래로"
+                        >
+                          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+                      </div>
+                    );
+                  })()}
                   <button
                     onClick={() => toggleAiPin(item)}
                     className={`transition-colors ${
@@ -4848,6 +4911,27 @@ function VideosEditor({
   const [loading, setLoading] = useState(true);
   const [newUrl, setNewUrl] = useState("");
   const [adding, setAdding] = useState(false);
+
+  // 핀된 영상끼리 순서 변경 — 인접 핀 아이템과 pin_order 값 swap
+  async function swapFeedPin(item: YoutubeFeedItem, direction: "up" | "down") {
+    if (item.pin_order == null) return;
+    const pinned = feed.filter((v) => v.pin_order != null).sort((a, b) => (a.pin_order ?? 0) - (b.pin_order ?? 0));
+    const idx = pinned.findIndex((v) => v.video_id === item.video_id);
+    const targetIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= pinned.length) return;
+    const other = pinned[targetIdx];
+    if (other.pin_order == null) return;
+    const myNew = other.pin_order, otherNew = item.pin_order;
+    await Promise.all([
+      apiFetch("/api/site/feed-overrides", { method: "POST", body: JSON.stringify({ feedType: "youtube", sourceKey: item.video_id, pinOrder: myNew }) }),
+      apiFetch("/api/site/feed-overrides", { method: "POST", body: JSON.stringify({ feedType: "youtube", sourceKey: other.video_id, pinOrder: otherNew }) }),
+    ]);
+    setFeed((prev) => prev.map((v) => {
+      if (v.video_id === item.video_id) return { ...v, pin_order: myNew };
+      if (v.video_id === other.video_id) return { ...v, pin_order: otherNew };
+      return v;
+    }));
+  }
 
   // 개별 영상 수동 등록 (본인 채널 외 — 뉴스 영상 등)
   const [manualItems, setManualItems] = useState<VideoItem[]>(
@@ -5160,6 +5244,34 @@ function VideosEditor({
                     <div className="text-[10px] text-[var(--muted)] mt-0.5">{v.channel || ""}</div>
                   </div>
                 </a>
+                {v.pin_order != null && (() => {
+                  const pinned = feed.filter((x) => x.pin_order != null).sort((a, b) => (a.pin_order ?? 0) - (b.pin_order ?? 0));
+                  const pinIdx = pinned.findIndex((x) => x.video_id === v.video_id);
+                  return (
+                    <div className="flex flex-col gap-0.5 shrink-0 self-center">
+                      <button
+                        onClick={() => swapFeedPin(v, "up")}
+                        disabled={pinIdx <= 0}
+                        className="text-blue-400 hover:text-blue-300 disabled:opacity-20"
+                        title="핀 순서 위로"
+                      >
+                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => swapFeedPin(v, "down")}
+                        disabled={pinIdx < 0 || pinIdx >= pinned.length - 1}
+                        className="text-blue-400 hover:text-blue-300 disabled:opacity-20"
+                        title="핀 순서 아래로"
+                      >
+                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+                    </div>
+                  );
+                })()}
                 <button
                   onClick={async () => {
                     const currentlyPinned = v.pin_order != null;
@@ -5233,6 +5345,27 @@ function BlogEditor({
   const [newPlatform, setNewPlatform] = useState<"naver_blog" | "tistory" | "brunch">("naver_blog");
   const [newUrl, setNewUrl] = useState("");
   const [adding, setAdding] = useState(false);
+
+  // 핀된 글끼리 순서 변경
+  async function swapBlogPin(item: BlogFeedItem, direction: "up" | "down") {
+    if (item.pin_order == null) return;
+    const pinned = feed.filter((p) => p.pin_order != null).sort((a, b) => (a.pin_order ?? 0) - (b.pin_order ?? 0));
+    const idx = pinned.findIndex((p) => p.url === item.url);
+    const targetIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= pinned.length) return;
+    const other = pinned[targetIdx];
+    if (other.pin_order == null) return;
+    const myNew = other.pin_order, otherNew = item.pin_order;
+    await Promise.all([
+      apiFetch("/api/site/feed-overrides", { method: "POST", body: JSON.stringify({ feedType: "blog", sourceKey: item.url, pinOrder: myNew }) }),
+      apiFetch("/api/site/feed-overrides", { method: "POST", body: JSON.stringify({ feedType: "blog", sourceKey: other.url, pinOrder: otherNew }) }),
+    ]);
+    setFeed((prev) => prev.map((p) => {
+      if (p.url === item.url) return { ...p, pin_order: myNew };
+      if (p.url === other.url) return { ...p, pin_order: otherNew };
+      return p;
+    }));
+  }
 
   const blogContent = (block.content || {}) as Record<string, unknown>;
   const [blogShowCount, setBlogShowCount] = useState<number>((blogContent.showCount as number) || 6);
@@ -5455,6 +5588,34 @@ function BlogEditor({
                     {p.title}
                   </div>
                 </a>
+                {p.pin_order != null && (() => {
+                  const pinned = feed.filter((x) => x.pin_order != null).sort((a, b) => (a.pin_order ?? 0) - (b.pin_order ?? 0));
+                  const pinIdx = pinned.findIndex((x) => x.url === p.url);
+                  return (
+                    <div className="flex flex-col gap-0.5 shrink-0 self-center">
+                      <button
+                        onClick={() => swapBlogPin(p, "up")}
+                        disabled={pinIdx <= 0}
+                        className="text-blue-400 hover:text-blue-300 disabled:opacity-20"
+                        title="핀 순서 위로"
+                      >
+                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => swapBlogPin(p, "down")}
+                        disabled={pinIdx < 0 || pinIdx >= pinned.length - 1}
+                        className="text-blue-400 hover:text-blue-300 disabled:opacity-20"
+                        title="핀 순서 아래로"
+                      >
+                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+                    </div>
+                  );
+                })()}
                 <button
                   onClick={async () => {
                     const currentlyPinned = p.pin_order != null;
