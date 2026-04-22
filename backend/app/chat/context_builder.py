@@ -68,33 +68,69 @@ async def build_chat_context(
     # 출처 각주용 citations 수집 (build_chat_context_with_citations에서 사용)
     _citations_capture = getattr(build_chat_context, "_citations", None)
 
-    # ── RAG 벡터 검색 (최우선 — 질문과 관련된 데이터만) ──
-    try:
-        from app.services.embedding_service import search_similar
-        rag_results = await search_similar(db, tenant_id, question, limit=10, election_id=str(election_id) if election_id else None)
-        if rag_results:
-            lines = ["=== 질문 관련 데이터 (AI 벡터 검색) ==="]
-            for i, r in enumerate(rag_results, 1):
-                ref_id = f"rag-{i}"
-                lines.append(f"[ref-{ref_id}] [{r['source_type']}] {r['title'] or ''} (유사도 {r['similarity']})")
-                if r['content']:
-                    lines.append(f"  {r['content']}")
-                if _citations_capture is not None:
-                    _citations_capture.append({
-                        "id": ref_id, "type": r['source_type'],
-                        "title": r['title'] or '', "source_id": r.get('source_id'),
-                        "preview": (r['content'] or '')[:200],
-                        "similarity": r.get('similarity'),
-                    })
-            sections.append("\n".join(lines))
-            logger.info("rag_search_done", results=len(rag_results), tenant=tenant_id)
-    except Exception as e:
-        logger.warning("rag_search_failed", error=str(e)[:100])
+    # ── 의도별 근거 우선순위 결정 ──
+    # law/profile/history/survey 중 하나라도 있고, 뉴스/감성/트렌드 같은 수집 데이터 의도가 없으면
+    # → 뉴스 RAG는 이 질문에 대해 근거로 쓰면 안 됨 (스킵)
+    # 예: "선거법 후원금 한도" → 뉴스 근거 인용 금지
+    _structured_intents = {"law", "profile", "history", "survey"}
+    _data_intents = {"news", "sentiment", "trend", "candidate", "youtube", "community", "competitor", "risk", "strategy", "content", "report"}
+    skip_rag = bool(intents) and bool(_structured_intents & set(intents)) and not (_data_intents & set(intents))
 
-    # ── 실시간 웹 검색 (최신성 요구 시) ──
+    # ── 선거법 조항 (law 의도면 RAG보다 먼저 = 최상단 배치) ──
+    if "law" in intents:
+        from app.content.compliance import ComplianceChecker
+        sections.append(
+            "=== 공직선거법 주요 조항 (이 질문의 1순위 근거) ===\n"
+            f"{ComplianceChecker.get_law_text()}\n"
+            "※ 위 조항에 답이 없으면 국가법령정보센터(law.go.kr) 또는 선관위(nec.go.kr)를 WebSearch로 확인한 뒤 [web](URL)로 인용할 것. 수집 뉴스/커뮤니티 RAG는 이 질문의 근거로 사용 금지."
+        )
+        if _citations_capture is not None:
+            _citations_capture.append({
+                "id": "law", "type": "nec",
+                "title": "공직선거법 주요 조항",
+                "source": "국가법령정보센터",
+            })
+
+    # ── RAG 벡터 검색 (의도 무관 호출 금지 — 선거법/프로필 단독 질문엔 스킵) ──
+    if not skip_rag:
+        try:
+            from app.services.embedding_service import search_similar
+            # 의도별 유사도 하한: profile/history 단독이면 0.70으로 더 엄격
+            _strict = bool(intents) and bool({"profile", "history"} & set(intents)) and not (_data_intents & set(intents))
+            _min_sim = 0.70 if _strict else 0.55
+            _limit = 5 if _strict else 10
+            rag_results = await search_similar(
+                db, tenant_id, question,
+                limit=_limit,
+                election_id=str(election_id) if election_id else None,
+                min_similarity=_min_sim,
+            )
+            if rag_results:
+                lines = ["=== 질문 관련 데이터 (AI 벡터 검색) ==="]
+                for i, r in enumerate(rag_results, 1):
+                    ref_id = f"rag-{i}"
+                    lines.append(f"[ref-{ref_id}] [{r['source_type']}] {r['title'] or ''} (유사도 {r['similarity']})")
+                    if r['content']:
+                        lines.append(f"  {r['content']}")
+                    if _citations_capture is not None:
+                        _citations_capture.append({
+                            "id": ref_id, "type": r['source_type'],
+                            "title": r['title'] or '', "source_id": r.get('source_id'),
+                            "preview": (r['content'] or '')[:200],
+                            "similarity": r.get('similarity'),
+                        })
+                sections.append("\n".join(lines))
+                logger.info("rag_search_done", results=len(rag_results), tenant=tenant_id, min_sim=_min_sim)
+        except Exception as e:
+            logger.warning("rag_search_failed", error=str(e)[:100])
+    else:
+        logger.info("rag_search_skipped_by_intent", intents=intents, tenant=tenant_id)
+
+    # ── 실시간 웹 검색 (최신성 요구 시 + 법/프로필 단독 질문은 스킵 — AI가 WebSearch로 공식 사이트 직접 조회) ──
     try:
         from app.services.realtime_search import build_realtime_context, needs_realtime, search_realtime_news
-        if needs_realtime(question):
+        _skip_realtime_news = skip_rag  # law/profile/history 단독이면 네이버 뉴스도 부적절
+        if needs_realtime(question) and not _skip_realtime_news:
             from app.common.election_access import list_election_candidates
             cands = await list_election_candidates(db, election_id, tenant_id=tenant_id)
             our = next((c for c in cands if c.is_our_candidate), None)
@@ -150,10 +186,7 @@ async def build_chat_context(
         sections.append(await _build_survey_context(db, tenant_id, election_id))
         sections.append(await _build_survey_crosstab_context(db, tenant_id, election_id))
 
-    # 선거법 (법 조항 전문)
-    if "law" in intents:
-        from app.content.compliance import ComplianceChecker
-        sections.append(f"=== 공직선거법 주요 조항 ===\n{ComplianceChecker.get_law_text()}")
+    # 선거법 조항은 위에서 최상단에 이미 배치됨 — 여기서 중복 삽입 안 함
 
     # 후보자 공식 프로필 (학력/경력/재산/병역/전과) — 선관위 info.nec.go.kr 기반
     if "profile" in intents or "candidate" in intents:

@@ -103,9 +103,12 @@ async def search_similar(
     limit: int = 10,
     source_types: list[str] | None = None,
     election_id: str | None = None,
+    min_similarity: float = 0.55,
 ) -> list[dict]:
     """질문과 유사한 문서 검색. 코사인 유사도 기준.
     - tenant_id 소유 private 임베딩 + election_id 공유 임베딩(news/community/youtube) 모두 검색.
+    - min_similarity: 0.55 기본 (bge-m3 경험치). 선거법·프로필 질문은 호출부에서 0.70 이상 권장.
+      과거 0.30은 무관 문서까지 섞여 답변 근거로 오용되는 문제가 있었음.
     """
     emb = await create_embedding(query)
     if not emb:
@@ -145,7 +148,7 @@ async def search_similar(
                 "similarity": round(float(r.similarity), 3),
             }
             for r in rows
-            if r.similarity > 0.3  # 최소 유사도 필터
+            if r.similarity >= min_similarity
         ]
     except Exception as e:
         logger.error("embedding_search_error", error=str(e)[:200])

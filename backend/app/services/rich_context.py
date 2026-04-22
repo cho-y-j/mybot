@@ -66,10 +66,13 @@ async def build_rich_context(
     ]
     sections.append("\n".join(info))
 
-    # 2. RAG 벡터 검색 — 주제와 관련된 데이터
+    # 2. RAG 벡터 검색 — 주제와 관련된 데이터 (유사도 하한 0.55 엄수 → 무관 섹션 오염 차단)
     try:
         from app.services.embedding_service import search_similar
-        rag = await search_similar(db, tenant_id, topic, limit=max_rag, election_id=election_id)
+        rag = await search_similar(
+            db, tenant_id, topic, limit=max_rag, election_id=election_id,
+            min_similarity=0.55,
+        )
         if rag:
             lines = ["=== 주제 관련 수집 데이터 (AI 벡터 검색) ==="]
             for i, r in enumerate(rag, 1):
@@ -214,9 +217,10 @@ LEGAL_SAFETY_PROMPT = """
 4. **AI 생성물 표시 (제82조의8)**: 콘텐츠 첫줄에 "[AI 활용]" 표기.
 5. **객관성 원칙**: 수집된 데이터에 있는 사실만 인용. 추측·상상 금지.
 
-[참고 자료 사용 원칙]
-- 위 컨텍스트에 포함된 [ref-xxx] 데이터만 근거로 사용
-- 주장마다 해당 [ref-xxx] 각주 필수
-- 데이터에 없는 내용은 WebSearch로 검증 후 [web](URL) 형식 인용
-- 확인 불가한 내용은 "확인되지 않음"으로 명시 (절대 지어내지 말 것)
+[참고 자료 사용 원칙 — 질문/주제 관련성 엄수]
+- 위 컨텍스트에 포함된 [ref-xxx] 데이터만 근거로 사용.
+- **각주는 반드시 주장 내용과 관련이 있어야 한다.** 선거법 질문에 뉴스 [ref-rag-x]를 붙이거나, 후보 프로필 설명에 무관한 커뮤니티 각주를 붙이지 말 것.
+- 적절한 근거가 섹션에 없으면 [ref-xxx]를 달지 말고, 대신 WebSearch로 공식 출처(law.go.kr, nec.go.kr, info.nec.go.kr 등)를 조회해 [web](URL) 형식으로 인용.
+- 확인 불가한 내용은 "확인되지 않음"으로 명시 (절대 지어내지 말 것).
+- 선거법/규정 관련 주장은 반드시 '공직선거법 주요 조항' 섹션 또는 law.go.kr/nec.go.kr 공식 출처만 사용. 뉴스 RAG는 선거법 주장의 근거로 부적합.
 """
