@@ -354,7 +354,16 @@ export default function BuilderPage() {
 
   /* ─── Add block with example content ─── */
   async function addBlock(type: string, insertIndex: number) {
-    const sortOrder = insertIndex >= 0 ? insertIndex + 1 : 0;
+    // sort_order는 DB상 비연속(1,2,3,7,8...)일 수 있으므로 배열 index가 아니라
+    // 클릭한 바로 위 블록의 실제 sortOrder + 1 을 사용해야 해당 위치에 정확히 들어감.
+    // 2026-04-22: insertIndex+1 버그로 항상 top 근처로 밀려 올라가던 문제 수정
+    let sortOrder: number;
+    if (insertIndex < 0 || blocks.length === 0) {
+      sortOrder = 0;
+    } else {
+      const prev = blocks[insertIndex];
+      sortOrder = (prev?.sortOrder ?? insertIndex) + 1;
+    }
     const res = await apiFetch<Block>("/api/site/blocks", {
       method: "POST",
       body: JSON.stringify({ type, sortOrder }),
@@ -858,6 +867,16 @@ function SectionWrapper({
         if (!isEditing) onEdit();
       }}
     >
+      {/* 클릭 편집 힌트 — 비편집·보임 상태에서 상시 노출 (처음 사용자 발견성 개선) */}
+      {!isEditing && block.visible && (
+        <div className="absolute top-2 left-2 z-40 flex items-center gap-1.5 rounded-full bg-blue-500/90 px-2.5 py-1 text-[11px] font-semibold text-white shadow-md pointer-events-none select-none">
+          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          </svg>
+          {info?.label || block.type} 편집
+        </div>
+      )}
+
       {/* Hover toolbar */}
       <div
         className={`absolute top-2 right-2 z-50 flex items-center gap-1 rounded-lg bg-[var(--background)]/90 px-2 py-1 shadow-lg backdrop-blur-sm border border-white/10 transition-opacity duration-150 ${
