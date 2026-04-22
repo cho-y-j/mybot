@@ -25,13 +25,14 @@ export default function OnboardingPage() {
     election_date: '',
     our_name: '',
     our_party: '',
+    our_alignment: '', // conservative | progressive | centrist | independent
     plan: 'full' as 'full' | 'analysis_only' | 'homepage_only',
     homepage_code: '',
   });
   const [codeCheck, setCodeCheck] = useState<{ available: boolean | null; reason: string }>({
     available: null, reason: '',
   });
-  const [competitors, setCompetitors] = useState<{ name: string; party: string }[]>([]);
+  const [competitors, setCompetitors] = useState<{ name: string; party: string; party_alignment: string }[]>([]);
 
   // 미리보기 데이터
   const [preview, setPreview] = useState<any>(null);
@@ -97,7 +98,7 @@ export default function OnboardingPage() {
     finally { setLoading(false); }
   };
 
-  const addCompetitor = () => setCompetitors([...competitors, { name: '', party: '' }]);
+  const addCompetitor = () => setCompetitors([...competitors, { name: '', party: '', party_alignment: '' }]);
   const updateComp = (i: number, field: string, val: string) => {
     const u = [...competitors];
     (u[i] as any)[field] = val;
@@ -221,7 +222,12 @@ export default function OnboardingPage() {
             {/* 우리 후보 */}
             <div className="bg-blue-50 rounded-lg p-4 space-y-3">
               <h3 className="font-semibold text-blue-800">우리 후보 (필수)</h3>
-              <div className="grid grid-cols-2 gap-3">
+              {['superintendent', 'edu_board'].includes(form.election_type) && (
+                <p className="text-xs text-blue-700 bg-white/60 rounded px-2 py-1">
+                  교육감·교육위원 선거는 정당 공천이 금지됩니다. 정당 입력은 생략하고 성향만 지정하세요.
+                </p>
+              )}
+              <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs text-gray-600 mb-1">이름 *</label>
                   <input className="input-field" value={form.our_name}
@@ -230,7 +236,9 @@ export default function OnboardingPage() {
                 </div>
                 <div>
                   <label className="block text-xs text-gray-600 mb-1">정당</label>
-                  <select className="input-field" value={form.our_party}
+                  <select className="input-field"
+                    value={form.our_party}
+                    disabled={['superintendent', 'edu_board'].includes(form.election_type)}
                     onChange={e => setForm({ ...form, our_party: e.target.value })}>
                     <option value="">선택</option>
                     {parties.map(p => (
@@ -238,7 +246,21 @@ export default function OnboardingPage() {
                     ))}
                   </select>
                 </div>
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">정치 성향 *</label>
+                  <select className="input-field" value={form.our_alignment}
+                    onChange={e => setForm({ ...form, our_alignment: e.target.value })}>
+                    <option value="">선택</option>
+                    <option value="conservative">보수</option>
+                    <option value="progressive">진보</option>
+                    <option value="centrist">중도</option>
+                    <option value="independent">무소속</option>
+                  </select>
+                </div>
               </div>
+              <p className="text-xs text-gray-500">
+                성향은 AI가 뉴스·보고서에서 후보를 분류할 때 사용합니다. 반드시 입력하세요 — 입력하지 않으면 AI가 이름만 보고 잘못 추론할 수 있습니다.
+              </p>
             </div>
 
             {/* 경쟁 후보 */}
@@ -256,20 +278,36 @@ export default function OnboardingPage() {
               )}
 
               {competitors.map((c, i) => (
-                <div key={i} className="flex gap-2 mb-2">
+                <div key={i} className="flex gap-2 mb-2 items-start">
                   <input className="input-field flex-1" placeholder="이름"
                     value={c.name} onChange={e => updateComp(i, 'name', e.target.value)} />
-                  <select className="input-field w-36" value={c.party}
+                  <select className="input-field w-32"
+                    value={c.party}
+                    disabled={['superintendent', 'edu_board'].includes(form.election_type)}
                     onChange={e => updateComp(i, 'party', e.target.value)}>
                     <option value="">정당</option>
                     {parties.map(p => (
                       <option key={p.name} value={p.name}>{p.name}</option>
                     ))}
                   </select>
+                  <select className="input-field w-32" value={c.party_alignment}
+                    onChange={e => updateComp(i, 'party_alignment', e.target.value)}
+                    title="정치 성향">
+                    <option value="">성향</option>
+                    <option value="conservative">보수</option>
+                    <option value="progressive">진보</option>
+                    <option value="centrist">중도</option>
+                    <option value="independent">무소속</option>
+                  </select>
                   <button onClick={() => removeComp(i)}
                     className="text-red-400 hover:text-red-600 px-2"></button>
                 </div>
               ))}
+              {competitors.length > 0 && (
+                <p className="text-xs text-gray-500 mt-1">
+                  각 경쟁자의 정치 성향을 지정하면 AI 분석 정확도가 크게 올라갑니다(동명이인 혼동 방지).
+                </p>
+              )}
             </div>
 
             <div className="flex gap-3">

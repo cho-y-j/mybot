@@ -34,9 +34,11 @@ class SmartSetupRequest(BaseModel):
     # 우리 후보
     our_name: str
     our_party: Optional[str] = None
+    our_alignment: Optional[str] = None  # conservative | progressive | centrist | independent
 
     # 경쟁 후보 (선택 — 나중에 추가 가능)
-    competitors: list[dict] = []  # [{"name": "윤건영", "party": "보수"}, ...]
+    # [{"name": "윤건영", "party": "보수", "party_alignment": "conservative"}, ...]
+    competitors: list[dict] = []
 
     # 플랜 — full(분석+홈), analysis_only(분석만), homepage_only(홈만)
     plan: str = "full"
@@ -214,10 +216,15 @@ async def apply_setup(
         db, election.id, req.our_name,
         tenant_id=tid,
         party=req.our_party,
+        party_alignment=req.our_alignment,
         is_our_candidate=True,  # legacy column, 참고용
         priority=1,
         search_keywords=setup["candidate_keywords"].get(req.our_name, [req.our_name]),
     )
+    # 기존 후보(election-shared 공유)가 이미 있는데 성향이 비어있으면 채워준다.
+    # 덮어쓰기는 금지 — 먼저 등록한 캠프의 값 존중.
+    if not our_created and req.our_alignment and not getattr(our, "party_alignment", None):
+        our.party_alignment = req.our_alignment
 
     # tenant_elections 연결 — 이 tenant의 "우리 후보"는 여기서만 기록
     te_exists = (await db.execute(
@@ -244,15 +251,18 @@ async def apply_setup(
     # 3. 경쟁 후보 — election-shared: 이미 있으면 재사용
     comp_count = 0
     for i, c in enumerate(req.competitors):
-        await get_or_create_candidate(
+        comp, comp_created = await get_or_create_candidate(
             db, election.id, c["name"],
             tenant_id=tid,
             party=c.get("party"),
+            party_alignment=c.get("party_alignment"),
             is_our_candidate=False,
             priority=i + 2,
             search_keywords=setup["candidate_keywords"].get(c["name"], [c["name"]]),
             homonym_filters=c.get("homonym_filters", []),
         )
+        if not comp_created and c.get("party_alignment") and not getattr(comp, "party_alignment", None):
+            comp.party_alignment = c.get("party_alignment")
         comp_count += 1
 
     # 4. 모니터링 키워드
