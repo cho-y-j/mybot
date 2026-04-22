@@ -125,7 +125,10 @@ export default function CustomerSettingsPage() {
     }
   }
 
-  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  // window.location.origin 을 직접 쓰면 SSR vs CSR hydration mismatch (React #425)
+  // → 클릭·입력이 먹통. mount 이후 effect로 한 번만 읽어 state에 저장.
+  const [origin, setOrigin] = useState("");
+  useEffect(() => { setOrigin(window.location.origin); }, []);
   const activeUrl = currentSlug ? `${origin}/${currentSlug}` : `${origin}/${currentCode}`;
   const legacyUrl = currentSlug && currentCode ? `${origin}/${currentCode}` : null;
 
