@@ -5547,6 +5547,14 @@ function DonationEditor({
 /* ═══════════════════════════════════════════════
    Contacts Editor
    ═══════════════════════════════════════════════ */
+type SuggestedContact = {
+  type: "instagram" | "facebook" | "youtube" | "blog" | "tistory" | "brunch";
+  url: string;
+  value: string;
+  source: string;
+  matchedIn: string;
+};
+
 function ContactsEditor({
   block,
   items: initialItems,
@@ -5567,6 +5575,59 @@ function ContactsEditor({
   const [ctDragOverIdx, setCtDragOverIdx] = useState<number | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState({ type: "phone", label: "", value: "", url: "" });
+
+  // 네이버 자동 제안 상태
+  const [suggestLoading, setSuggestLoading] = useState(false);
+  const [suggestions, setSuggestions] = useState<SuggestedContact[] | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [suggestError, setSuggestError] = useState<string | null>(null);
+
+  async function fetchSuggestions() {
+    setSuggestLoading(true);
+    setSuggestError(null);
+    setSuggestions(null);
+    setSelected(new Set());
+    try {
+      const res = await apiFetch<{ items: SuggestedContact[] }>("/api/site/contacts/auto-suggest", {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      if (res.success && res.data) {
+        setSuggestions(res.data.items || []);
+        // 첫 진입 시 아무것도 체크하지 않음 — 사용자가 직접 고르게
+      } else {
+        setSuggestError(res.error || "검색 실패");
+      }
+    } finally {
+      setSuggestLoading(false);
+    }
+  }
+
+  function toggleSuggest(key: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  async function saveSelected() {
+    if (!suggestions || selected.size === 0) return;
+    onSaving();
+    const picked = suggestions.filter((s) => selected.has(`${s.type}:${s.url}`));
+    const added: ContactItem[] = [];
+    for (const s of picked) {
+      const res = await apiFetch<ContactItem>("/api/site/contacts", {
+        method: "POST",
+        body: JSON.stringify({ type: s.type, value: s.value, url: s.url, label: null }),
+      });
+      if (res.success && res.data) added.push(res.data);
+    }
+    if (added.length > 0) setItems((prev) => [...added, ...prev]);
+    setSuggestions(null);
+    setSelected(new Set());
+    onSaved();
+  }
 
   async function addItem() {
     if (!form.value.trim()) return;
@@ -5637,6 +5698,99 @@ function ContactsEditor({
 
   return (
     <div className="space-y-3">
+      {/* 네이버 자동 제안 — 후보자 이름으로 SNS 검색 */}
+      <div className="rounded-lg border border-blue-500/20 bg-blue-900/10 p-3 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <p className="text-xs font-semibold text-blue-200">네이버에서 자동 찾기</p>
+            <p className="text-[10px] text-blue-300/70 mt-0.5">
+              후보자 이름으로 네이버 검색 후 SNS·블로그·유튜브 URL을 찾아줍니다. 본인 계정만 체크해서 추가하세요.
+            </p>
+          </div>
+          <button
+            onClick={fetchSuggestions}
+            disabled={suggestLoading}
+            className="shrink-0 rounded-lg border border-blue-500/40 bg-blue-500/20 px-3 py-1.5 text-xs font-semibold text-blue-100 hover:bg-blue-500/30 disabled:opacity-50"
+          >
+            {suggestLoading ? "검색 중…" : "검색"}
+          </button>
+        </div>
+
+        {suggestError && <p className="text-xs text-red-400">{suggestError}</p>}
+
+        {suggestions !== null && suggestions.length === 0 && (
+          <p className="text-xs text-[var(--muted)]">
+            찾을 수 있는 SNS가 없습니다. 아래에서 수동으로 입력해주세요.
+          </p>
+        )}
+
+        {suggestions && suggestions.length > 0 && (
+          <div className="space-y-1.5">
+            <p className="text-[10px] text-blue-300/80">
+              {suggestions.length}개 발견. 본인 계정만 체크하세요:
+            </p>
+            <div className="max-h-72 overflow-y-auto space-y-1">
+              {suggestions.map((s) => {
+                const key = `${s.type}:${s.url}`;
+                const checked = selected.has(key);
+                return (
+                  <label
+                    key={key}
+                    className={`flex items-start gap-2 rounded-md border p-2 cursor-pointer transition-colors ${
+                      checked
+                        ? "border-blue-400/60 bg-blue-500/15"
+                        : "border-white/10 bg-[var(--card-bg)]/30 hover:border-blue-500/30"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleSuggest(key)}
+                      className="mt-0.5 rounded"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-500/30 text-blue-100 uppercase">
+                          {s.type}
+                        </span>
+                        <span className="text-xs font-medium text-[var(--foreground)] truncate">{s.value}</span>
+                      </div>
+                      <a
+                        href={s.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-[10px] text-blue-300/80 hover:underline truncate block"
+                      >
+                        {s.url}
+                      </a>
+                      {s.matchedIn && (
+                        <p className="text-[10px] text-[var(--muted)] mt-0.5 line-clamp-1">{s.matchedIn}</p>
+                      )}
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => { setSuggestions(null); setSelected(new Set()); }}
+                className="text-xs text-[var(--muted)] hover:text-[var(--foreground)] px-2 py-1"
+              >
+                취소
+              </button>
+              <button
+                onClick={saveSelected}
+                disabled={selected.size === 0}
+                className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
+              >
+                선택한 {selected.size}건 추가
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
       {items.length > 0 && (
         <div className="space-y-1.5 max-h-60 overflow-y-auto">
           {items.map((item, idx) => {
