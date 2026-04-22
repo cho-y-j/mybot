@@ -32,7 +32,8 @@ export default function NewsAnalysisPage() {
     try {
       const [ov, news] = await Promise.all([
         api.getAnalysisOverview(election.id, 30),
-        api.getCollectedNews(election.id, 200),
+        // 2026-04-22: 200 하드코딩 제거 — 기간 내 전체 수집량 반영
+        api.getCollectedNews(election.id, 10000),
       ]);
       setData(ov);
       // 발행일(date=published_at) 역순 — 모든 후보 섞여서 최신순

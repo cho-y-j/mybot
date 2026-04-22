@@ -455,7 +455,7 @@ async def get_community_data(
             ).order_by(
                 CommunityPost.published_at.desc().nullslast(),
                 CommunityPost.collected_at.desc()
-            ).limit(100)
+            )
         )).scalars().all()
 
         sent = {"positive": 0, "negative": 0, "neutral": 0}
@@ -556,7 +556,7 @@ async def get_youtube_data(
             ).order_by(
                 YouTubeVideo.published_at.desc().nullslast(),
                 YouTubeVideo.collected_at.desc()
-            ).limit(50)
+            )
         )).scalars().all()
 
         total_views = sum(v.views or 0 for v in videos)

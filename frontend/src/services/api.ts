@@ -368,7 +368,8 @@ class ApiClient {
   }
 
   getCommunityPosts(electionId: string, days: number = 30, candidate: string = '', sentiment: string = '') {
-    const params = new URLSearchParams({ days: String(days), limit: '200' });
+    // 기간 내 전체 수집량을 그대로 반영. 2026-04-22: 200 하드코딩 제거
+    const params = new URLSearchParams({ days: String(days), limit: '10000' });
     if (candidate) params.set('candidate', candidate);
     if (sentiment) params.set('sentiment', sentiment);
     return this.request<any[]>(`/analysis/${electionId}/community-posts?${params}`);

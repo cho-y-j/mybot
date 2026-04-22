@@ -649,10 +649,11 @@ async def get_community_posts_list(
     days: int = Query(30, ge=1, le=180),
     candidate: str = "",
     sentiment: str = "",
-    limit: int = 200,
+    limit: int = 10000,
     db: AsyncSession = Depends(get_db),
 ):
-    """커뮤니티 게시글 전체 목록 — 필터 + 최신순 정렬."""
+    """커뮤니티 게시글 전체 목록 — 필터 + 최신순 정렬.
+    2026-04-22: 기본 limit 200 → 10000 (기간 내 전체 집계 노출)."""
     from app.common.election_access import get_election_tenant_ids
     all_tids = await get_election_tenant_ids(db, election_id)
     since = date.today() - timedelta(days=days)

@@ -181,29 +181,32 @@ async def embed_batch_items(
 
 
 async def embed_existing_data(db: AsyncSession, tenant_id: str, election_id: str) -> dict:
-    """기존 데이터 일괄 임베딩. 이미 임베딩된 것은 스킵 (효율화)."""
+    """기존 데이터 일괄 임베딩.
+
+    - 미임베딩 항목만 뽑아오도록 SQL 단계에서 NOT EXISTS 필터 (LIMIT 밖에 숨어 영영 누락되던 버그 수정)
+    - 배치당 최대 1000건 처리. 백로그가 더 많아도 다음 스케줄 호출(매 수집 주기)에서 이어받음
+    - Ollama bge-m3 로컬이라 API 토큰 비용 0. 검색 시 pgvector HNSW 인덱스로 수만건도 ms 수준
+
+    private 타입(report/briefing/content): 내 캠프(tenant_id) 전용
+    shared 타입(news/community/youtube): 같은 election 내에서는 재사용
+    """
     result = {}
+    BATCH = 1000
 
-    # 이미 임베딩된 source_id 조회 (스킵용)
-    # - private 타입(report/briefing/content): 내 캠프 기준
-    # - shared 타입(news/community/youtube): election 단위 — 다른 캠프가 만든 것도 재사용
-    existing_rows = (await db.execute(text("""
-        SELECT source_type, source_id FROM embeddings
-        WHERE tenant_id = cast(:tid as uuid)
-           OR (tenant_id IS NULL AND election_id = cast(:eid as uuid))
-    """), {"tid": tenant_id, "eid": election_id})).fetchall()
-    existing_ids: dict[str, set] = {}
-    for r in existing_rows:
-        existing_ids.setdefault(r.source_type, set()).add(str(r.source_id))
-
-    def _skip(stype: str, sid: str) -> bool:
-        return sid in existing_ids.get(stype, set())
-
-    # 보고서 + 브리핑 + 콘텐츠 (Report 테이블)
-    reports = (await db.execute(text("""
-        SELECT id, report_type, title, content_text FROM reports
-        WHERE tenant_id = :tid AND election_id = :eid AND content_text IS NOT NULL
-        ORDER BY report_date DESC LIMIT 50
+    # 보고서 + 브리핑 + 콘텐츠 — report_type 별로 embeddings.source_type 이 달라 배치 내에서 개별 분류
+    reports = (await db.execute(text(f"""
+        SELECT r.id, r.report_type, r.title, r.content_text
+          FROM reports r
+         WHERE r.tenant_id = :tid AND r.election_id = :eid
+           AND r.content_text IS NOT NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM embeddings e
+              WHERE e.source_id = r.id::text
+                AND e.source_type IN ('report','briefing','content')
+                AND e.tenant_id = :tid::uuid
+           )
+         ORDER BY r.report_date DESC
+         LIMIT {BATCH}
     """), {"tid": tenant_id, "eid": election_id})).fetchall()
 
     count = 0
@@ -217,9 +220,6 @@ async def embed_existing_data(db: AsyncSession, tenant_id: str, election_id: str
         else:
             stype = "report"
 
-        if _skip(stype, str(r.id)):
-            continue
-
         ok = await store_embedding(db, tenant_id, election_id, stype, str(r.id),
                                    r.title or r.report_type, r.content_text)
         if ok:
@@ -230,17 +230,26 @@ async def embed_existing_data(db: AsyncSession, tenant_id: str, election_id: str
                 pass
     result["reports"] = count
 
-    # 뉴스 (election-shared) — 임베딩 안 된 것만
-    news = (await db.execute(text("""
-        SELECT id, title, ai_summary, ai_reason FROM news_articles
-        WHERE election_id = :eid AND is_relevant = true AND ai_summary IS NOT NULL
-        ORDER BY collected_at DESC LIMIT 200
-    """), {"eid": election_id})).fetchall()
+    # 뉴스 (election-shared) — 미임베딩만
+    news = (await db.execute(text(f"""
+        SELECT n.id, n.title, n.ai_summary, n.ai_reason
+          FROM news_articles n
+         WHERE n.election_id = :eid
+           AND n.is_relevant = true
+           AND n.ai_summary IS NOT NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM embeddings e
+              WHERE e.source_type = 'news'
+                AND e.source_id = n.id::text
+                AND (e.tenant_id = :tid::uuid
+                     OR (e.tenant_id IS NULL AND e.election_id = :eid::uuid))
+           )
+         ORDER BY n.collected_at DESC
+         LIMIT {BATCH}
+    """), {"tid": tenant_id, "eid": election_id})).fetchall()
 
     count = 0
     for n in news:
-        if _skip("news", str(n.id)):
-            continue
         content = f"{n.ai_summary or ''}\n{n.ai_reason or ''}"
         ok = await store_embedding(db, tenant_id, election_id, "news", str(n.id), n.title, content)
         if ok:
@@ -251,17 +260,26 @@ async def embed_existing_data(db: AsyncSession, tenant_id: str, election_id: str
                 pass
     result["news"] = count
 
-    # 커뮤니티 (election-shared)
-    comm = (await db.execute(text("""
-        SELECT id, title, ai_summary FROM community_posts
-        WHERE election_id = :eid AND is_relevant = true AND ai_summary IS NOT NULL
-        ORDER BY collected_at DESC LIMIT 200
-    """), {"eid": election_id})).fetchall()
+    # 커뮤니티 (election-shared) — 미임베딩만
+    comm = (await db.execute(text(f"""
+        SELECT c.id, c.title, c.ai_summary
+          FROM community_posts c
+         WHERE c.election_id = :eid
+           AND c.is_relevant = true
+           AND c.ai_summary IS NOT NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM embeddings e
+              WHERE e.source_type = 'community'
+                AND e.source_id = c.id::text
+                AND (e.tenant_id = :tid::uuid
+                     OR (e.tenant_id IS NULL AND e.election_id = :eid::uuid))
+           )
+         ORDER BY c.collected_at DESC
+         LIMIT {BATCH}
+    """), {"tid": tenant_id, "eid": election_id})).fetchall()
 
     count = 0
     for c in comm:
-        if _skip("community", str(c.id)):
-            continue
         ok = await store_embedding(db, tenant_id, election_id, "community", str(c.id), c.title, c.ai_summary or "")
         if ok:
             count += 1
@@ -271,17 +289,26 @@ async def embed_existing_data(db: AsyncSession, tenant_id: str, election_id: str
                 pass
     result["community"] = count
 
-    # 유튜브 (election-shared)
-    yt = (await db.execute(text("""
-        SELECT id, title, ai_summary FROM youtube_videos
-        WHERE election_id = :eid AND is_relevant = true AND ai_summary IS NOT NULL
-        ORDER BY collected_at DESC LIMIT 100
-    """), {"eid": election_id})).fetchall()
+    # 유튜브 (election-shared) — 미임베딩만
+    yt = (await db.execute(text(f"""
+        SELECT y.id, y.title, y.ai_summary
+          FROM youtube_videos y
+         WHERE y.election_id = :eid
+           AND y.is_relevant = true
+           AND y.ai_summary IS NOT NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM embeddings e
+              WHERE e.source_type = 'youtube'
+                AND e.source_id = y.id::text
+                AND (e.tenant_id = :tid::uuid
+                     OR (e.tenant_id IS NULL AND e.election_id = :eid::uuid))
+           )
+         ORDER BY y.collected_at DESC
+         LIMIT {BATCH}
+    """), {"tid": tenant_id, "eid": election_id})).fetchall()
 
     count = 0
     for y in yt:
-        if _skip("youtube", str(y.id)):
-            continue
         ok = await store_embedding(db, tenant_id, election_id, "youtube", str(y.id), y.title, y.ai_summary or "")
         if ok:
             count += 1
