@@ -84,13 +84,23 @@ interface Channel {
   isActive: boolean;
 }
 
-/** YouTube Data API → /api/public/youtube-feed 응답의 개별 영상 */
+/** YouTube Data API → /api/site/youtube-feed 응답의 개별 영상 (관리자용, hidden 플래그 포함) */
 interface YoutubeFeedItem {
   video_id: string;
   title: string;
   thumbnail?: string | null;
   channel?: string | null;
   published_at?: string | null;
+  hidden?: boolean;
+}
+
+/** 블로그 피드 관리자 응답 (hidden 플래그 포함) */
+interface BlogFeedItem {
+  url: string;
+  title: string;
+  platform?: string;
+  published_at?: string | null;
+  hidden?: boolean;
 }
 
 interface ContactItem {
@@ -4839,20 +4849,19 @@ function VideosEditor({
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
+      // 관리자 엔드포인트는 숨긴 항목까지 hidden:true 로 포함 (공개는 필터링)
       const [chRes, feedRes] = await Promise.all([
         apiFetch<{ items: Channel[] }>("/api/site/channels"),
-        fetch(`/api/public/youtube-feed/${code}`)
-          .then((r) => (r.ok ? r.json() : null))
-          .catch(() => null),
+        apiFetch<{ items: YoutubeFeedItem[] }>("/api/site/youtube-feed"),
       ]);
       if (chRes.success && chRes.data) {
         setChannels((chRes.data.items || []).filter((c) => c.platform === "youtube"));
       }
-      setFeed(feedRes?.data?.items || []);
+      setFeed(feedRes.success && feedRes.data ? feedRes.data.items || [] : []);
     } finally {
       setLoading(false);
     }
-  }, [code]);
+  }, []);
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
@@ -5053,30 +5062,65 @@ function VideosEditor({
         </div>
       </div>
 
-      {/* 최신 영상 미리보기 */}
+      {/* 최신 영상 미리보기 + 개별 숨기기 */}
       {feed.length > 0 && (
         <div>
           <label className={`${labelClass} block mb-1.5`}>
             공개 사이트 최신 영상 ({feed.length}건)
           </label>
           <div className="space-y-1.5 max-h-60 overflow-y-auto">
-            {feed.slice(0, 10).map((v, i) => (
-              <a
-                key={i}
-                href={`https://www.youtube.com/watch?v=${v.video_id}`}
-                target="_blank"
-                rel="noreferrer"
-                className="flex gap-2 rounded-lg border border-white/5 bg-[var(--card-bg)]/30 p-2 hover:border-red-500/30 transition-colors"
+            {feed.slice(0, 10).map((v) => (
+              <div
+                key={v.video_id}
+                className={`flex gap-2 rounded-lg border px-2 py-2 transition-colors ${
+                  v.hidden
+                    ? "border-white/5 bg-[var(--background)]/30 opacity-50"
+                    : "border-white/5 bg-[var(--card-bg)]/30"
+                }`}
               >
-                {v.thumbnail && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={v.thumbnail} alt="" className="w-16 h-10 object-cover rounded flex-shrink-0" />
-                )}
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs text-[var(--foreground)] line-clamp-2 leading-tight">{v.title}</div>
-                  <div className="text-[10px] text-[var(--muted)] mt-0.5">{v.channel || ""}</div>
-                </div>
-              </a>
+                <a
+                  href={`https://www.youtube.com/watch?v=${v.video_id}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex gap-2 flex-1 min-w-0"
+                >
+                  {v.thumbnail && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={v.thumbnail} alt="" className="w-16 h-10 object-cover rounded flex-shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className={`text-xs line-clamp-2 leading-tight ${v.hidden ? "text-[var(--muted)] line-through" : "text-[var(--foreground)]"}`}>
+                      {v.title}
+                    </div>
+                    <div className="text-[10px] text-[var(--muted)] mt-0.5">{v.channel || ""}</div>
+                  </div>
+                </a>
+                <button
+                  onClick={async () => {
+                    const nextHidden = !v.hidden;
+                    await apiFetch("/api/site/feed-overrides", {
+                      method: "POST",
+                      body: JSON.stringify({ feedType: "youtube", sourceKey: v.video_id, hidden: nextHidden }),
+                    });
+                    setFeed((prev) => prev.map((x) => (x.video_id === v.video_id ? { ...x, hidden: nextHidden } : x)));
+                  }}
+                  className={`shrink-0 self-center transition-colors ${
+                    v.hidden ? "text-[var(--muted)] hover:text-green-400" : "text-[var(--muted)] hover:text-amber-400"
+                  }`}
+                  title={v.hidden ? "공개 사이트에 다시 표시" : "공개 사이트에서 숨기기"}
+                >
+                  {v.hidden ? (
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  ) : (
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                    </svg>
+                  )}
+                </button>
+              </div>
             ))}
           </div>
         </div>
@@ -5100,7 +5144,7 @@ function BlogEditor({
   const code = params.code as string;
 
   const [channels, setChannels] = useState<Channel[]>([]);
-  const [feed, setFeed] = useState<Array<{ url: string; title: string; platform?: string; published_at?: string }>>([]);
+  const [feed, setFeed] = useState<BlogFeedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [newPlatform, setNewPlatform] = useState<"naver_blog" | "tistory" | "brunch">("naver_blog");
   const [newUrl, setNewUrl] = useState("");
@@ -5112,22 +5156,21 @@ function BlogEditor({
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
+      // 관리자 엔드포인트는 숨긴 글까지 hidden:true 로 포함 (공개는 필터링)
       const [chRes, feedRes] = await Promise.all([
         apiFetch<{ items: Channel[] }>("/api/site/channels"),
-        fetch(`/api/public/blog-feed/${code}`)
-          .then((r) => (r.ok ? r.json() : null))
-          .catch(() => null),
+        apiFetch<{ items: BlogFeedItem[] }>("/api/site/blog-feed"),
       ]);
       if (chRes.success && chRes.data) {
         setChannels((chRes.data.items || []).filter((c) =>
           ["naver_blog", "tistory", "brunch"].includes(c.platform)
         ));
       }
-      setFeed(feedRes?.data?.items || []);
+      setFeed(feedRes.success && feedRes.data ? feedRes.data.items || [] : []);
     } finally {
       setLoading(false);
     }
-  }, [code]);
+  }, []);
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
@@ -5295,12 +5338,16 @@ function BlogEditor({
             공개 사이트 최신 글 ({feed.length}건)
           </label>
           <div className="space-y-1.5 max-h-60 overflow-y-auto">
-            {feed.slice(0, 10).map((p, i) => (
-              <a
-                key={i} href={p.url} target="_blank" rel="noreferrer"
-                className="flex gap-2 rounded-lg border border-white/5 bg-[var(--card-bg)]/30 p-2 hover:border-green-500/30 transition-colors"
+            {feed.slice(0, 10).map((p) => (
+              <div
+                key={p.url}
+                className={`flex gap-2 rounded-lg border px-2 py-2 transition-colors ${
+                  p.hidden
+                    ? "border-white/5 bg-[var(--background)]/30 opacity-50"
+                    : "border-white/5 bg-[var(--card-bg)]/30"
+                }`}
               >
-                <div className="flex-1 min-w-0">
+                <a href={p.url} target="_blank" rel="noreferrer" className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5 mb-0.5">
                     {p.platform && (
                       <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-green-500/20 text-green-300">
@@ -5313,9 +5360,36 @@ function BlogEditor({
                       </span>
                     )}
                   </div>
-                  <div className="text-xs text-[var(--foreground)] line-clamp-2 leading-tight">{p.title}</div>
-                </div>
-              </a>
+                  <div className={`text-xs line-clamp-2 leading-tight ${p.hidden ? "text-[var(--muted)] line-through" : "text-[var(--foreground)]"}`}>
+                    {p.title}
+                  </div>
+                </a>
+                <button
+                  onClick={async () => {
+                    const nextHidden = !p.hidden;
+                    await apiFetch("/api/site/feed-overrides", {
+                      method: "POST",
+                      body: JSON.stringify({ feedType: "blog", sourceKey: p.url, hidden: nextHidden }),
+                    });
+                    setFeed((prev) => prev.map((x) => (x.url === p.url ? { ...x, hidden: nextHidden } : x)));
+                  }}
+                  className={`shrink-0 self-center transition-colors ${
+                    p.hidden ? "text-[var(--muted)] hover:text-green-400" : "text-[var(--muted)] hover:text-amber-400"
+                  }`}
+                  title={p.hidden ? "공개 사이트에 다시 표시" : "공개 사이트에서 숨기기"}
+                >
+                  {p.hidden ? (
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  ) : (
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                    </svg>
+                  )}
+                </button>
+              </div>
             ))}
           </div>
         </div>
