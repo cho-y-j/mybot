@@ -35,10 +35,14 @@ async function mergeAiNews(
   try {
     const [aiRows, overrides] = await Promise.all([
       prisma.$queryRawUnsafe<any[]>(
+        // 2026-04-22: is_about_our_candidate 가 04-15 이후 NULL로 저장되는 버그 (AI 파이프라인 조사 필요).
+        // 즉시 완화: IS DISTINCT FROM false — true와 NULL 통과, 명시적 false만 제외.
+        // is_relevant=true 가 이미 동명이인 필터링을 거친 상태라 안전.
         `SELECT title, url, source, summary, published_at, collected_at
          FROM public.news_articles
          WHERE election_id = $1::uuid
-           AND is_relevant = true AND is_about_our_candidate = true
+           AND is_relevant = true
+           AND is_about_our_candidate IS DISTINCT FROM false
            AND sentiment = 'positive' AND sentiment_verified = true
          ORDER BY published_at DESC NULLS LAST, collected_at DESC
          LIMIT 60`,

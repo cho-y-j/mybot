@@ -30,11 +30,13 @@ export async function GET(
       prisma.$queryRawUnsafe<any[]>(
         // AI 분석 엔진이 이미 엄격 검증(is_relevant/is_about_our_candidate/sentiment/verified)한 결과를
         // 그대로 신뢰. 홍보 사이트라 긍정+중립만 노출, 부정·검증 미완은 제외.
+        // 2026-04-22: is_about_our_candidate 가 04-15 이후 NULL 저장되는 버그 완화 —
+        // IS DISTINCT FROM false 로 NULL/true 통과, 명시적 false 만 제외.
         `SELECT title, url, source, summary, published_at, collected_at
          FROM public.news_articles
          WHERE election_id = $1::uuid
            AND is_relevant = true
-           AND is_about_our_candidate = true
+           AND is_about_our_candidate IS DISTINCT FROM false
            AND sentiment IN ('positive', 'neutral')
            AND sentiment_verified = true
          ORDER BY published_at DESC NULLS LAST, collected_at DESC
