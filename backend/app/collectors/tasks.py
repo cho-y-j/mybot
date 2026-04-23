@@ -337,8 +337,11 @@ def collect_news(self, tenant_id: str, election_id: str, schedule_id: str):
                     "candidate_name": matched_cand.name,
                 })
 
-        # ── AI 스크리닝 (동명이인 필터 + 감성/전략 분석) ──
+        # ── AI 스크리닝 + 저장 (단일 파이프라인) ──
+        # 뉴스·커뮤니티·유튜브 모두 동일 로직 사용 (pipeline.persist_screened_sync).
+        # AI 실패 시 폴백은 is_relevant=NULL 보류 저장 — 대시보드 노출 차단.
         filtered_out = 0
+        pipeline_result = {"saved": 0, "pending": 0, "strategic_written": 0}
         if raw_items:
             try:
                 from app.collectors.ai_screening import screen_collected_items
@@ -356,65 +359,34 @@ def collect_news(self, tenant_id: str, election_id: str, schedule_id: str):
                 ))
                 filtered_out = len(raw_items) - len(screened)
             except Exception as scr_err:
-                logger.error("news_ai_screening_failed", error=str(scr_err)[:200])
-                screened = raw_items
+                logger.error("news_ai_screening_failed_pending", error=str(scr_err)[:200])
+                # 폴백: 전체 통과 금지. ai_screened=False 로 마킹 → pipeline 이 is_relevant=NULL 저장.
+                screened = []
+                for it in raw_items:
+                    it["ai_screened"] = False
+                    screened.append(it)
 
-            from sqlalchemy.dialects.postgresql import insert as pg_insert
-            from app.analysis.strategic_views import upsert_strategic_view_sync
+            from app.collectors.pipeline import persist_screened_sync
+            pipeline_result = persist_screened_sync(
+                session, "news", screened, tenant_id, election_id,
+            )
+            total += pipeline_result["saved"] + pipeline_result["pending"]
+
+            # race-shared 이중 쓰기 (legacy — 사용 중이면 유지)
             for item in screened:
-                ai_ok = item.get("ai_screened", False)
-                stmt = pg_insert(NewsArticle).values(
-                    tenant_id=tenant_id, election_id=election_id,
-                    candidate_id=UUID(item["candidate_id"]),
-                    title=item["title"], url=item["url"],
-                    source=item.get("source", ""), summary=item.get("description", "")[:300],
-                    published_at=item.get("published_at"),
-                    platform=item.get("platform", "naver"),
-                    is_relevant=True,
-                    sentiment=item.get("sentiment") if ai_ok else None,
-                    sentiment_score=item.get("sentiment_score") if ai_ok else None,
-                    ai_summary=item.get("ai_summary") if ai_ok else None,
-                    ai_reason=item.get("ai_reason") if ai_ok else None,
-                    ai_threat_level=item.get("threat_level") if ai_ok else None,
-                ).on_conflict_do_nothing(constraint="uq_news_url_per_election")
-                res = session.execute(stmt)
-                if res.rowcount:
-                    total += 1
-
-                # 전략 뷰 (캠프별 관점) upsert — 수집한 캠프 한 명만
-                if ai_ok:
-                    row = session.execute(
-                        select(NewsArticle.id).where(
-                            NewsArticle.election_id == election_id,
-                            NewsArticle.url == item["url"],
-                        )
-                    ).scalar()
-                    if row:
-                        upsert_strategic_view_sync(
-                            session, "news",
-                            source_id=row,
-                            tenant_id=tenant_id,
-                            election_id=election_id,
-                            candidate_id=UUID(item["candidate_id"]),
-                            strategic_quadrant=item.get("strategic_quadrant"),
-                            strategic_value=item.get("strategic_value") or item.get("strategic_quadrant"),
-                            action_type=item.get("action_type"),
-                            action_priority=item.get("action_priority"),
-                            action_summary=item.get("action_summary"),
-                            is_about_our_candidate=item.get("is_about_our_candidate"),
-                        )
-
                 try:
                     from app.collectors.race_shared import upsert_race_news_sync
                     upsert_race_news_sync(
                         session, election_id=str(election_id),
                         title=item["title"], url=item["url"],
-                        source=item.get("source", ""), summary=item.get("description", "")[:300],
+                        source=item.get("source", ""), summary=(item.get("description") or "")[:300],
                         platform=item.get("platform", "naver"), published_at=item.get("published_at"),
                     )
                 except Exception as rs_err:
                     logger.warning("race_shared_dual_write_failed", error=str(rs_err)[:200])
 
+        logger.info("news_pipeline_done", saved=pipeline_result["saved"],
+                    pending=pipeline_result["pending"], filtered=filtered_out)
         session.commit()
 
         # ── AI 파이프라인 (스크리닝에서 미분석된 항목 보완 + Opus 검증) ──
@@ -572,8 +544,9 @@ def collect_community(self, tenant_id: str, election_id: str, schedule_id: str):
                     "relevance_score": calculate_relevance(post_text, cand_names) / 100.0,
                 })
 
-        # AI 스크리닝
+        # AI 스크리닝 + 저장 (단일 파이프라인, pipeline.persist_screened_sync)
         filtered_out = 0
+        pipeline_result = {"saved": 0, "pending": 0, "strategic_written": 0}
         if raw_items:
             try:
                 from app.collectors.ai_screening import screen_collected_items
@@ -591,67 +564,36 @@ def collect_community(self, tenant_id: str, election_id: str, schedule_id: str):
                 ))
                 filtered_out = len(raw_items) - len(screened)
             except Exception as scr_err:
-                logger.error("community_ai_screening_failed", error=str(scr_err)[:200])
-                screened = raw_items
+                logger.error("community_ai_screening_failed_pending", error=str(scr_err)[:200])
+                # 폴백: 전체 통과 금지 → is_relevant=NULL 보류 저장.
+                screened = []
+                for it in raw_items:
+                    it["ai_screened"] = False
+                    screened.append(it)
 
-            from sqlalchemy.dialects.postgresql import insert as pg_insert
-            from app.analysis.strategic_views import upsert_strategic_view_sync
+            from app.collectors.pipeline import persist_screened_sync
+            pipeline_result = persist_screened_sync(
+                session, "community", screened, tenant_id, election_id,
+            )
+            total += pipeline_result["saved"] + pipeline_result["pending"]
+
+            # race-shared 이중 쓰기 (legacy)
             for item in screened:
-                ai_ok = item.get("ai_screened", False)
-                stmt = pg_insert(CommunityPost).values(
-                    tenant_id=tenant_id, election_id=election_id,
-                    candidate_id=UUID(item["candidate_id"]),
-                    title=item["title"], url=item["url"],
-                    source=item.get("source", ""),
-                    content_snippet=item.get("description", "")[:200],
-                    published_at=item.get("published_at"),
-                    relevance_score=item.get("relevance_score", 0.0),
-                    platform=item.get("platform", "naver_blog"),
-                    is_relevant=True,
-                    sentiment=item.get("sentiment") if ai_ok else None,
-                    sentiment_score=item.get("sentiment_score") if ai_ok else None,
-                    ai_summary=item.get("ai_summary") if ai_ok else None,
-                    ai_reason=item.get("ai_reason") if ai_ok else None,
-                    ai_threat_level=item.get("threat_level") if ai_ok else None,
-                ).on_conflict_do_nothing(constraint="uq_community_url_per_election")
-                res = session.execute(stmt)
-                if res.rowcount:
-                    total += 1
-
-                if ai_ok:
-                    row = session.execute(
-                        select(CommunityPost.id).where(
-                            CommunityPost.election_id == election_id,
-                            CommunityPost.url == item["url"],
-                        )
-                    ).scalar()
-                    if row:
-                        upsert_strategic_view_sync(
-                            session, "community",
-                            source_id=row,
-                            tenant_id=tenant_id,
-                            election_id=election_id,
-                            candidate_id=UUID(item["candidate_id"]),
-                            strategic_quadrant=item.get("strategic_quadrant"),
-                            action_type=item.get("action_type"),
-                            action_priority=item.get("action_priority"),
-                            action_summary=item.get("action_summary"),
-                            is_about_our_candidate=item.get("is_about_our_candidate"),
-                        )
-
                 try:
                     from app.collectors.race_shared import upsert_race_community_sync
                     upsert_race_community_sync(
                         session, election_id=str(election_id),
                         title=item["title"], url=item["url"],
                         source=item.get("source", ""),
-                        content_snippet=item.get("description", "")[:200],
+                        content_snippet=(item.get("description") or "")[:200],
                         platform=item.get("platform", "naver_blog"),
                         published_at=item.get("published_at"),
                     )
                 except Exception as rs_err:
                     logger.warning("race_shared_community_failed", error=str(rs_err)[:200])
 
+        logger.info("community_pipeline_done", saved=pipeline_result["saved"],
+                    pending=pipeline_result["pending"], filtered=filtered_out)
         session.commit()
 
         ai_result = {}
@@ -785,8 +727,9 @@ def collect_youtube(self, tenant_id: str, election_id: str, schedule_id: str):
                         "candidate_name": cand.name,
                     })
 
-        # AI 스크리닝
+        # AI 스크리닝 + 저장 (단일 파이프라인, pipeline.persist_screened_sync)
         filtered_out = 0
+        pipeline_result = {"saved": 0, "pending": 0, "strategic_written": 0}
         if raw_items:
             try:
                 from app.collectors.ai_screening import screen_collected_items
@@ -804,62 +747,28 @@ def collect_youtube(self, tenant_id: str, election_id: str, schedule_id: str):
                 ))
                 filtered_out = len(raw_items) - len(screened)
             except Exception as scr_err:
-                logger.error("youtube_ai_screening_failed", error=str(scr_err)[:200])
-                screened = raw_items
+                logger.error("youtube_ai_screening_failed_pending", error=str(scr_err)[:200])
+                # 폴백: 전체 통과 금지 → is_relevant=NULL 보류 저장.
+                screened = []
+                for it in raw_items:
+                    it["ai_screened"] = False
+                    screened.append(it)
 
-            from sqlalchemy.dialects.postgresql import insert as pg_insert
-            from app.analysis.strategic_views import upsert_strategic_view_sync
+            from app.collectors.pipeline import persist_screened_sync
+            pipeline_result = persist_screened_sync(
+                session, "youtube", screened, tenant_id, election_id,
+            )
+            total += pipeline_result["saved"] + pipeline_result["pending"]
+
+            # race-shared 이중 쓰기 (legacy)
             for item in screened:
-                ai_ok = item.get("ai_screened", False)
-                stmt = pg_insert(YouTubeVideo).values(
-                    tenant_id=tenant_id, election_id=election_id,
-                    candidate_id=UUID(item["candidate_id"]),
-                    video_id=item["video_id"], title=item["title"],
-                    channel=item.get("channel", ""),
-                    description_snippet=item.get("description", "")[:300],
-                    thumbnail_url=item.get("thumbnail", ""),
-                    published_at=item.get("published_at"),
-                    views=item.get("views", 0), likes=item.get("likes", 0),
-                    comments_count=item.get("comments_count", 0),
-                    is_relevant=True,
-                    sentiment=item.get("sentiment") if ai_ok else None,
-                    sentiment_score=item.get("sentiment_score") if ai_ok else None,
-                    ai_summary=item.get("ai_summary") if ai_ok else None,
-                    ai_reason=item.get("ai_reason") if ai_ok else None,
-                    ai_threat_level=item.get("threat_level") if ai_ok else None,
-                ).on_conflict_do_nothing(constraint="uq_youtube_per_election")
-                res = session.execute(stmt)
-                if res.rowcount:
-                    total += 1
-
-                if ai_ok:
-                    row = session.execute(
-                        select(YouTubeVideo.id).where(
-                            YouTubeVideo.election_id == election_id,
-                            YouTubeVideo.video_id == item["video_id"],
-                        )
-                    ).scalar()
-                    if row:
-                        upsert_strategic_view_sync(
-                            session, "youtube",
-                            source_id=row,
-                            tenant_id=tenant_id,
-                            election_id=election_id,
-                            candidate_id=UUID(item["candidate_id"]),
-                            strategic_quadrant=item.get("strategic_quadrant"),
-                            action_type=item.get("action_type"),
-                            action_priority=item.get("action_priority"),
-                            action_summary=item.get("action_summary"),
-                            is_about_our_candidate=item.get("is_about_our_candidate"),
-                        )
-
                 try:
                     from app.collectors.race_shared import upsert_race_youtube_sync
                     upsert_race_youtube_sync(
                         session, election_id=str(election_id),
                         video_id=item["video_id"], title=item["title"],
                         channel=item.get("channel", ""),
-                        description_snippet=item.get("description", "")[:300],
+                        description_snippet=(item.get("description") or "")[:300],
                         thumbnail_url=item.get("thumbnail", ""),
                         views=item.get("views", 0), likes=item.get("likes", 0),
                         comments_count=item.get("comments_count", 0),
@@ -868,6 +777,8 @@ def collect_youtube(self, tenant_id: str, election_id: str, schedule_id: str):
                 except Exception as rs_err:
                     logger.warning("race_shared_youtube_failed", error=str(rs_err)[:200])
 
+        logger.info("youtube_pipeline_done", saved=pipeline_result["saved"],
+                    pending=pipeline_result["pending"], filtered=filtered_out)
         session.commit()
 
         ai_result = {}
@@ -1157,57 +1068,16 @@ def collect_community_enhanced(self, tenant_id: str, election_id: str, schedule_
                     tenant_id=tenant_id,
                 ))
             except Exception as scr_err:
-                logger.error("community_enh_ai_screening_failed", error=str(scr_err)[:200])
-                screened = raw_items
+                logger.error("community_enh_ai_screening_pending", error=str(scr_err)[:200])
+                screened = []
+                for it in raw_items:
+                    it["ai_screened"] = False
+                    screened.append(it)
 
-            from app.analysis.strategic_views import upsert_strategic_view_sync
-            for item in screened:
-                ai_ok = item.get("ai_screened", False)
-                stmt = pg_insert(CommunityPost).values(
-                    tenant_id=tenant_id,
-                    election_id=election_id,
-                    candidate_id=UUID(item["candidate_id"]),
-                    title=item["title"],
-                    url=item["url"],
-                    source=item.get("source", ""),
-                    content_snippet=item.get("description", "")[:200],
-                    published_at=item.get("published_at"),
-                    issue_category=item.get("issue_category"),
-                    relevance_score=item.get("relevance_score", 0.0),
-                    engagement=item.get("engagement", {}),
-                    platform=item.get("platform", "naver_cafe"),
-                    is_relevant=True,
-                    sentiment=item.get("sentiment") if ai_ok else None,
-                    sentiment_score=item.get("sentiment_score") if ai_ok else None,
-                    ai_summary=item.get("ai_summary") if ai_ok else None,
-                    ai_reason=item.get("ai_reason") if ai_ok else None,
-                    ai_threat_level=item.get("threat_level") if ai_ok else None,
-                ).on_conflict_do_nothing(constraint="uq_community_url_per_election")
-                res = session.execute(stmt)
-                if res.rowcount:
-                    total += 1
-
-                if ai_ok:
-                    row = session.execute(
-                        select(CommunityPost.id).where(
-                            CommunityPost.election_id == election_id,
-                            CommunityPost.url == item["url"],
-                        )
-                    ).scalar()
-                    if row:
-                        upsert_strategic_view_sync(
-                            session, "community",
-                            source_id=row,
-                            tenant_id=tenant_id,
-                            election_id=election_id,
-                            candidate_id=UUID(item["candidate_id"]),
-                            strategic_quadrant=item.get("strategic_quadrant"),
-                            strategic_value=item.get("strategic_value") or item.get("strategic_quadrant"),
-                            action_type=item.get("action_type"),
-                            action_priority=item.get("action_priority"),
-                            action_summary=item.get("action_summary"),
-                            is_about_our_candidate=item.get("is_about_our_candidate"),
-                        )
+            from app.collectors.pipeline import persist_screened_sync
+            pr = persist_screened_sync(session, "community", screened, tenant_id, election_id)
+            total += pr["saved"] + pr["pending"]
+            logger.info("community_enh_pipeline_done", saved=pr["saved"], pending=pr["pending"])
 
         session.commit()
 
@@ -1360,58 +1230,19 @@ def collect_youtube_enhanced(self, tenant_id: str, election_id: str, schedule_id
                     tenant_id=tenant_id,
                 ))
             except Exception as scr_err:
-                logger.error("youtube_enh_ai_screening_failed", error=str(scr_err)[:200])
-                screened = raw_items
+                logger.error("youtube_enh_ai_screening_pending", error=str(scr_err)[:200])
+                screened = []
+                for it in raw_items:
+                    it["ai_screened"] = False
+                    screened.append(it)
 
-            from app.analysis.strategic_views import upsert_strategic_view_sync
+            from app.collectors.pipeline import persist_screened_sync
+            pr = persist_screened_sync(session, "youtube", screened, tenant_id, election_id)
+            total += pr["saved"] + pr["pending"]
+            logger.info("youtube_enh_pipeline_done", saved=pr["saved"], pending=pr["pending"])
+
+            # race-shared 이중 쓰기 (legacy)
             for item in screened:
-                ai_ok = item.get("ai_screened", False)
-                stmt = pg_insert(YouTubeVideo).values(
-                    tenant_id=tenant_id,
-                    election_id=election_id,
-                    candidate_id=UUID(item["candidate_id"]),
-                    video_id=item["video_id"],
-                    title=item["title"],
-                    channel=item.get("channel", ""),
-                    description_snippet=item.get("description", "")[:300],
-                    thumbnail_url=item.get("thumbnail", ""),
-                    published_at=item.get("published_at"),
-                    views=item.get("views", 0),
-                    likes=item.get("likes", 0),
-                    comments_count=item.get("comments_count", 0),
-                    is_relevant=True,
-                    sentiment=item.get("sentiment") if ai_ok else None,
-                    sentiment_score=item.get("sentiment_score") if ai_ok else None,
-                    ai_summary=item.get("ai_summary") if ai_ok else None,
-                    ai_reason=item.get("ai_reason") if ai_ok else None,
-                    ai_threat_level=item.get("threat_level") if ai_ok else None,
-                ).on_conflict_do_nothing(constraint="uq_youtube_per_election")
-                res = session.execute(stmt)
-                if res.rowcount:
-                    total += 1
-
-                if ai_ok:
-                    row = session.execute(
-                        select(YouTubeVideo.id).where(
-                            YouTubeVideo.election_id == election_id,
-                            YouTubeVideo.video_id == item["video_id"],
-                        )
-                    ).scalar()
-                    if row:
-                        upsert_strategic_view_sync(
-                            session, "youtube",
-                            source_id=row,
-                            tenant_id=tenant_id,
-                            election_id=election_id,
-                            candidate_id=UUID(item["candidate_id"]),
-                            strategic_quadrant=item.get("strategic_quadrant"),
-                            strategic_value=item.get("strategic_value") or item.get("strategic_quadrant"),
-                            action_type=item.get("action_type"),
-                            action_priority=item.get("action_priority"),
-                            action_summary=item.get("action_summary"),
-                            is_about_our_candidate=item.get("is_about_our_candidate"),
-                        )
-
                 try:
                     from app.collectors.race_shared import upsert_race_youtube_sync
                     upsert_race_youtube_sync(
@@ -1420,7 +1251,7 @@ def collect_youtube_enhanced(self, tenant_id: str, election_id: str, schedule_id
                         video_id=item["video_id"],
                         title=item["title"],
                         channel=item.get("channel", ""),
-                        description_snippet=item.get("description", "")[:300],
+                        description_snippet=(item.get("description") or "")[:300],
                         thumbnail_url=item.get("thumbnail", ""),
                         views=item.get("views", 0),
                         likes=item.get("likes", 0),

@@ -106,7 +106,9 @@ async def collect_news_now(db: AsyncSession, tenant_id: str, election_id: str) -
                     "homonym_hints": cand.homonym_filters or [],
                 })
 
-    # AI 스크리닝: 동명이인/무관 필터링 + 감성/전략 분류
+    # AI 스크리닝 + 저장 (단일 파이프라인 pipeline.persist_screened_async)
+    filtered_out = 0
+    pipeline_result = {"saved": 0, "pending": 0, "strategic_written": 0}
     if raw_items:
         try:
             from app.collectors.ai_screening import screen_collected_items
@@ -126,61 +128,25 @@ async def collect_news_now(db: AsyncSession, tenant_id: str, election_id: str) -
             )
             filtered_out = len(raw_items) - len(screened)
         except Exception as e:
-            logger.error("ai_screening_failed_fallback", error=str(e)[:200])
-            screened = raw_items  # AI 실패 시 전부 통과
+            logger.error("ai_screening_failed_pending", error=str(e)[:200])
+            # 폴백: 전체 통과 금지 → is_relevant=NULL 보류 저장
+            screened = []
+            for it in raw_items:
+                it["ai_screened"] = False
+                screened.append(it)
 
-        # 스크리닝 통과한 것만 DB에 저장 (election-shared upsert)
-        from uuid import UUID as _UUID
-        from sqlalchemy.dialects.postgresql import insert as pg_insert
-        from app.analysis.strategic_views import upsert_strategic_view_async
+        from app.collectors.pipeline import persist_screened_async
+        pipeline_result = await persist_screened_async(
+            db, "news", screened, tenant_id, election_id,
+        )
+        total = pipeline_result["saved"] + pipeline_result["pending"]
+
+        # 수집된 URL 리스트 (댓글 수집용)
         for item in screened:
-            ai_screened = item.get("ai_screened", False)
-            stmt = pg_insert(NewsArticle).values(
-                tenant_id=tenant_id,  # 첫 수집 캠프 기록용 (nullable)
-                election_id=election_id,
-                candidate_id=_UUID(item["candidate_id"]),
-                title=item["title"],
-                url=item["url"],
-                source=item.get("source", ""),
-                summary=item.get("description", "")[:300],
-                platform="naver",
-                published_at=item.get("published_at"),
-                is_relevant=True,
-                sentiment=item.get("sentiment") if ai_screened else None,
-                sentiment_score=item.get("sentiment_score") if ai_screened else None,
-                ai_summary=item.get("ai_summary") if ai_screened else None,
-                ai_reason=item.get("ai_reason") if ai_screened else None,
-                ai_threat_level=item.get("threat_level") if ai_screened else None,
-            ).on_conflict_do_update(
-                constraint="uq_news_url_per_election",
-                set_={
-                    "published_at": pg_insert(NewsArticle).excluded.published_at,
-                },
-            ).returning(NewsArticle.id)
-            res = await db.execute(stmt)
-            news_row_id = res.scalar()
-            total += 1
-
-            # 캠프별 전략 관점 분석 기록
-            if ai_screened and news_row_id:
-                await upsert_strategic_view_async(
-                    db, "news",
-                    source_id=news_row_id,
-                    tenant_id=tenant_id,
-                    election_id=election_id,
-                    candidate_id=_UUID(item["candidate_id"]),
-                    strategic_quadrant=item.get("strategic_quadrant"),
-                    strategic_value=item.get("strategic_value") or item.get("strategic_quadrant"),
-                    action_type=item.get("action_type"),
-                    action_priority=item.get("action_priority"),
-                    action_summary=item.get("action_summary"),
-                    is_about_our_candidate=item.get("is_about_our_candidate"),
-                )
-
             collected_articles.append({
                 "url": item["url"],
                 "title": item["title"],
-                "candidate": item["candidate_name"],
+                "candidate": item.get("candidate_name", ""),
             })
 
     # Collect comments for naver news articles
@@ -344,7 +310,9 @@ async def collect_community_now(db: AsyncSession, tenant_id: str, election_id: s
                 "platform": post.get("platform", "naver_cafe"),
             })
 
-    # AI 스크리닝
+    # AI 스크리닝 + 저장 (단일 파이프라인)
+    filtered_out = 0
+    pipeline_result = {"saved": 0, "pending": 0, "strategic_written": 0}
     if raw_items:
         try:
             from app.collectors.ai_screening import screen_collected_items
@@ -363,52 +331,17 @@ async def collect_community_now(db: AsyncSession, tenant_id: str, election_id: s
             )
             filtered_out = len(raw_items) - len(screened)
         except Exception as e:
-            logger.error("ai_screening_community_fallback", error=str(e)[:200])
-            screened = raw_items
+            logger.error("ai_screening_community_pending", error=str(e)[:200])
+            screened = []
+            for it in raw_items:
+                it["ai_screened"] = False
+                screened.append(it)
 
-        from uuid import UUID as _UUID
-        from sqlalchemy.dialects.postgresql import insert as pg_insert
-        from app.analysis.strategic_views import upsert_strategic_view_async
-        for item in screened:
-            ai_screened = item.get("ai_screened", False)
-            stmt = pg_insert(CommunityPost).values(
-                tenant_id=tenant_id, election_id=election_id,
-                candidate_id=_UUID(item["candidate_id"]),
-                title=item["title"], url=item["url"],
-                source=item.get("source", ""),
-                content_snippet=item.get("description", "")[:200],
-                issue_category=item.get("issue_category"),
-                relevance_score=item.get("relevance_score", 0.0),
-                engagement=item.get("engagement", {}),
-                platform=item.get("platform", "naver_cafe"),
-                published_at=item.get("published_at"),
-                is_relevant=True,
-                sentiment=item.get("sentiment") if ai_screened else None,
-                sentiment_score=item.get("sentiment_score") if ai_screened else None,
-                ai_summary=item.get("ai_summary") if ai_screened else None,
-                ai_reason=item.get("ai_reason") if ai_screened else None,
-                ai_threat_level=item.get("threat_level") if ai_screened else None,
-            ).on_conflict_do_update(
-                constraint="uq_community_url_per_election",
-                set_={"published_at": pg_insert(CommunityPost).excluded.published_at},
-            ).returning(CommunityPost.id)
-            res = await db.execute(stmt)
-            post_row_id = res.scalar()
-            total += 1
-
-            if ai_screened and post_row_id:
-                await upsert_strategic_view_async(
-                    db, "community",
-                    source_id=post_row_id,
-                    tenant_id=tenant_id,
-                    election_id=election_id,
-                    candidate_id=_UUID(item["candidate_id"]),
-                    strategic_quadrant=item.get("strategic_quadrant"),
-                    action_type=item.get("action_type"),
-                    action_priority=item.get("action_priority"),
-                    action_summary=item.get("action_summary"),
-                    is_about_our_candidate=item.get("is_about_our_candidate"),
-                )
+        from app.collectors.pipeline import persist_screened_async
+        pipeline_result = await persist_screened_async(
+            db, "community", screened, tenant_id, election_id,
+        )
+        total = pipeline_result["saved"] + pipeline_result["pending"]
 
     await db.flush()
     try:
@@ -551,51 +484,17 @@ async def collect_youtube_now(db: AsyncSession, tenant_id: str, election_id: str
             )
             filtered_out = len(raw_items) - len(screened)
         except Exception as e:
-            logger.error("ai_screening_youtube_fallback", error=str(e)[:200])
-            screened = raw_items
+            logger.error("ai_screening_youtube_pending", error=str(e)[:200])
+            screened = []
+            for it in raw_items:
+                it["ai_screened"] = False
+                screened.append(it)
 
-        from uuid import UUID as _UUID
-        from sqlalchemy.dialects.postgresql import insert as pg_insert
-        from app.analysis.strategic_views import upsert_strategic_view_async
-        for item in screened:
-            ai_screened = item.get("ai_screened", False)
-            stmt = pg_insert(YouTubeVideo).values(
-                tenant_id=tenant_id, election_id=election_id,
-                candidate_id=_UUID(item["candidate_id"]),
-                video_id=item["video_id"], title=item["title"],
-                channel=item.get("channel", ""),
-                description_snippet=item.get("description", "")[:300],
-                thumbnail_url=item.get("thumbnail", ""),
-                published_at=item.get("published_at"),
-                views=item.get("views", 0), likes=item.get("likes", 0),
-                comments_count=item.get("comments_count", 0),
-                is_relevant=True,
-                sentiment=item.get("sentiment") if ai_screened else None,
-                sentiment_score=item.get("sentiment_score") if ai_screened else None,
-                ai_summary=item.get("ai_summary") if ai_screened else None,
-                ai_reason=item.get("ai_reason") if ai_screened else None,
-                ai_threat_level=item.get("threat_level") if ai_screened else None,
-            ).on_conflict_do_update(
-                constraint="uq_youtube_per_election",
-                set_={"published_at": pg_insert(YouTubeVideo).excluded.published_at},
-            ).returning(YouTubeVideo.id)
-            res = await db.execute(stmt)
-            yt_row_id = res.scalar()
-            total += 1
-
-            if ai_screened and yt_row_id:
-                await upsert_strategic_view_async(
-                    db, "youtube",
-                    source_id=yt_row_id,
-                    tenant_id=tenant_id,
-                    election_id=election_id,
-                    candidate_id=_UUID(item["candidate_id"]),
-                    strategic_quadrant=item.get("strategic_quadrant"),
-                    action_type=item.get("action_type"),
-                    action_priority=item.get("action_priority"),
-                    action_summary=item.get("action_summary"),
-                    is_about_our_candidate=item.get("is_about_our_candidate"),
-                )
+        from app.collectors.pipeline import persist_screened_async
+        pipeline_result = await persist_screened_async(
+            db, "youtube", screened, tenant_id, election_id,
+        )
+        total = pipeline_result["saved"] + pipeline_result["pending"]
 
     # Collect comments for top videos per candidate
     comment_count = 0
