@@ -322,10 +322,10 @@ export default function YouTubePage() {
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-xs w-16 text-[var(--muted)]">유튜브</span>
-                          <div className="flex-1 h-3 bg-[var(--muted-bg)] rounded-full overflow-hidden">
+                          <div className="flex-1 h-3 bg-[var(--muted-bg)] rounded-full overflow-hidden min-w-0">
                             <div className="bg-blue-500 h-full" style={{ width: `${Math.min((c.youtube?.views || 0) / Math.max(...mediaCands.map((x: any) => x.youtube?.views || 0), 1) * 100, 100)}%` }} />
                           </div>
-                          <span className="text-[10px] w-10 text-right">{(c.youtube?.views || 0).toLocaleString()}</span>
+                          <span className="text-[10px] tabular-nums w-20 text-right flex-shrink-0 whitespace-nowrap">{(c.youtube?.views || 0).toLocaleString()}</span>
                         </div>
                       </div>
                     </div>
