@@ -126,7 +126,13 @@ export default function EasyLayout({ children }: { children: React.ReactNode }) 
             <div className="font-bold text-lg tracking-tight">CampAI</div>
             <div className="text-xs text-[var(--muted)] mt-0.5">{user?.name || '로그인됨'}</div>
           </div>
-          <button onClick={() => setMobileOpen(false)} className="lg:hidden text-[var(--muted)] hover:text-[var(--foreground)] text-lg"></button>
+          <button onClick={() => setMobileOpen(false)}
+            aria-label="메뉴 닫기"
+            className="lg:hidden p-2 rounded-lg text-[var(--foreground)] hover:bg-[var(--muted-bg)] active:scale-95 transition">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
         </div>
 
         <nav className="flex-1 py-2 overflow-y-auto">
@@ -202,12 +208,15 @@ export default function EasyLayout({ children }: { children: React.ReactNode }) 
         {/* 상단 모드 토글 헤더 — 모바일 햄버거 포함 */}
         <div className="h-12 border-b border-[var(--card-border)] bg-[var(--card-bg)] flex items-center justify-between px-3 lg:px-6 sticky top-0 z-30">
           <div className="flex items-center gap-3 min-w-0">
-            <button onClick={() => setMobileOpen(true)} className="lg:hidden p-2 -ml-2 rounded hover:bg-[var(--muted-bg)]">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+            <button onClick={() => setMobileOpen(true)}
+              aria-label="메뉴 열기"
+              className="lg:hidden flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--card-border)] text-[var(--foreground)] hover:bg-[var(--muted-bg)] active:scale-95 transition">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5M3.75 17.25h16.5" />
               </svg>
+              <span className="text-sm font-semibold">메뉴</span>
             </button>
-            <div className="text-sm font-semibold text-[var(--foreground)] truncate">쉬운 모드</div>
+            <div className="text-sm font-semibold text-[var(--foreground)] truncate hidden sm:block">쉬운 모드</div>
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />
