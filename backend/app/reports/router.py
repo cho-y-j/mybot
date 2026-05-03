@@ -23,7 +23,7 @@ router = APIRouter()
 
 async def _collect_pdf_candidates(db: AsyncSession, tenant_id: str, election_id: str) -> tuple[list, str]:
     """PDF 보고서용 후보별 데이터 수집. (candidates_data, our_candidate_name) 반환."""
-    from app.common.election_access import get_election_tenant_ids, get_our_candidate_id
+    from app.common.election_access import get_election_tenant_ids, get_our_candidate_id, list_election_candidates
     from app.elections.models import Candidate, NewsArticle, CommunityPost, YouTubeVideo, SearchTrend
 
     try:
@@ -31,12 +31,8 @@ async def _collect_pdf_candidates(db: AsyncSession, tenant_id: str, election_id:
         our_cand_id = await get_our_candidate_id(db, tenant_id, election_id)
         since = date.today() - timedelta(days=7)
 
-        candidates = (await db.execute(
-            select(Candidate).where(
-                Candidate.election_id == election_id,
-                Candidate.enabled == True,
-            ).order_by(Candidate.priority)
-        )).scalars().all()
+        # election-shared + soft hide 통일 진입점
+        candidates = await list_election_candidates(db, election_id, tenant_id=tenant_id, enabled_only=True)
 
         result = []
         our_name = ""

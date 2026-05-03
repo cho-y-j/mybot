@@ -259,15 +259,10 @@ async def get_content_situations(
 
     # 3. 경쟁자 대비 갭 (커뮤니티에서 경쟁자가 다루는 이슈)
     try:
-        from app.common.election_access import get_our_candidate_id as _goci
+        from app.common.election_access import get_our_candidate_id as _goci, list_election_candidates
         _our_id = await _goci(db, tid, election_id)
-        all_cands = (await db.execute(
-            select(Candidate).where(
-                Candidate.election_id == election_id,
-                Candidate.enabled == True,
-            )
-        )).scalars().all()
-        # election-shared: 우리 후보 제외 (tenant_elections 기준)
+        # election-shared + soft hide 통일 진입점 (hidden 후보는 자동 제외)
+        all_cands = await list_election_candidates(db, election_id, tenant_id=tid, enabled_only=True)
         candidates_q = [c for c in all_cands if not (_our_id and str(c.id) == _our_id)]
 
         for comp in candidates_q[:2]:
@@ -716,7 +711,7 @@ async def upload_file(
 # ── Helper ──
 
 async def _load_election_data(db, tenant_id, election_id):
-    from app.common.election_access import get_election_tenant_ids, get_our_candidate_id
+    from app.common.election_access import get_election_tenant_ids, get_our_candidate_id, list_election_candidates
 
     # 공유 선거 지원 — election_id로만 조회
     election = (await db.execute(
@@ -728,22 +723,8 @@ async def _load_election_data(db, tenant_id, election_id):
     all_tids = await get_election_tenant_ids(db, election_id)
     our_cand_id = await get_our_candidate_id(db, tenant_id, election_id)
 
-    all_candidates = (await db.execute(
-        select(Candidate).where(
-            Candidate.election_id == election_id, Candidate.enabled == True,
-        )
-    )).scalars().all()
-
-    # 중복 제거 + 우리 후보 동적 설정
-    seen = set()
-    candidates = []
-    for c in all_candidates:
-        if c.name not in seen:
-            seen.add(c.name)
-            if our_cand_id:
-                c.is_our_candidate = (str(c.id) == our_cand_id)
-            candidates.append(c)
-
+    # election-shared + soft hide 통일 진입점
+    candidates = await list_election_candidates(db, election_id, tenant_id=tenant_id, enabled_only=True)
     our = next((c for c in candidates if c.is_our_candidate), None)
     return election, our, candidates
 

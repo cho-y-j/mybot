@@ -297,8 +297,10 @@ async def delete_candidate(
     user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
-    """후보자 삭제 — election-shared이므로 다른 캠프도 영향받음. 내 우리 후보는 삭제 불가."""
+    """후보자 '삭제' — election-shared 구조이므로 hard-delete가 아니라 soft hide.
+    이 캠프 시야에서만 후보를 숨기고, candidate row와 다른 캠프의 분석 데이터는 보존."""
     from app.common.election_access import can_access_election, get_our_candidate_id
+    from sqlalchemy import text as _sqltext
     tid = user["tenant_id"]
     if not await can_access_election(db, tid, election_id):
         raise HTTPException(status_code=403, detail="선거 접근 권한이 없습니다")
@@ -315,32 +317,13 @@ async def delete_candidate(
 
     my_cand_id = await get_our_candidate_id(db, tid, election_id)
     if my_cand_id and str(candidate.id) == my_cand_id:
-        raise HTTPException(status_code=400, detail="우리 후보는 삭제할 수 없습니다")
+        raise HTTPException(status_code=400, detail="우리 후보는 숨길 수 없습니다")
 
-    # election-shared 안전장치: 다른 캠프가 우리 후보로 사용 중이면 삭제 거부
-    from sqlalchemy import text as _sqltext
-    other_camp = (await db.execute(_sqltext(
-        "SELECT COUNT(*) FROM tenant_elections "
-        "WHERE our_candidate_id = :cid AND tenant_id != :tid"
-    ), {"cid": str(candidate_id), "tid": str(tid)})).scalar() or 0
-    if other_camp > 0:
-        raise HTTPException(status_code=409, detail="다른 캠프가 이 후보를 우리 후보로 사용 중이라 삭제할 수 없습니다")
-
-    # 의존 row 정리 (FK 12개)
-    cid = str(candidate_id)
-    # election-shared raw: candidate_id만 NULL (데이터는 다른 캠프와 공유 → 보존)
-    for tbl in ("news_articles", "community_posts", "youtube_videos"):
-        await db.execute(_sqltext(f"UPDATE {tbl} SET candidate_id = NULL WHERE candidate_id = :cid"), {"cid": cid})
-    # camp-private 관점/집계: DELETE
-    for tbl in ("news_strategic_views", "community_strategic_views", "youtube_strategic_views",
-                "keywords", "sentiment_daily", "ad_campaigns"):
-        await db.execute(_sqltext(f"DELETE FROM {tbl} WHERE candidate_id = :cid"), {"cid": cid})
-    # tenant_elections.our_candidate_id 정리 (위 보호 로직에서 자기 캠프만 남았음)
+    # soft hide: tenant_hidden_candidates upsert (이미 숨긴 상태면 idempotent)
     await db.execute(_sqltext(
-        "UPDATE tenant_elections SET our_candidate_id = NULL WHERE our_candidate_id = :cid"
-    ), {"cid": cid})
-    # candidate_profiles, candidate_schedules는 ON DELETE CASCADE → 자동
-    await db.delete(candidate)
+        "INSERT INTO tenant_hidden_candidates (tenant_id, candidate_id, hidden_by) "
+        "VALUES (:tid, :cid, :uid) ON CONFLICT (tenant_id, candidate_id) DO NOTHING"
+    ), {"tid": str(tid), "cid": str(candidate_id), "uid": str(user["id"])})
     await db.commit()
 
 

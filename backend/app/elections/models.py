@@ -129,6 +129,18 @@ class CandidateProfile(Base):
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
+class TenantHiddenCandidate(Base):
+    """캠프별 후보 숨김 (soft hide). election-shared에서 한 캠프가 후보를
+    '시야에서 빼는' 용도. candidate row는 보존되어 다른 캠프에 영향 없음."""
+    __tablename__ = "tenant_hidden_candidates"
+
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), primary_key=True)
+    candidate_id = Column(UUID(as_uuid=True), ForeignKey("candidates.id", ondelete="CASCADE"), primary_key=True)
+    hidden_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    reason = Column(Text, nullable=True)
+    hidden_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+
 class Keyword(Base):
     """모니터링 키워드."""
     __tablename__ = "keywords"

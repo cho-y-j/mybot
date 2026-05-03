@@ -393,6 +393,50 @@ async def toggle_tenant_active(
     }
 
 
+# ──── 캠프별 숨김 후보 (soft hide) 관리 ────
+
+@router.get("/tenants/{tenant_id}/hidden-candidates")
+async def list_hidden_candidates(
+    tenant_id: UUID, user: CurrentUser, db: AsyncSession = Depends(get_db),
+):
+    """캠프가 숨긴(soft hide) 후보 목록."""
+    require_superadmin(user)
+    rows = (await db.execute(text(
+        "SELECT h.candidate_id, c.name, c.party, c.election_id, h.hidden_at, h.reason "
+        "FROM tenant_hidden_candidates h JOIN candidates c ON c.id = h.candidate_id "
+        "WHERE h.tenant_id = :tid ORDER BY h.hidden_at DESC"
+    ), {"tid": str(tenant_id)})).fetchall()
+    return [
+        {
+            "candidate_id": str(r[0]),
+            "name": r[1],
+            "party": r[2],
+            "election_id": str(r[3]) if r[3] else None,
+            "hidden_at": r[4].isoformat() if r[4] else None,
+            "reason": r[5],
+        }
+        for r in rows
+    ]
+
+
+@router.delete("/tenants/{tenant_id}/hidden-candidates/{candidate_id}", status_code=204)
+async def unhide_candidate(
+    tenant_id: UUID, candidate_id: UUID,
+    user: CurrentUser, db: AsyncSession = Depends(get_db),
+):
+    """슈퍼관리자: 캠프가 숨긴 후보 복원."""
+    require_superadmin(user)
+    await db.execute(text(
+        "DELETE FROM tenant_hidden_candidates WHERE tenant_id = :tid AND candidate_id = :cid"
+    ), {"tid": str(tenant_id), "cid": str(candidate_id)})
+    db.add(AuditLog(
+        user_id=user["id"], action="admin_unhide_candidate",
+        resource_type="candidate", resource_id=str(candidate_id),
+        details=_json.dumps({"tenant_id": str(tenant_id)}, ensure_ascii=False),
+    ))
+    await db.commit()
+
+
 # ──── 사용자 역할/캠프 변경 ────
 
 from pydantic import BaseModel as _BM

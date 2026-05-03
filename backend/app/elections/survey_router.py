@@ -187,10 +187,9 @@ async def list_surveys_grouped(
     region = election.region_sido
     sigungu = election.region_sigungu
 
-    # 등록된 우리 후보 + 경쟁자
-    our_cands = (await db.execute(
-        select(Candidate).where(Candidate.election_id == election_id, Candidate.enabled == True)
-    )).scalars().all()
+    # 등록된 우리 후보 + 경쟁자 (election-shared + soft hide 통일)
+    from app.common.election_access import list_election_candidates
+    our_cands = await list_election_candidates(db, election_id, tenant_id=tid, enabled_only=True)
     our_names = [c.name for c in our_cands]
     our_candidate_name = next((c.name for c in our_cands if c.is_our_candidate), None)
 

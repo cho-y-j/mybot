@@ -72,11 +72,22 @@ async def get_shared_election_id(db: AsyncSession, tenant_id: str) -> str | None
     return str(mapped) if mapped else None
 
 
+async def get_hidden_candidate_ids(db: AsyncSession, tenant_id: str) -> set[str]:
+    """이 캠프가 숨긴(soft hide) 후보 ID 집합. tenant_hidden_candidates 기반."""
+    if not tenant_id:
+        return set()
+    rows = (await db.execute(text(
+        "SELECT candidate_id FROM tenant_hidden_candidates WHERE tenant_id = :tid"
+    ), {"tid": str(tenant_id)})).fetchall()
+    return {str(r[0]) for r in rows}
+
+
 async def list_election_candidates(
     db: AsyncSession,
     election_id: UUID | str,
     tenant_id: str | None = None,
     enabled_only: bool = True,
+    include_hidden: bool = False,
 ):
     """
     선거에 속한 후보자 목록 — election-shared 모델의 canonical source.
@@ -84,6 +95,7 @@ async def list_election_candidates(
     - `election_id` 기준으로만 필터 (tenant_id 무시: 후보는 선거 단위 공유)
     - `tenant_id` 인자가 주어지면 해당 tenant의 "우리 후보" 관점에서
       `c.is_our_candidate` 속성을 동적으로 세팅한 뒤 반환.
+    - **`tenant_id`가 있고 `include_hidden=False`이면 그 캠프가 숨긴 후보 자동 제외.**
     - 반환되는 Candidate 객체의 `.is_our_candidate`는 **해당 tenant 관점** 값
       (DB 컬럼값은 그대로 유지, in-memory 속성만 오버라이드).
     - `priority` 오름차순 정렬, 이름 중복은 하나만 유지 (tenant_id legacy로 dup 있을 수 있음).
@@ -93,6 +105,13 @@ async def list_election_candidates(
     q = select(Candidate).where(Candidate.election_id == election_id)
     if enabled_only:
         q = q.where(Candidate.enabled == True)
+
+    # soft hide 필터 (election-shared에서 캠프별 시야 격리)
+    if tenant_id and not include_hidden:
+        hidden_ids = await get_hidden_candidate_ids(db, tenant_id)
+        if hidden_ids:
+            q = q.where(~Candidate.id.in_(hidden_ids))
+
     q = q.order_by(Candidate.priority, Candidate.name)
 
     rows = (await db.execute(q)).scalars().all()
