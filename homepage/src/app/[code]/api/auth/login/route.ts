@@ -72,7 +72,10 @@ export async function POST(
         user: { id: user.id, name: user.name, code: user.code, userType: "user" },
       },
     });
-    applySessionCookies(res, sessionId, "user", user.code, remember);
+    // mh_code 쿠키에는 URL segment(code 또는 slug)를 그대로 저장.
+    // middleware가 URL segment와 비교하는데, edge runtime이라 DB 조회 불가.
+    // user.code 고정 저장 시 slug로 접속하면 mismatch → 무한 redirect 루프.
+    applySessionCookies(res, sessionId, "user", code, remember);
     return res;
   } catch (error) {
     console.error("Login error:", error);
