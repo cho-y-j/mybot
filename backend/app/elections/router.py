@@ -317,6 +317,29 @@ async def delete_candidate(
     if my_cand_id and str(candidate.id) == my_cand_id:
         raise HTTPException(status_code=400, detail="우리 후보는 삭제할 수 없습니다")
 
+    # election-shared 안전장치: 다른 캠프가 우리 후보로 사용 중이면 삭제 거부
+    from sqlalchemy import text as _sqltext
+    other_camp = (await db.execute(_sqltext(
+        "SELECT COUNT(*) FROM tenant_elections "
+        "WHERE our_candidate_id = :cid AND tenant_id != :tid"
+    ), {"cid": str(candidate_id), "tid": str(tid)})).scalar() or 0
+    if other_camp > 0:
+        raise HTTPException(status_code=409, detail="다른 캠프가 이 후보를 우리 후보로 사용 중이라 삭제할 수 없습니다")
+
+    # 의존 row 정리 (FK 12개)
+    cid = str(candidate_id)
+    # election-shared raw: candidate_id만 NULL (데이터는 다른 캠프와 공유 → 보존)
+    for tbl in ("news_articles", "community_posts", "youtube_videos"):
+        await db.execute(_sqltext(f"UPDATE {tbl} SET candidate_id = NULL WHERE candidate_id = :cid"), {"cid": cid})
+    # camp-private 관점/집계: DELETE
+    for tbl in ("news_strategic_views", "community_strategic_views", "youtube_strategic_views",
+                "keywords", "sentiment_daily", "ad_campaigns"):
+        await db.execute(_sqltext(f"DELETE FROM {tbl} WHERE candidate_id = :cid"), {"cid": cid})
+    # tenant_elections.our_candidate_id 정리 (위 보호 로직에서 자기 캠프만 남았음)
+    await db.execute(_sqltext(
+        "UPDATE tenant_elections SET our_candidate_id = NULL WHERE our_candidate_id = :cid"
+    ), {"cid": cid})
+    # candidate_profiles, candidate_schedules는 ON DELETE CASCADE → 자동
     await db.delete(candidate)
     await db.commit()
 
