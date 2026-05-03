@@ -1,5 +1,5 @@
 'use client';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { api } from '@/services/api';
 import { useElection } from '@/hooks/useElection';
 import ReactMarkdown from 'react-markdown';
@@ -11,6 +11,25 @@ interface Msg {
   time: string;
 }
 
+const BTN_SIZE = 48;          // px — 동그란 버튼 크기
+const SAFE_MARGIN = 8;        // 화면 가장자리 여백
+const DRAG_THRESHOLD = 5;     // 이 거리 미만 이동은 클릭으로 처리
+const POS_STORAGE_KEY = 'fa_btn_pos_v1';
+
+interface Pos { x: number; y: number; }
+
+function clampToViewport(p: Pos): Pos {
+  if (typeof window === 'undefined') return p;
+  const maxX = window.innerWidth - BTN_SIZE - SAFE_MARGIN;
+  const maxY = window.innerHeight - BTN_SIZE - SAFE_MARGIN;
+  return { x: Math.max(SAFE_MARGIN, Math.min(p.x, maxX)), y: Math.max(SAFE_MARGIN, Math.min(p.y, maxY)) };
+}
+
+function defaultPos(): Pos {
+  if (typeof window === 'undefined') return { x: 24, y: 24 };
+  return { x: window.innerWidth - BTN_SIZE - 24, y: window.innerHeight - BTN_SIZE - 24 };
+}
+
 export default function FloatingAssistant() {
   const { election } = useElection();
   const [open, setOpen] = useState(false);
@@ -18,6 +37,58 @@ export default function FloatingAssistant() {
   const [sending, setSending] = useState(false);
   const [messages, setMessages] = useState<Msg[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // 드래그 가능한 버튼 위치 (localStorage 저장)
+  const [btnPos, setBtnPos] = useState<Pos>(defaultPos);
+  const dragState = useRef<{ startX: number; startY: number; origX: number; origY: number; moved: boolean } | null>(null);
+
+  // 첫 마운트 — 저장된 위치 복원 + viewport 안에 클램프
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(POS_STORAGE_KEY);
+      if (saved) {
+        const p = JSON.parse(saved);
+        if (typeof p?.x === 'number' && typeof p?.y === 'number') {
+          setBtnPos(clampToViewport(p));
+          return;
+        }
+      }
+    } catch {}
+    setBtnPos(defaultPos());
+  }, []);
+
+  // 창 크기 변경 시 viewport 안으로 재클램프
+  useEffect(() => {
+    const onResize = () => setBtnPos(p => clampToViewport(p));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  const onPointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+    dragState.current = { startX: e.clientX, startY: e.clientY, origX: btnPos.x, origY: btnPos.y, moved: false };
+  }, [btnPos.x, btnPos.y]);
+
+  const onPointerMove = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    const s = dragState.current;
+    if (!s) return;
+    const dx = e.clientX - s.startX;
+    const dy = e.clientY - s.startY;
+    if (!s.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+    s.moved = true;
+    setBtnPos(clampToViewport({ x: s.origX + dx, y: s.origY + dy }));
+  }, []);
+
+  const onPointerUp = useCallback(() => {
+    const s = dragState.current;
+    if (!s) return;
+    if (s.moved) {
+      try { localStorage.setItem(POS_STORAGE_KEY, JSON.stringify(btnPos)); } catch {}
+    } else {
+      setOpen(true);   // 클릭으로 처리
+    }
+    dragState.current = null;
+  }, [btnPos]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -47,13 +118,17 @@ export default function FloatingAssistant() {
 
   if (!open) {
     return (
-      <button onClick={() => setOpen(true)}
-        className="group fixed bottom-6 right-6 flex items-center gap-2 pl-4 pr-5 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg hover:shadow-xl hover:scale-105 transition-all z-40"
-        title="AI 비서에게 물어보기">
+      <button
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={() => { dragState.current = null; }}
+        style={{ left: btnPos.x, top: btnPos.y, width: BTN_SIZE, height: BTN_SIZE, touchAction: 'none' }}
+        className="fixed flex items-center justify-center bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-full shadow-lg hover:shadow-xl transition-colors z-40 cursor-grab active:cursor-grabbing select-none"
+        title="AI 비서 — 길게 눌러서 드래그">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
         </svg>
-        <span className="text-sm font-semibold">AI 비서</span>
       </button>
     );
   }
