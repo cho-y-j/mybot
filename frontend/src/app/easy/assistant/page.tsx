@@ -237,17 +237,17 @@ export default function AssistantPage() {
         </div>
 
         <div className="pt-3">
-          <div className="flex gap-2">
+          <div className="flex gap-2 min-w-0">
             <input
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()}
               disabled={sending}
               placeholder="무엇이든 물어보세요..."
-              className="flex-1 px-3 lg:px-4 py-2 lg:py-3 text-sm bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl focus:border-blue-500 outline-none"
+              className="flex-1 min-w-0 px-3 lg:px-4 py-2 lg:py-3 text-sm bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl focus:border-blue-500 outline-none"
             />
             <button onClick={() => send()} disabled={sending || !input.trim()}
-              className="px-4 lg:px-6 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-40 font-semibold text-sm">
+              className="shrink-0 px-4 lg:px-6 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-40 font-semibold text-sm">
               전송
             </button>
           </div>

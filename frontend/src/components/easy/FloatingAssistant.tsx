@@ -128,18 +128,21 @@ export default function FloatingAssistant() {
 
       {/* 입력 */}
       <div className="p-3 border-t border-[var(--card-border)]">
-        <div className="flex gap-2">
+        <div className="flex gap-2 min-w-0">
           <input
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()}
             disabled={sending}
             placeholder="무엇이든 물어보세요..."
-            className="flex-1 px-3 py-2 text-xs bg-[var(--muted-bg)] border border-[var(--card-border)] rounded-full focus:border-blue-500 outline-none"
+            className="flex-1 min-w-0 px-3 py-2 text-xs bg-[var(--muted-bg)] border border-[var(--card-border)] rounded-full focus:border-blue-500 outline-none"
           />
           <button onClick={() => send()} disabled={sending || !input.trim()}
-            className="px-4 bg-blue-600 text-white text-xs rounded-full hover:bg-blue-700 disabled:opacity-40">
-            →
+            aria-label="전송"
+            className="shrink-0 w-10 h-10 flex items-center justify-center bg-blue-600 text-white rounded-full hover:bg-blue-700 disabled:opacity-40">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
+            </svg>
           </button>
         </div>
       </div>

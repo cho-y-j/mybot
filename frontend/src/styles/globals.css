@@ -2,6 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
+/* 모바일 반응형 안전망 — flex 컨테이너 안에서 input/select/textarea 의 default
+   min-width(자동, ~200px)가 flex-1 자식의 축소를 막아 옆 버튼이 화면 밖으로 밀려나는 문제 방지.
+   min-width:0은 flex 컨텍스트 밖에선 무영향이라 사이드이펙트 없음. */
+@layer base {
+  input, select, textarea {
+    min-width: 0;
+  }
+}
+
 /* Leaflet 지도 — 번들에 포함시켜 컴포넌트 마운트 즉시 적용 (타일 렌더링 오류 방지) */
 @import 'leaflet/dist/leaflet.css';
 
@@ -137,7 +146,7 @@ body {
     transition-all font-semibold shadow-sm;
   }
   .input-field {
-    @apply w-full px-3.5 py-2.5 rounded-xl transition-all placeholder:text-gray-400
+    @apply w-full min-w-0 px-3.5 py-2.5 rounded-xl transition-all placeholder:text-gray-400
     border focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500
     bg-[var(--input-bg)] border-[var(--input-border)] text-[var(--foreground)];
   }
