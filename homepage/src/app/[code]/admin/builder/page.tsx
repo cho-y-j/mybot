@@ -147,6 +147,7 @@ const BLOCK_TYPES: Record<string, { label: string; icon: string; defaultTitle: s
   career: { label: "학력/경력", icon: "solar:clipboard-list-linear", defaultTitle: "학력·경력" },
   goals: { label: "핵심 공약", icon: "solar:target-linear", defaultTitle: "핵심 공약" },
   gallery: { label: "활동 사진", icon: "solar:camera-linear", defaultTitle: "활동 사진" },
+  carousel: { label: "이미지 슬라이드", icon: "solar:slider-horizontal-linear", defaultTitle: "" },
   schedule: { label: "선거 일정", icon: "solar:calendar-linear", defaultTitle: "선거 일정" },
   news: { label: "보도자료", icon: "solar:book-2-linear", defaultTitle: "보도자료" },
   videos: { label: "홍보 영상", icon: "solar:videocamera-record-linear", defaultTitle: "홍보 영상" },
@@ -1017,6 +1018,8 @@ function SectionPreview({
       return <GoalsPreview block={block} pledges={pledges} />;
     case "gallery":
       return <GalleryPreview block={block} gallery={gallery} />;
+    case "carousel":
+      return <CarouselPreview block={block} />;
     case "schedule":
       return <SchedulePreview block={block} schedules={schedules} />;
     case "news":
@@ -1486,6 +1489,55 @@ function GalleryPreview({ block, gallery }: { block: Block; gallery: GalleryItem
             />
           </div>
         ))}
+      </div>
+    </section>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   CAROUSEL Preview (admin)
+   ═══════════════════════════════════════════════ */
+function CarouselPreview({ block }: { block: Block }) {
+  const content = block.content as {
+    slides?: Array<{ imageUrl: string; title?: string; subtitle?: string; link?: string }>;
+    autoplay?: boolean;
+    intervalSec?: number;
+  } | null;
+  const slides = content?.slides || [];
+
+  if (slides.length === 0) {
+    return <EmptySection label="이미지 슬라이드" icon="solar:slider-horizontal-linear" />;
+  }
+
+  return (
+    <section className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
+      {block.title && (
+        <div className="mb-8 text-center">
+          <h2 className="text-2xl font-bold sm:text-3xl text-[var(--foreground)]">
+            {block.title}
+          </h2>
+        </div>
+      )}
+      <div className="relative aspect-[16/9] overflow-hidden rounded-2xl bg-[var(--muted-bg)] sm:aspect-[21/9]">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={slides[0].imageUrl}
+          alt={slides[0].title || ""}
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+        {(slides[0].title || slides[0].subtitle) && (
+          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent p-6">
+            {slides[0].title && (
+              <h3 className="text-xl font-bold text-white sm:text-2xl">{slides[0].title}</h3>
+            )}
+            {slides[0].subtitle && (
+              <p className="mt-1 text-sm text-white/85 sm:text-base">{slides[0].subtitle}</p>
+            )}
+          </div>
+        )}
+        <div className="absolute right-3 top-3 rounded-full bg-black/50 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur">
+          1 / {slides.length}
+        </div>
       </div>
     </section>
   );
@@ -2200,6 +2252,17 @@ function SectionEditor({
         <GalleryEditor
           block={block}
           items={gallery}
+          onSaving={onSaving}
+          onSaved={onSaved}
+          onCancel={onCancel}
+        />
+      );
+      break;
+    case "carousel":
+      editor = (
+        <CarouselEditor
+          block={block}
+          setBlocks={setBlocks}
           onSaving={onSaving}
           onSaved={onSaved}
           onCancel={onCancel}
@@ -6371,6 +6434,265 @@ function LinksEditor({
           >
             목록에 추가
           </button>
+        </div>
+      </div>
+
+      <EditorActions onSave={save} onCancel={onCancel} />
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   CAROUSEL Editor
+   ═══════════════════════════════════════════════ */
+interface CarouselSlide {
+  imageUrl: string;
+  title?: string;
+  subtitle?: string;
+  link?: string;
+}
+
+function CarouselEditor({
+  block,
+  setBlocks,
+  onSaving,
+  onSaved,
+  onCancel,
+}: EditorBaseProps & { setBlocks: React.Dispatch<React.SetStateAction<Block[]>> }) {
+  const initial = (block.content as {
+    slides?: CarouselSlide[];
+    autoplay?: boolean;
+    intervalSec?: number;
+  } | null) || {};
+
+  const [title, setTitle] = useState(block.title || "");
+  const [slides, setSlides] = useState<CarouselSlide[]>(initial.slides || []);
+  const [autoplay, setAutoplay] = useState(initial.autoplay ?? true);
+  const [intervalSec, setIntervalSec] = useState(initial.intervalSec || 5);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  function pushPreview(next: { slides?: CarouselSlide[]; autoplay?: boolean; intervalSec?: number; title?: string }) {
+    setBlocks((prev) =>
+      prev.map((b) =>
+        b.id === block.id
+          ? {
+              ...b,
+              title: next.title !== undefined ? next.title : b.title,
+              content: {
+                slides: next.slides ?? slides,
+                autoplay: next.autoplay ?? autoplay,
+                intervalSec: next.intervalSec ?? intervalSec,
+              },
+            }
+          : b
+      )
+    );
+  }
+
+  function updateSlides(updater: (prev: CarouselSlide[]) => CarouselSlide[]) {
+    setSlides((prev) => {
+      const next = updater(prev);
+      pushPreview({ slides: next });
+      return next;
+    });
+  }
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/site/upload/carousel", { method: "POST", body: fd });
+      const json = await res.json();
+      if (!json.success) {
+        alert(json.error || "업로드 실패");
+        return;
+      }
+      updateSlides((prev) => [...prev, { imageUrl: json.data.url }]);
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  function removeSlide(idx: number) {
+    if (!confirm("슬라이드를 삭제하시겠습니까?")) return;
+    updateSlides((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  function moveSlide(idx: number, dir: -1 | 1) {
+    updateSlides((prev) => {
+      const next = [...prev];
+      const j = idx + dir;
+      if (j < 0 || j >= next.length) return prev;
+      [next[idx], next[j]] = [next[j], next[idx]];
+      return next;
+    });
+  }
+
+  function patchSlide(idx: number, patch: Partial<CarouselSlide>) {
+    updateSlides((prev) => prev.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
+  }
+
+  async function save() {
+    onSaving();
+    await apiFetch(`/api/site/blocks/${block.id}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        title: title || null,
+        content: { slides, autoplay, intervalSec },
+      }),
+    });
+    onSaved();
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <label className={labelClass}>섹션 제목 (선택)</label>
+        <input
+          className={inputClass}
+          value={title}
+          onChange={(e) => {
+            setTitle(e.target.value);
+            pushPreview({ title: e.target.value });
+          }}
+          placeholder="예: 활동 사진, 주요 행사"
+        />
+      </div>
+
+      <div className="rounded-lg border border-white/10 bg-[var(--card-bg)] p-3">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-medium uppercase tracking-wider text-[var(--muted)]">
+            자동 슬라이드
+          </label>
+          <label className="relative inline-flex cursor-pointer items-center">
+            <input
+              type="checkbox"
+              checked={autoplay}
+              onChange={(e) => {
+                setAutoplay(e.target.checked);
+                pushPreview({ autoplay: e.target.checked });
+              }}
+              className="peer sr-only"
+            />
+            <div className="h-5 w-9 rounded-full bg-white/10 peer-checked:bg-blue-600 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4" />
+          </label>
+        </div>
+        {autoplay && (
+          <div className="mt-3">
+            <label className={labelClass}>전환 간격 (초, 2~20)</label>
+            <input
+              type="number"
+              min={2}
+              max={20}
+              className={inputClass}
+              value={intervalSec}
+              onChange={(e) => {
+                const v = Math.max(2, Math.min(20, Number(e.target.value) || 5));
+                setIntervalSec(v);
+                pushPreview({ intervalSec: v });
+              }}
+            />
+          </div>
+        )}
+      </div>
+
+      <div>
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-xs font-medium uppercase tracking-wider text-[var(--muted)]">
+            슬라이드 ({slides.length})
+          </span>
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            className={btnSecondary}
+          >
+            {uploading ? "업로드 중..." : "+ 이미지 추가"}
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleUpload}
+          />
+        </div>
+
+        {slides.length === 0 && (
+          <p className="rounded-lg border border-dashed border-white/10 p-6 text-center text-sm text-[var(--muted)]">
+            슬라이드가 없습니다. + 이미지 추가 버튼으로 시작하세요.
+          </p>
+        )}
+
+        <div className="space-y-2">
+          {slides.map((s, i) => (
+            <div
+              key={i}
+              className="rounded-lg border border-white/10 bg-[var(--card-bg)] p-2"
+            >
+              <div className="flex gap-3">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={s.imageUrl}
+                  alt=""
+                  className="h-20 w-32 shrink-0 rounded-md object-cover"
+                />
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <input
+                    className={inputClass + " text-xs"}
+                    placeholder="제목 (선택)"
+                    value={s.title || ""}
+                    onChange={(e) => patchSlide(i, { title: e.target.value })}
+                  />
+                  <input
+                    className={inputClass + " text-xs"}
+                    placeholder="부제목 (선택)"
+                    value={s.subtitle || ""}
+                    onChange={(e) => patchSlide(i, { subtitle: e.target.value })}
+                  />
+                  <input
+                    className={inputClass + " text-xs"}
+                    placeholder="클릭 시 이동할 링크 (선택)"
+                    value={s.link || ""}
+                    onChange={(e) => patchSlide(i, { link: e.target.value })}
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <button
+                    type="button"
+                    onClick={() => moveSlide(i, -1)}
+                    disabled={i === 0}
+                    className="rounded border border-white/10 px-2 py-0.5 text-xs text-[var(--foreground)] disabled:opacity-30"
+                    aria-label="위로"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => moveSlide(i, 1)}
+                    disabled={i === slides.length - 1}
+                    className="rounded border border-white/10 px-2 py-0.5 text-xs text-[var(--foreground)] disabled:opacity-30"
+                    aria-label="아래로"
+                  >
+                    ↓
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeSlide(i)}
+                    className="rounded border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-xs text-red-400 hover:bg-red-500/20"
+                    aria-label="삭제"
+                  >
+                    삭제
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 

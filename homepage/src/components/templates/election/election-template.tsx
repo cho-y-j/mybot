@@ -4,6 +4,7 @@ import ElectionKeywords from "./election-keywords";
 import ElectionProfile from "./election-profile";
 import ElectionPledges from "./election-pledges";
 import ElectionGallery from "./election-gallery";
+import ElectionCarousel from "./election-carousel";
 import ElectionSchedule from "./election-schedule";
 import ElectionNews from "./election-news";
 import ElectionVideos from "./election-videos";
@@ -152,6 +153,20 @@ export default function ElectionTemplate({ data }: Props) {
         sectionTitle={blockTitle("gallery")}
       />
     ),
+    carousel: () => {
+      const c = blockContent("carousel");
+      const slides = (c?.slides as Array<{ imageUrl: string; title?: string; subtitle?: string; link?: string }>) || [];
+      if (slides.length === 0) return null;
+      return (
+        <ElectionCarousel
+          key="carousel"
+          slides={slides}
+          autoplay={(c?.autoplay as boolean) ?? true}
+          intervalSec={(c?.intervalSec as number) || 5}
+          sectionTitle={blockTitle("carousel")}
+        />
+      );
+    },
     schedule: () => {
       const schedContent = blockContent("schedule");
       const schedColors = (schedContent?.colors as Record<string, string>) || {};
