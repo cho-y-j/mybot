@@ -272,6 +272,7 @@ async def update_candidate(
         setattr(candidate, key, value)
 
     candidate.updated_at = datetime.now(timezone.utc)
+    await db.commit()
 
     return CandidateResponse(
         id=str(candidate.id),
@@ -317,6 +318,7 @@ async def delete_candidate(
         raise HTTPException(status_code=400, detail="우리 후보는 삭제할 수 없습니다")
 
     await db.delete(candidate)
+    await db.commit()
 
 
 # ──────────────── Keywords (고객이 직접 추가 가능) ──────────────────────────
@@ -477,6 +479,7 @@ async def update_schedule(
     if name is not None:
         schedule.name = name
 
+    await db.commit()
     return {"id": str(schedule.id), "enabled": schedule.enabled, "message": "수정 완료"}
 
 
@@ -498,6 +501,7 @@ async def delete_schedule(
     if not schedule:
         raise HTTPException(status_code=404, detail="스케줄을 찾을 수 없습니다")
     await db.delete(schedule)
+    await db.commit()
 
 
 @router.post("/{election_id}/schedules/create-defaults")

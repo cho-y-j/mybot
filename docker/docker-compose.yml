@@ -3,6 +3,7 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     container_name: ep_postgres
+    restart: always
     environment:
       POSTGRES_DB: electionpulse
       POSTGRES_USER: electionpulse
@@ -24,6 +25,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: ep_redis
+    restart: always
     ports:
       - "127.0.0.1:6380:6379"
     volumes:

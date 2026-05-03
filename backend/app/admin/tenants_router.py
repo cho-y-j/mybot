@@ -78,7 +78,8 @@ async def update_tenant_admin(
         raise HTTPException(404, "캠프를 찾을 수 없습니다")
 
     if req.name is not None: tenant.name = req.name
-    if req.plan is not None: tenant.plan = req.plan
+    if req.plan is not None and req.plan in ("basic", "pro", "premium", "enterprise"):
+        tenant.plan = req.plan
     if req.max_elections is not None: tenant.max_elections = req.max_elections
     if req.max_members is not None: tenant.max_members = req.max_members
     if req.max_candidates is not None: tenant.max_candidates = req.max_candidates
@@ -360,61 +361,42 @@ async def tenant_detail(tenant_id: UUID, user: CurrentUser, db: AsyncSession = D
     }
 
 
-# ──── 캠프 수정 ────
+# ──── 캠프 정지/재개 토글 ────
 
-from pydantic import BaseModel as _BM
-
-
-class TenantUpdateReq(_BM):
-    name: str | None = None
-    plan: str | None = None
-    is_active: bool | None = None
-    max_elections: int | None = None
-    max_candidates: int | None = None
-    max_keywords: int | None = None
-    max_members: int | None = None
-
-
-@router.put("/tenants/{tenant_id}")
-async def update_tenant(
-    tenant_id: UUID, req: TenantUpdateReq,
-    user: CurrentUser, db: AsyncSession = Depends(get_db),
+@router.post("/tenants/{tenant_id}/toggle-active")
+async def toggle_tenant_active(
+    tenant_id: UUID, user: CurrentUser, db: AsyncSession = Depends(get_db),
 ):
-    """캠프 정보 수정 (이름, 요금제, 제한값, 활성/비활성)."""
+    """캠프 활성/정지 토글. 정지 시 모든 스케줄도 함께 비활성."""
     require_superadmin(user)
     tenant = (await db.execute(select(Tenant).where(Tenant.id == tenant_id))).scalar_one_or_none()
     if not tenant:
         raise HTTPException(404, "캠프를 찾을 수 없습니다")
+    tenant.is_active = not tenant.is_active
 
-    changed = []
-    if req.name is not None:
-        tenant.name = req.name
-        changed.append(f"name={req.name}")
-    if req.plan is not None and req.plan in ("basic", "pro", "premium", "enterprise"):
-        tenant.plan = req.plan
-        changed.append(f"plan={req.plan}")
-    if req.is_active is not None:
-        tenant.is_active = req.is_active
-        changed.append(f"active={req.is_active}")
-    if req.max_elections is not None:
-        tenant.max_elections = req.max_elections
-    if req.max_candidates is not None:
-        tenant.max_candidates = req.max_candidates
-    if req.max_keywords is not None:
-        tenant.max_keywords = req.max_keywords
-    if req.max_members is not None:
-        tenant.max_members = req.max_members
+    if not tenant.is_active:
+        await db.execute(
+            text("UPDATE schedule_configs SET enabled = false WHERE tenant_id = :tid"),
+            {"tid": str(tenant_id)},
+        )
 
     db.add(AuditLog(
-        user_id=user["id"], action="admin_update_tenant",
+        user_id=user["id"],
+        action=f"admin_{'activate' if tenant.is_active else 'deactivate'}_tenant",
         resource_type="tenant", resource_id=str(tenant_id),
-        details=_json.dumps({"changed": changed}, ensure_ascii=False),
+        details=_json.dumps({"name": tenant.name, "is_active": tenant.is_active}, ensure_ascii=False),
     ))
     await db.commit()
-    return {"message": f"캠프 수정 완료: {', '.join(changed) or '변경 없음'}"}
+    return {
+        "message": f"{tenant.name} {'재개' if tenant.is_active else '정지'} 완료",
+        "is_active": tenant.is_active,
+    }
 
 
 # ──── 사용자 역할/캠프 변경 ────
+
+from pydantic import BaseModel as _BM
+
 
 class UserRoleReq(_BM):
     role: str

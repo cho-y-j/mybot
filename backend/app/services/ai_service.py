@@ -10,10 +10,78 @@ Claude CLI subprocess 호출 통합 모듈.
 """
 import asyncio
 import json
+import os
 import shutil
 import structlog
 
 logger = structlog.get_logger()
+
+# ── tenant 단위 CLI 동시 호출 제한 (단일 CLI 계정 부하 분산) ──
+# 워커 60개가 동시에 단일 ~/.claude를 두드리면 Anthropic 분당 한도에 걸려
+# 90~300초 timeout이 줄줄이 발생. tenant당 동시 N개로 줄세움.
+CLI_CONCURRENCY_PER_TENANT = int(os.getenv("CLI_CONCURRENCY_PER_TENANT", "3"))
+_cli_redis_client = None
+
+
+def _get_cli_redis():
+    """Redis 클라이언트 캐시. naver.py 동일 패턴."""
+    global _cli_redis_client
+    if _cli_redis_client is None:
+        try:
+            import redis
+            _cli_redis_client = redis.Redis.from_url(
+                os.getenv("REDIS_URL", "redis://ep_redis:6379"),
+                decode_responses=True,
+                socket_timeout=2,
+            )
+            _cli_redis_client.ping()
+        except Exception as e:
+            logger.warning("cli_semaphore_redis_unavailable", error=str(e)[:120])
+            _cli_redis_client = False
+    return _cli_redis_client if _cli_redis_client is not False else None
+
+
+class _CliSemaphore:
+    """tenant당 동시 CLI 호출 N개 제한. Redis 카운터 + TTL 자가복구."""
+
+    def __init__(self, tenant_id: str | None, limit: int = CLI_CONCURRENCY_PER_TENANT):
+        self.key = f"cli:tenant:{tenant_id or 'system'}:active"
+        self.limit = max(1, limit)
+        self.r = _get_cli_redis()
+        self.acquired = False
+
+    async def __aenter__(self):
+        if self.r is None:
+            return self  # Redis 다운 시 무제한 fallback (서비스 영향 최소화)
+        # 최대 60초 대기. 그 안에 자리 안 나면 그냥 진행 (timeout이 처리)
+        for _ in range(60):
+            try:
+                count = self.r.incr(self.key)
+                self.r.expire(self.key, 600)  # 프로세스 죽어도 자가복구
+                if count <= self.limit:
+                    self.acquired = True
+                    return self
+                self.r.decr(self.key)
+            except Exception:
+                return self  # Redis 오류 시 fallback
+            await asyncio.sleep(1.0)
+        # 60초 대기 후 강제 진입 (큐 꼬임 방지)
+        try:
+            self.r.incr(self.key)
+            self.r.expire(self.key, 600)
+            self.acquired = True
+        except Exception:
+            pass
+        return self
+
+    async def __aexit__(self, *exc):
+        if self.acquired and self.r is not None:
+            try:
+                v = self.r.decr(self.key)
+                if v < 0:
+                    self.r.set(self.key, 0, ex=600)
+            except Exception:
+                pass
 
 # ── CLI 시스템 프롬프트 (--permission-mode plan 기본 코딩 어시스턴트를 선거 AI로 전환) ──
 CLI_SYSTEM_PROMPT = (
@@ -186,7 +254,6 @@ async def call_claude(
     env = None
     config_dir = ai_config.get("config_dir")
     if config_dir:
-        import os
         env = {**os.environ, "CLAUDE_CONFIG_DIR": config_dir}
 
     # 웹서치 사용 시 플래그 구성
@@ -196,67 +263,68 @@ async def call_claude(
     else:
         extra_args = ["--permission-mode", "plan"]
 
-    for attempt in range(2):
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                claude_path, "-p", prompt,
-                "--model", model,
-                *extra_args,
-                "--no-session-persistence",
-                "--system-prompt", CLI_SYSTEM_PROMPT,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env=env,
-            )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    async with _CliSemaphore(tenant_id):
+        for attempt in range(2):
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    claude_path, "-p", prompt,
+                    "--model", model,
+                    *extra_args,
+                    "--no-session-persistence",
+                    "--system-prompt", CLI_SYSTEM_PROMPT,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    env=env,
+                )
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
 
-            if proc.returncode == 0 and stdout:
-                text = stdout.decode("utf-8").strip()
-                if len(text) > 10:
-                    src = "assigned_cli" if config_dir else "system_cli"
-                    logger.info("claude_json_ok", context=context, model=model, tier=tier_label, source=src, length=len(text), web_search=web_search)
-                    return _extract_json(text)
+                if proc.returncode == 0 and stdout:
+                    text = stdout.decode("utf-8").strip()
+                    if len(text) > 10:
+                        src = "assigned_cli" if config_dir else "system_cli"
+                        logger.info("claude_json_ok", context=context, model=model, tier=tier_label, source=src, length=len(text), web_search=web_search)
+                        return _extract_json(text)
 
-            stderr_text = stderr.decode("utf-8", errors="ignore") if stderr else ""
+                stderr_text = stderr.decode("utf-8", errors="ignore") if stderr else ""
 
-            # rate limit 감지
-            if "rate limit" in stderr_text.lower() or "rate_limit" in stderr_text.lower():
-                logger.error("claude_rate_limited", context=context, config_dir=config_dir or "default")
-                if config_dir and db and ai_config.get("ai_account_id"):
-                    try:
-                        from sqlalchemy import text as sql_text
-                        await db.execute(sql_text(
-                            "UPDATE ai_accounts SET status = 'blocked', updated_at = NOW() WHERE id = :aid"
-                        ), {"aid": ai_config["ai_account_id"]})
-                        logger.warning("ai_account_auto_blocked", account_id=ai_config["ai_account_id"])
-                    except Exception:
-                        pass
+                # rate limit 감지
+                if "rate limit" in stderr_text.lower() or "rate_limit" in stderr_text.lower():
+                    logger.error("claude_rate_limited", context=context, config_dir=config_dir or "default")
+                    if config_dir and db and ai_config.get("ai_account_id"):
+                        try:
+                            from sqlalchemy import text as sql_text
+                            await db.execute(sql_text(
+                                "UPDATE ai_accounts SET status = 'blocked', updated_at = NOW() WHERE id = :aid"
+                            ), {"aid": ai_config["ai_account_id"]})
+                            logger.warning("ai_account_auto_blocked", account_id=ai_config["ai_account_id"])
+                        except Exception:
+                            pass
+                    return None
+
+                # stderr 로깅 (원인 파악용)
+                logger.warning("claude_cli_empty_result", context=context, model=model,
+                               returncode=proc.returncode,
+                               stderr=stderr_text[:500] if stderr_text else "none",
+                               attempt=attempt + 1)
+
+                # 첫 시도 실패 시 5초 후 재시도 (토큰 갱신 시간 확보)
+                if attempt == 0 and proc.returncode != 0:
+                    await asyncio.sleep(5)
+                    continue
+
                 return None
 
-            # stderr 로깅 (원인 파악용)
-            logger.warning("claude_cli_empty_result", context=context, model=model,
-                           returncode=proc.returncode,
-                           stderr=stderr_text[:500] if stderr_text else "none",
-                           attempt=attempt + 1)
-
-            # 첫 시도 실패 시 5초 후 재시도 (토큰 갱신 시간 확보)
-            if attempt == 0 and proc.returncode != 0:
-                await asyncio.sleep(5)
-                continue
-
-            return None
-
-        except asyncio.TimeoutError:
-            logger.error("claude_cli_timeout", context=context, model=model, timeout=timeout)
-            if attempt == 0:
-                continue
-            await _alert(TimeoutError(f"Claude CLI {timeout}s timeout ({model})"), context, tenant_id, db)
-            return None
-        except Exception as e:
-            logger.error("claude_cli_error", context=context, model=model, error=str(e)[:300])
-            await _alert(e, context, tenant_id, db)
-            return None
-    return None
+            except asyncio.TimeoutError:
+                logger.error("claude_cli_timeout", context=context, model=model, timeout=timeout)
+                if attempt == 0:
+                    continue
+                await _alert(TimeoutError(f"Claude CLI {timeout}s timeout ({model})"), context, tenant_id, db)
+                return None
+            except Exception as e:
+                logger.error("claude_cli_error", context=context, model=model, error=str(e)[:300])
+                await _alert(e, context, tenant_id, db)
+                return None
+        return None
 
 
 async def call_claude_text(
@@ -312,7 +380,6 @@ async def call_claude_text(
     env = None
     config_dir = ai_config.get("config_dir")
     if config_dir:
-        import os
         env = {**os.environ, "CLAUDE_CONFIG_DIR": config_dir}
 
     extra_args = []
@@ -321,50 +388,51 @@ async def call_claude_text(
     else:
         extra_args = ["--permission-mode", "plan"]
 
-    for attempt in range(2):
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                claude_path, "-p", prompt,
-                "--model", model,
-                *extra_args,
-                "--no-session-persistence",
-                "--system-prompt", CLI_SYSTEM_PROMPT,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env=env,
-            )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    async with _CliSemaphore(tenant_id):
+        for attempt in range(2):
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    claude_path, "-p", prompt,
+                    "--model", model,
+                    *extra_args,
+                    "--no-session-persistence",
+                    "--system-prompt", CLI_SYSTEM_PROMPT,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    env=env,
+                )
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
 
-            if proc.returncode == 0 and stdout:
-                result = stdout.decode("utf-8").strip()
-                if len(result) > 50:
-                    src = "assigned_cli" if config_dir else "system_cli"
-                    logger.info("claude_text_ok", context=context, model=model, tier=tier_label, source=src, length=len(result), web_search=web_search)
-                    return result
+                if proc.returncode == 0 and stdout:
+                    result = stdout.decode("utf-8").strip()
+                    if len(result) > 50:
+                        src = "assigned_cli" if config_dir else "system_cli"
+                        logger.info("claude_text_ok", context=context, model=model, tier=tier_label, source=src, length=len(result), web_search=web_search)
+                        return result
 
-            stderr_text = stderr.decode("utf-8", errors="ignore") if stderr else ""
-            logger.warning("claude_cli_empty_result", context=context, model=model,
-                           returncode=proc.returncode,
-                           stderr=stderr_text[:500] if stderr_text else "none",
-                           attempt=attempt + 1)
+                stderr_text = stderr.decode("utf-8", errors="ignore") if stderr else ""
+                logger.warning("claude_cli_empty_result", context=context, model=model,
+                               returncode=proc.returncode,
+                               stderr=stderr_text[:500] if stderr_text else "none",
+                               attempt=attempt + 1)
 
-            if attempt == 0 and proc.returncode != 0:
-                await asyncio.sleep(5)
-                continue
+                if attempt == 0 and proc.returncode != 0:
+                    await asyncio.sleep(5)
+                    continue
 
-            return None
+                return None
 
-        except asyncio.TimeoutError:
-            logger.error("claude_cli_timeout", context=context, model=model, timeout=timeout)
-            if attempt == 0:
-                continue
-            await _alert(TimeoutError(f"Claude CLI {timeout}s timeout ({model})"), context, tenant_id, db)
-            return None
-        except Exception as e:
-            logger.error("claude_cli_error", context=context, model=model, error=str(e)[:300])
-            await _alert(e, context, tenant_id, db)
-            return None
-    return None
+            except asyncio.TimeoutError:
+                logger.error("claude_cli_timeout", context=context, model=model, timeout=timeout)
+                if attempt == 0:
+                    continue
+                await _alert(TimeoutError(f"Claude CLI {timeout}s timeout ({model})"), context, tenant_id, db)
+                return None
+            except Exception as e:
+                logger.error("claude_cli_error", context=context, model=model, error=str(e)[:300])
+                await _alert(e, context, tenant_id, db)
+                return None
+        return None
 
 
 def _extract_json(text: str) -> dict | None:

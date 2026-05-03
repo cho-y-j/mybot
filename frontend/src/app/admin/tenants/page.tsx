@@ -230,9 +230,16 @@ export default function TenantsPage() {
                   </select>
                 </div>
                 <div className="text-gray-400">상태:
-                  <button onClick={() => handleUpdateTenant(selected.tenant.id, { is_active: !selected.tenant.is_active })}
+                  <button onClick={async () => {
+                    const willStop = selected.tenant.is_active;
+                    if (willStop && !confirm(`"${selected.tenant.name}" 캠프를 정지하시겠습니까?\n→ 모든 자동 수집 스케줄도 함께 정지됩니다.`)) return;
+                    const res = await fetch(`/api/admin/tenants/${selected.tenant.id}/toggle-active`, { method: 'POST', headers: headers() });
+                    if (!res.ok) { alert('실패'); return; }
+                    loadDetail(selected.tenant.id);
+                    loadTenants();
+                  }}
                     className={`ml-2 px-2 py-0.5 rounded text-xs font-bold ${selected.tenant?.is_active ? 'bg-green-600/30 text-green-400' : 'bg-red-600/30 text-red-400'}`}>
-                    {selected.tenant?.is_active ? '활성' : '비활성'}
+                    {selected.tenant?.is_active ? '활성' : '정지'}
                   </button>
                 </div>
               </div>
