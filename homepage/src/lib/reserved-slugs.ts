@@ -68,7 +68,8 @@ export const RESERVED_SLUGS = new Set<string>([
   "snake",
 ]);
 
-const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$/;
+// 1글자 단독 OR 양끝 영숫자 + 중간 영숫자/하이픈 (총 1~30자)
+const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,28}[a-z0-9])?$/;
 
 export type SlugValidation =
   | { ok: true; normalized: string }
@@ -79,14 +80,13 @@ export type SlugValidation =
  *
  * 규칙:
  *   - 영소문자 + 숫자 + 하이픈만 허용
- *   - 3~30자 (양 끝은 영숫자여야 함)
+ *   - 1~30자 (2자 이상이면 양 끝은 영숫자, 1자는 단독 영숫자만)
  *   - 예약어 아님
  *   - 대문자·공백·밑줄·한글 등 금지
  */
 export function validateSlug(input: string): SlugValidation {
   const raw = (input || "").trim().toLowerCase();
   if (!raw) return { ok: false, reason: "비어 있습니다" };
-  if (raw.length < 3) return { ok: false, reason: "3자 이상이어야 합니다" };
   if (raw.length > 30) return { ok: false, reason: "30자 이하여야 합니다" };
   if (!SLUG_PATTERN.test(raw)) {
     return { ok: false, reason: "영소문자·숫자·하이픈(-)만 쓸 수 있어요. 시작·끝은 영숫자" };

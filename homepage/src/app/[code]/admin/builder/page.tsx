@@ -1518,12 +1518,12 @@ function CarouselPreview({ block }: { block: Block }) {
           </h2>
         </div>
       )}
-      <div className="relative aspect-[16/9] overflow-hidden rounded-2xl bg-[var(--muted-bg)] sm:aspect-[21/9]">
+      <div className="relative aspect-[16/9] overflow-hidden rounded-2xl bg-black">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={slides[0].imageUrl}
           alt={slides[0].title || ""}
-          className="absolute inset-0 h-full w-full object-cover"
+          className="absolute inset-0 h-full w-full object-contain"
         />
         {(slides[0].title || slides[0].subtitle) && (
           <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent p-6">
@@ -6622,6 +6622,13 @@ function CarouselEditor({
             onChange={handleUpload}
           />
         </div>
+
+        <p className="mb-2 rounded-lg border border-blue-500/20 bg-blue-500/5 px-3 py-2 text-[11px] leading-relaxed text-[var(--muted)]">
+          <span className="font-semibold text-blue-400">권장 사이즈:</span>
+          {" "}가로 1600px 이상, <strong className="text-[var(--foreground)]">16:9 비율</strong>(예: 1600×900).
+          비율이 다른 이미지는 잘리지 않고 위아래에 검정 여백이 생깁니다.
+          여러 장 모두 같은 비율로 올리면 가장 깔끔합니다.
+        </p>
 
         {slides.length === 0 && (
           <p className="rounded-lg border border-dashed border-white/10 p-6 text-center text-sm text-[var(--muted)]">

@@ -42,7 +42,6 @@ export default function SignupPage() {
   useEffect(() => {
     const code = form.code.trim();
     if (!code) { setCodeAvailable(null); setCodeReason(""); return; }
-    if (code.length < 3) { setCodeAvailable(null); setCodeReason(""); return; }
 
     setCodeChecking(true);
     const timer = setTimeout(async () => {
@@ -170,7 +169,7 @@ export default function SignupPage() {
                     maxLength={30}
                     required
                   />
-                  {form.code.length >= 3 && (
+                  {form.code.length >= 1 && (
                     <span className={`ml-2 text-xs ${
                       codeChecking ? "text-zinc-500" :
                       codeAvailable === true ? "text-green-400" :

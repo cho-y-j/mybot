@@ -163,13 +163,15 @@ export default function ElectionCarousel({
 }
 
 function SlideContent({ slide }: { slide: Slide }) {
+  // object-contain: 원본 비율 보존 (위아래/좌우 잘림 없음).
+  // 컨테이너는 16:9 고정으로 캐러셀 높이 흔들림 방지, 빈 공간은 검정 배경(letterbox).
   return (
-    <div className="relative aspect-[16/9] w-full sm:aspect-[21/9]">
+    <div className="relative aspect-[16/9] w-full bg-black">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={slide.imageUrl}
         alt={slide.title || "슬라이드 이미지"}
-        className="absolute inset-0 h-full w-full object-cover"
+        className="absolute inset-0 h-full w-full object-contain"
         loading="lazy"
       />
       {(slide.title || slide.subtitle) && (

@@ -59,7 +59,6 @@ export default function CustomerSettingsPage() {
   useEffect(() => {
     const v = newSlug.trim();
     if (!v) { setSlugAvailable(null); setSlugReason(""); return; }
-    if (v.length < 3) { setSlugAvailable(null); setSlugReason(""); return; }
     if (v === currentSlug) { setSlugAvailable(true); setSlugReason("현재 사용 중"); return; }
 
     setSlugChecking(true);
@@ -168,7 +167,7 @@ export default function CustomerSettingsPage() {
               maxLength={30}
               className="flex-1 bg-transparent py-2.5 text-sm text-[var(--foreground)] outline-none"
             />
-            {newSlug.length >= 3 && (
+            {newSlug.length >= 1 && (
               <span className={`text-xs ${
                 slugChecking ? "text-[var(--muted)]" :
                 slugAvailable === true ? "text-green-400" :
@@ -179,7 +178,7 @@ export default function CustomerSettingsPage() {
             )}
           </div>
           <p className="text-xs text-[var(--muted)]">
-            영소문자·숫자·하이픈(-), 3~30자. 변경 후 30일간 재변경 불가.
+            영소문자·숫자·하이픈(-), 1~30자. 변경 후 30일간 재변경 불가.
           </p>
           {slugAvailable === false && slugReason && (
             <p className="text-xs text-red-400">{slugReason}</p>
