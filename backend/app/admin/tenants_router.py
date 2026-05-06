@@ -367,29 +367,40 @@ async def tenant_detail(tenant_id: UUID, user: CurrentUser, db: AsyncSession = D
 async def toggle_tenant_active(
     tenant_id: UUID, user: CurrentUser, db: AsyncSession = Depends(get_db),
 ):
-    """캠프 활성/정지 토글. 정지 시 모든 스케줄도 함께 비활성."""
+    """캠프 활성/정지 토글.
+    - 정지 → schedule_configs 모두 비활성 (자동 수집 즉시 중단)
+    - 재활성화 → schedule_configs 모두 활성으로 복구 (수집 정상화)
+
+    재활성화 비대칭 버그 수정 (2026-05-06): 정지 시 끈 스케줄을
+    재활성화 시 자동으로 다시 켜지 않아 "캠프 켰는데 수집 안 됨" 문제 발생.
+    """
     require_superadmin(user)
     tenant = (await db.execute(select(Tenant).where(Tenant.id == tenant_id))).scalar_one_or_none()
     if not tenant:
         raise HTTPException(404, "캠프를 찾을 수 없습니다")
     tenant.is_active = not tenant.is_active
 
-    if not tenant.is_active:
-        await db.execute(
-            text("UPDATE schedule_configs SET enabled = false WHERE tenant_id = :tid"),
-            {"tid": str(tenant_id)},
-        )
+    schedule_state = "true" if tenant.is_active else "false"
+    schedule_result = await db.execute(
+        text(f"UPDATE schedule_configs SET enabled = {schedule_state} WHERE tenant_id = :tid"),
+        {"tid": str(tenant_id)},
+    )
 
     db.add(AuditLog(
         user_id=user["id"],
         action=f"admin_{'activate' if tenant.is_active else 'deactivate'}_tenant",
         resource_type="tenant", resource_id=str(tenant_id),
-        details=_json.dumps({"name": tenant.name, "is_active": tenant.is_active}, ensure_ascii=False),
+        details=_json.dumps({
+            "name": tenant.name,
+            "is_active": tenant.is_active,
+            "schedules_updated": schedule_result.rowcount,
+        }, ensure_ascii=False),
     ))
     await db.commit()
     return {
-        "message": f"{tenant.name} {'재개' if tenant.is_active else '정지'} 완료",
+        "message": f"{tenant.name} {'재개' if tenant.is_active else '정지'} 완료 (스케줄 {schedule_result.rowcount}개)",
         "is_active": tenant.is_active,
+        "schedules_updated": schedule_result.rowcount,
     }
 
 
