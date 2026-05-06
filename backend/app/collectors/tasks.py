@@ -1393,6 +1393,125 @@ def full_collection(self, tenant_id: str, election_id: str):
         session.close()
 
 
+# ──────────────── EMERGENCY COLLECT (위기 후보 단독 수집) ──────────
+
+@celery_app.task(bind=True, name="collect.emergency")
+def emergency_collect(self, tenant_id: str, election_id: str, candidate_name: str, reason: str = "alert"):
+    """위기 감지된 후보만 단독 즉시 수집 (네이버 뉴스).
+
+    alert_check가 위기 키워드/부정 급증 감지 시 호출. 정기 스케줄(07/13/17:30) 외
+    즉시 신선한 데이터를 끌어옴. _run_full_ai_pipeline이 자동으로 분석+텔레그램 알림까지.
+
+    Redis dedup: 같은 후보 1시간 1회만 (폭주 방지).
+    토큰: 단일 후보의 키워드 1~2개 검색 → 분석 5~15건만. 정기 수집의 1/5 수준.
+    """
+    from app.collectors.naver import NaverCollector
+    from app.collectors.filters import parse_published_at
+    from app.elections.models import Candidate, Election as _Election, NewsArticle
+    from app.elections.korea_data import ELECTION_ISSUES, REGIONS
+
+    # Redis dedup (같은 후보 1시간 1회)
+    try:
+        import redis as _redis
+        _r = _redis.from_url(settings.REDIS_URL or "redis://ep_redis:6379")
+        dedup_key = f"emergency:collect:{tenant_id}:{candidate_name}"
+        if _r.exists(dedup_key):
+            logger.info("emergency_collect_skip_dedup", tenant=tenant_id, candidate=candidate_name)
+            return {"status": "skipped_dedup", "candidate": candidate_name}
+        _r.setex(dedup_key, 3600, "running")
+    except Exception:
+        pass
+
+    session = get_sync_session()
+    try:
+        cand = session.execute(
+            select(Candidate).where(
+                Candidate.election_id == election_id,
+                Candidate.name == candidate_name,
+                Candidate.enabled == True,
+            ).limit(1)
+        ).scalar_one_or_none()
+        if not cand:
+            return {"status": "candidate_not_found", "candidate": candidate_name}
+
+        election = session.execute(
+            select(_Election).where(_Election.id == election_id)
+        ).scalar_one_or_none()
+        etype = election.election_type if election else "mayor"
+        type_label = ELECTION_ISSUES.get(etype, {}).get("label", "후보").split("(")[0].strip().split(" ")[0]
+        region_short = REGIONS.get(election.region_sido, {}).get("short", "") if election and election.region_sido else ""
+
+        # election-shared: 우리 후보 판정 (분석 시 컨텍스트)
+        _our_cand_id = session.execute(text(
+            "SELECT our_candidate_id FROM tenant_elections "
+            "WHERE tenant_id = :tid AND election_id = :eid AND our_candidate_id IS NOT NULL"
+        ), {"tid": str(tenant_id), "eid": str(election_id)}).scalar()
+        cand.is_our_candidate = bool(_our_cand_id and str(cand.id) == str(_our_cand_id))
+
+        collector = NaverCollector(
+            settings.NAVER_CLIENT_ID, settings.NAVER_CLIENT_SECRET,
+            settings.NAVER_CLIENT_ID_2, settings.NAVER_CLIENT_SECRET_2,
+        )
+        homonym = None
+        if cand.homonym_filters:
+            homonym = {
+                "exclude": cand.homonym_filters,
+                "require_any": ["선거", "후보", "공약", "출마", type_label, region_short],
+            }
+
+        seen_urls: set[str] = set()
+        added = 0
+        for keyword in (cand.search_keywords or [cand.name]):
+            articles = _run_async(
+                collector.search_news(keyword, display=15, homonym_filters=homonym)
+            )
+            for art in articles:
+                url = art.get("url", "")
+                if not url or url in seen_urls:
+                    continue
+                seen_urls.add(url)
+                title = art.get("title", "")
+                if cand.name not in title and cand.name not in art.get("description", ""):
+                    continue
+                pub_at = parse_published_at(art.get("pubDate"))
+                # 7일 컷오프
+                if pub_at and (datetime.now(timezone.utc) - pub_at).days > 7:
+                    continue
+                # election-shared upsert
+                from app.elections.models import NewsArticle as _NA
+                from sqlalchemy.dialects.postgresql import insert as pg_insert
+                stmt = pg_insert(_NA).values(
+                    election_id=election_id, tenant_id=tenant_id, candidate_id=cand.id,
+                    url=url, title=title,
+                    content_snippet=art.get("description", ""),
+                    platform="naver",
+                    published_at=pub_at,
+                ).on_conflict_do_update(
+                    constraint="uq_news_per_election",
+                    set_={"published_at": text("COALESCE(news_articles.published_at, EXCLUDED.published_at)")},
+                )
+                try:
+                    session.execute(stmt)
+                    added += 1
+                except Exception:
+                    pass
+
+        session.commit()
+        logger.info("emergency_collect_saved", tenant=tenant_id, candidate=candidate_name,
+                    keywords=len(cand.search_keywords or [cand.name]), added=added, reason=reason)
+
+        # AI 분석 + 자동 알림 (_run_full_ai_pipeline 안에서 check_db_alerts → send_alert)
+        if added > 0:
+            try:
+                _run_async(_run_full_ai_pipeline(tenant_id, election_id, limit_per_type=30))
+            except Exception as ai_err:
+                logger.error("emergency_ai_pipeline_error", error=str(ai_err)[:200])
+
+        return {"status": "success", "candidate": candidate_name, "added": added, "reason": reason}
+    finally:
+        session.close()
+
+
 # ──────────────── ALERT MONITOR ──────────────────────────────
 
 @celery_app.task(bind=True, name="collect.alert_check")
@@ -1529,13 +1648,28 @@ def alert_check(self, tenant_id: str, election_id: str):
         except Exception as e:
             logger.warning("search_spike_check_error", error=str(e)[:200])
 
+        triggered_emergency: set[str] = set()
         if alerts:
             # Format and send via Telegram
             message = format_alert_message(alerts)
             if message:
                 _send_alert_via_telegram(session, tenant_id, message)
 
-        return {"status": "success", "alerts": len(alerts)}
+            # 위기 후보별 즉시 단독 수집 트리거 (severity in critical/warning + crisis_keyword/news_spike/negative_spike)
+            # 자체 dedup (1시간 후보당 1회)이 emergency_collect 안에 있음 → 폭주 방지
+            for a in alerts:
+                if a.get("severity") in ("critical", "warning") and a.get("type") in ("crisis_keyword", "news_spike", "negative_spike"):
+                    cn = a.get("candidate")
+                    if cn and cn not in triggered_emergency:
+                        triggered_emergency.add(cn)
+                        try:
+                            emergency_collect.delay(tenant_id, election_id, cn, reason=a.get("type", "alert"))
+                            logger.info("emergency_collect_triggered", tenant=tenant_id,
+                                        candidate=cn, reason=a.get("type"))
+                        except Exception as etrig:
+                            logger.warning("emergency_collect_trigger_error", error=str(etrig)[:200])
+
+        return {"status": "success", "alerts": len(alerts), "emergency_triggered": len(triggered_emergency)}
 
     except Exception as e:
         import traceback
