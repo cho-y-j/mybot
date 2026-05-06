@@ -10,12 +10,13 @@ import SigunguTurnoutChart from '@/components/history/SigunguTurnoutChart';
 import AgeTurnoutChart from '@/components/history/AgeTurnoutChart';
 import StructuredAIStrategy from '@/components/history/StructuredAIStrategy';
 import YearSelector from '@/components/history/YearSelector';
+import HistoryHeatmap from '@/components/history/HistoryHeatmap';
 import { partyToCamp, campTierOf, partyColor } from '@/components/history/utils';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
 
-type Tab = 'party' | 'strength' | 'drilldown' | 'dong' | 'candidates' | 'turnout' | 'ai';
+type Tab = 'map' | 'party' | 'strength' | 'drilldown' | 'dong' | 'candidates' | 'turnout' | 'ai';
 
 interface Props {
   data: any;
@@ -40,7 +41,7 @@ export default function UnifiedHistoryView({ data, electionId, onRefresh }: Prop
 
   // 모든 선거 유형 기본 '진영(보수/진보)' 모드 — 보편적 색 표현 통일
   const [mode, setMode] = useState<ViewMode>('camp');
-  const [tab, setTab] = useState<Tab>('strength');
+  const [tab, setTab] = useState<Tab>('map');
   const [selectedDistrict, setSelectedDistrict] = useState<string | null>(null);
 
   // 년도 목록 추출
@@ -154,6 +155,7 @@ export default function UnifiedHistoryView({ data, electionId, onRefresh }: Prop
     : year ? `${year}년 단일 회차` : '';
 
   const TABS: { key: Tab; label: string }[] = [
+    { key: 'map', label: '지역별 영향력 지도' },
     { key: 'strength', label: '시·군·구 강세' },
     { key: 'drilldown', label: '시·군·구 드릴다운' },
     { key: 'dong', label: '읍·면·동' },
@@ -234,6 +236,11 @@ export default function UnifiedHistoryView({ data, electionId, onRefresh }: Prop
       )}
 
       <div>
+        {/* ─── 지역별 영향력 지도 (3단 줌) ─── */}
+        {tab === 'map' && (
+          <HistoryHeatmap electionId={electionId} />
+        )}
+
         {/* ─── 시·군·구 강세 ─── */}
         {tab === 'strength' && (
           <div className="space-y-4">
