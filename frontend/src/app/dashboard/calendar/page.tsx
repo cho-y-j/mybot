@@ -7,6 +7,7 @@
  */
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { api } from '@/services/api';
 import { useElection } from '@/hooks/useElection';
 import {
@@ -23,6 +24,7 @@ type Tab = 'today' | 'week' | 'month' | 'map';
 
 export default function CalendarPage() {
   const { election, candidates, loading: elLoading } = useElection();
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<Tab>('today');
   const [schedules, setSchedules] = useState<any[]>([]);
   const [yesterdayList, setYesterdayList] = useState<any[]>([]);
@@ -31,6 +33,21 @@ export default function CalendarPage() {
   const [selected, setSelected] = useState<any | null>(null);
   const [showYesterday, setShowYesterday] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
+
+  // 외부(예: history 지도)에서 ?dong=&sigungu=&from=history 받으면 일정 추가 패널 자동 열기
+  const [prefilledLocation, setPrefilledLocation] = useState<string | null>(null);
+  useEffect(() => {
+    const from = searchParams.get('from');
+    if (from !== 'history') return;
+    const dong = searchParams.get('dong') || '';
+    const sigungu = searchParams.get('sigungu') || '';
+    const sido = searchParams.get('sido') || '';
+    const loc = [sido, sigungu, dong].filter(Boolean).join(' ').trim();
+    if (loc) {
+      setPrefilledLocation(loc);
+      setShowAdd(true);
+    }
+  }, [searchParams]);
 
   // 로드 범위: 달력 뷰의 월 이동 시 확장. 기본은 -30일 ~ +60일
   const [loadedRange, setLoadedRange] = useState<{ from: string; to: string } | null>(null);
@@ -177,8 +194,10 @@ export default function CalendarPage() {
           electionId={election.id}
           candidates={candidates}
           defaultCandidateId={election.our_candidate_id || candidates[0]?.id}
-          onSaved={() => { setShowAdd(false); load(); }}
-          onClose={() => setShowAdd(false)}
+          defaultMode={prefilledLocation ? 'manual' : undefined}
+          defaultLocation={prefilledLocation || undefined}
+          onSaved={() => { setShowAdd(false); setPrefilledLocation(null); load(); }}
+          onClose={() => { setShowAdd(false); setPrefilledLocation(null); }}
         />
       )}
 

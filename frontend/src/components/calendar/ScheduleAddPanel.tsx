@@ -15,14 +15,16 @@ interface Props {
   electionId: string;
   candidates: Array<{ id: string; name: string; is_our_candidate?: boolean }>;
   defaultCandidateId?: string;
+  defaultMode?: Mode;
+  defaultLocation?: string;
   onSaved: () => void;
   onClose?: () => void;
 }
 
 export default function ScheduleAddPanel({
-  electionId, candidates, defaultCandidateId, onSaved, onClose,
+  electionId, candidates, defaultCandidateId, defaultMode, defaultLocation, onSaved, onClose,
 }: Props) {
-  const [mode, setMode] = useState<Mode>('single');
+  const [mode, setMode] = useState<Mode>(defaultMode || 'single');
   const [candidateId, setCandidateId] = useState(defaultCandidateId || candidates[0]?.id || '');
   const [text, setText] = useState('');
   const [parsing, setParsing] = useState(false);
@@ -35,7 +37,7 @@ export default function ScheduleAddPanel({
   const [mDate, setMDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [mStartTime, setMStartTime] = useState('09:00');
   const [mEndTime, setMEndTime] = useState('11:00');
-  const [mLocation, setMLocation] = useState('');
+  const [mLocation, setMLocation] = useState(defaultLocation || '');
   const [mCategory, setMCategory] = useState<ScheduleCategory>('rally');
   const [mIsPublic, setMIsPublic] = useState(false);
 

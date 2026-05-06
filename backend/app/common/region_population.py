@@ -1,6 +1,12 @@
 """
 ElectionPulse - 지역별 인구 + 선거인 + 영향력 점수 헬퍼
 
+진영 매핑:
+- candidate.party_alignment (progressive/conservative) 또는
+- historical_candidate_camps.camp (보수/진보) 또는
+- party 정규식 (utils.ts와 동일 룰) — 폴백
+- 진영별 alias 리스트 → election_results 매칭 시 같은 진영 모두 우리 진영으로 인정
+
 데이터 출처:
 - admin_population: KOSIS 읍·면·동 단위 등록 인구 (3,910 동)
 - voter_turnout: NEC 시·도 단위 선거인수/투표자수
@@ -44,6 +50,119 @@ SIDO_CD_TO_NAME: dict[str, str] = {
     "50": "제주특별자치도",
 }
 SIDO_NAME_TO_CD: dict[str, str] = {v: k for k, v in SIDO_CD_TO_NAME.items()}
+
+
+# 진영별 정당 alias — historical_candidate_camps + party_alignment + 정당명 정규식 통합
+PROGRESSIVE_PARTIES = {
+    "더불어민주당", "민주당", "민주실용", "새정치민주연합", "통합민주당", "열린우리당",
+    "민주노동당", "정의당", "녹색당", "진보당", "조국혁신당", "개혁신당",
+    "노동당", "민중당", "사회민주당",
+}
+CONSERVATIVE_PARTIES = {
+    "국민의힘", "한나라당", "새누리당", "미래통합당", "자유한국당", "민주자유당",
+    "신한국당", "한국당", "보수", "새천년민주당",  # 일부 신민주 계열은 한국적 분류상 보수
+}
+
+
+def party_to_camp(party: Optional[str]) -> Optional[str]:
+    """정당명 → 'progressive' | 'conservative' | None.
+
+    historical_candidate_camps와 동일 룰 (한국어 '진보'/'보수' 분류).
+    """
+    if not party:
+        return None
+    p = party.strip()
+    # 직접 매칭
+    if p in PROGRESSIVE_PARTIES:
+        return "progressive"
+    if p in CONSERVATIVE_PARTIES:
+        return "conservative"
+    # 부분 매칭 (예: "더불어민주당(비례)")
+    for prog in PROGRESSIVE_PARTIES:
+        if prog in p:
+            return "progressive"
+    for cons in CONSERVATIVE_PARTIES:
+        if cons in p:
+            return "conservative"
+    # 한글 단어 fallback
+    if "진보" in p or "민주" in p or "녹색" in p or "정의" in p:
+        return "progressive"
+    if "보수" in p or "한국" in p or "통합" in p:
+        return "conservative"
+    return None
+
+
+def get_camp_aliases(camp: str) -> list[str]:
+    """진영명('progressive'|'conservative'|'진보'|'보수') → 정당 alias 리스트."""
+    if not camp:
+        return []
+    norm = camp.lower()
+    if norm in ("progressive", "진보"):
+        return list(PROGRESSIVE_PARTIES)
+    if norm in ("conservative", "보수"):
+        return list(CONSERVATIVE_PARTIES)
+    return []
+
+
+async def get_our_camp_aliases(
+    db: AsyncSession,
+    election_id: str,
+    tenant_id: str,
+) -> tuple[Optional[str], list[str]]:
+    """현재 선거 우리 후보 → 진영 + alias 리스트 자동 추출.
+
+    우선순위:
+      1. candidate.party_alignment (progressive/conservative)
+      2. historical_candidate_camps.camp (이름+선거유형+지역 매칭)
+      3. candidate.party 정규식 매칭
+
+    반환: (camp, aliases). camp 못 찾으면 (None, []).
+    """
+    from app.elections.models import Election, Candidate
+    from uuid import UUID as _UUID
+
+    # 1. 우리 후보 + 선거 정보 조회
+    elec = (await db.execute(sql_text("""
+        SELECT e.election_type, e.region_sido,
+               (SELECT te.our_candidate_id FROM tenant_elections te
+                 WHERE te.tenant_id = :tid AND te.election_id = :eid LIMIT 1) AS our_cid
+          FROM elections e WHERE e.id = :eid
+    """), {"eid": election_id, "tid": tenant_id})).mappings().first()
+    if not elec or not elec["our_cid"]:
+        return None, []
+
+    cand = (await db.execute(sql_text("""
+        SELECT name, party, party_alignment FROM candidates WHERE id = :cid
+    """), {"cid": str(elec["our_cid"])})).mappings().first()
+    if not cand:
+        return None, []
+
+    # 2. party_alignment 우선
+    align = cand.get("party_alignment") or ""
+    if align in ("progressive", "conservative"):
+        return align, get_camp_aliases(align)
+
+    # 3. historical_candidate_camps fallback
+    hcc_camp = (await db.execute(sql_text("""
+        SELECT camp FROM historical_candidate_camps
+         WHERE candidate_name = :n AND election_type = :t
+           AND (region_sido IS NULL OR region_sido = :r)
+         ORDER BY (region_sido = :r) DESC, election_year DESC NULLS LAST
+         LIMIT 1
+    """), {
+        "n": cand["name"],
+        "t": elec["election_type"],
+        "r": elec["region_sido"],
+    })).scalar()
+    if hcc_camp:
+        return hcc_camp, get_camp_aliases(hcc_camp)
+
+    # 4. party 정규식 fallback
+    auto = party_to_camp(cand.get("party"))
+    if auto:
+        return auto, get_camp_aliases(auto)
+
+    return None, []
 
 
 async def get_voter_ratio(
@@ -97,6 +216,7 @@ async def get_heatmap_stats(
     election_type: str,
     region_sido: Optional[str] = None,
     our_party_aliases: Optional[list[str]] = None,
+    our_camp: Optional[str] = None,
 ) -> dict:
     """3단(시·도/시·군·구/읍·면·동) 영향력 히트맵 데이터.
 
@@ -112,6 +232,45 @@ async def get_heatmap_stats(
     """
     voter_ratio = (await get_voter_ratio(db, region_sido, election_year, election_type)
                    if region_sido else 0.82)
+
+    # 후보명 → 진영 매핑 (historical_candidate_camps 기반)
+    # election_type + 지역 매칭 + 같은 후보 모든 연도 고려 (정확치 → 광범위 fallback)
+    camp_by_name: dict[str, str] = {}
+    hcc_rows = (await db.execute(sql_text("""
+        SELECT DISTINCT ON (candidate_name) candidate_name, camp
+          FROM historical_candidate_camps
+         WHERE election_type = :t
+           AND (region_sido IS NULL OR region_sido = :r OR :r IS NULL)
+         ORDER BY candidate_name, (region_sido = :r) DESC NULLS LAST, election_year DESC NULLS LAST
+    """), {"t": election_type, "r": region_sido})).mappings().all()
+    for r in hcc_rows:
+        camp_by_name[r["candidate_name"]] = r["camp"]
+
+    def _is_our_camp(candidate_name: str, party: Optional[str]) -> bool:
+        """후보가 우리 진영인지: 1) historical_candidate_camps 이름 매칭 2) party alias 매칭 3) party→camp 룰."""
+        if not our_camp and not our_party_aliases:
+            return False
+        # 1. 이름 기반 (가장 정확)
+        cn_camp = camp_by_name.get(candidate_name)
+        if cn_camp and our_camp:
+            # camp 정규화: progressive ↔ 진보, conservative ↔ 보수
+            cn_norm = "progressive" if cn_camp in ("진보", "progressive") else \
+                      "conservative" if cn_camp in ("보수", "conservative") else cn_camp.lower()
+            our_norm = our_camp.lower()
+            if cn_norm == our_norm:
+                return True
+            # 다른 진영 명확 → False (혼동 방지)
+            if cn_norm in ("progressive", "conservative") and our_norm in ("progressive", "conservative"):
+                return False
+        # 2. party alias 매칭
+        if party and our_party_aliases and any(a in party for a in our_party_aliases):
+            return True
+        # 3. party → camp 룰
+        if party and our_camp:
+            auto = party_to_camp(party)
+            if auto and auto.lower() == our_camp.lower():
+                return True
+        return False
 
     sido_cd_filter = SIDO_NAME_TO_CD.get(region_sido) if region_sido else None
 
@@ -157,8 +316,8 @@ async def get_heatmap_stats(
         top2 = candidates[1] if len(candidates) > 1 else None
         gap = (top1["votes"] - top2["votes"]) if top2 else top1["votes"]
         our_score = None
-        if our_party_aliases:
-            our = next((c for c in candidates if c["party"] and c["party"] in our_party_aliases), None)
+        if our_camp or our_party_aliases:
+            our = next((c for c in candidates if _is_our_camp(c["name"], c.get("party"))), None)
             if our:
                 # 우리 진영 표 - 1위 표 (음수면 우리 패, 양수면 우리 우세)
                 our_score = our["votes"] - top1["votes"] if our["name"] != top1["name"] else gap
@@ -236,8 +395,8 @@ async def get_heatmap_stats(
         top2 = candidates[1] if len(candidates) > 1 else None
         gap = (top1["votes"] - top2["votes"]) if top2 else top1["votes"]
         our_score = None
-        if our_party_aliases:
-            our = next((c for c in candidates if c["party"] and c["party"] in our_party_aliases), None)
+        if our_camp or our_party_aliases:
+            our = next((c for c in candidates if _is_our_camp(c["name"], c.get("party"))), None)
             if our:
                 our_score = our["votes"] - top1["votes"] if our["name"] != top1["name"] else gap
         # sgg 코드는 sido_name 매칭 + 같은 sido 안에서 sgg 이름 약식 매칭 어렵
@@ -281,8 +440,8 @@ async def get_heatmap_stats(
         top2 = candidates[1] if len(candidates) > 1 else None
         gap = (top1["votes"] - top2["votes"]) if top2 else top1["votes"]
         our_score = None
-        if our_party_aliases:
-            our = next((c for c in candidates if c["party"] and c["party"] in our_party_aliases), None)
+        if our_camp or our_party_aliases:
+            our = next((c for c in candidates if _is_our_camp(c["name"], c.get("party"))), None)
             if our:
                 our_score = our["votes"] - top1["votes"] if our["name"] != top1["name"] else gap
         sido_cd = SIDO_NAME_TO_CD.get(sido_name)

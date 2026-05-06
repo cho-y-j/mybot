@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.common.dependencies import CurrentUser
-from app.common.region_population import get_heatmap_stats
+from app.common.region_population import get_heatmap_stats, get_our_camp_aliases
 
 router = APIRouter()
 
@@ -40,6 +40,8 @@ async def heatmap_stats(
     auto_year: Optional[int] = None
     auto_type: Optional[str] = None
     auto_sido: Optional[str] = None
+    auto_camp: Optional[str] = None
+    auto_aliases: list[str] = []
 
     if election_id:
         try:
@@ -49,13 +51,17 @@ async def heatmap_stats(
             if elec:
                 auto_type = elec.election_type
                 auto_sido = elec.region_sido
-                # 현재 선거 직전 같은 type 선거로 추정 (4년 전 또는 가장 최근 과거)
+                # 현재 선거 직전 같은 type 선거로 추정
                 latest = (await db.execute(text("""
                     SELECT MAX(election_year) FROM election_results
                      WHERE region_sido = :rs AND election_type = :et
                        AND election_year <= :now_year
                 """), {"rs": elec.region_sido, "et": elec.election_type, "now_year": _date.today().year})).scalar()
                 auto_year = latest
+                # 우리 진영 자동 추출 (party_alignment → historical_candidate_camps → party 룰)
+                tid = user.get("tenant_id") if user else None
+                if tid:
+                    auto_camp, auto_aliases = await get_our_camp_aliases(db, election_id, str(tid))
         except Exception:
             pass
 
@@ -66,18 +72,63 @@ async def heatmap_stats(
     if not final_year or not final_type:
         return {"voter_ratio": 0.82, "sido": [], "sigungu": [], "dong": [], "error": "election_year+type required (or pass election_id)"}
 
-    aliases = [a.strip() for a in (our_party.split(",") if our_party else []) if a.strip()] or None
+    aliases = [a.strip() for a in (our_party.split(",") if our_party else []) if a.strip()] or auto_aliases or None
     result = await get_heatmap_stats(
         db=db,
         election_year=final_year,
         election_type=final_type,
         region_sido=final_sido,
         our_party_aliases=aliases,
+        our_camp=auto_camp,
     )
     result["election_year_used"] = final_year
     result["election_type_used"] = final_type
     result["region_sido_used"] = final_sido
+    result["our_camp_used"] = auto_camp
     return result
+
+
+@router.get("/available-years")
+async def available_years(
+    election_id: Optional[str] = Query(None),
+    election_type: Optional[str] = Query(None),
+    region_sido: Optional[str] = Query(None),
+    user: CurrentUser = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """heatmap-stats에서 선택 가능한 과거 선거 연도 목록.
+
+    election_id 주면 그 선거의 region_sido/election_type 자동.
+    """
+    from uuid import UUID as _UUID
+    from app.elections.models import Election
+
+    f_type = election_type
+    f_sido = region_sido
+    if election_id:
+        try:
+            elec = (await db.execute(
+                select(Election).where(Election.id == _UUID(election_id))
+            )).scalar_one_or_none()
+            if elec:
+                f_type = f_type or elec.election_type
+                f_sido = f_sido or elec.region_sido
+        except Exception:
+            pass
+
+    if not f_type:
+        return {"years": []}
+
+    q = "SELECT DISTINCT election_year FROM election_results WHERE election_type = :t"
+    params: dict = {"t": f_type}
+    if f_sido:
+        q += " AND region_sido = :rs"
+        params["rs"] = f_sido
+    q += " ORDER BY election_year DESC"
+
+    rows = (await db.execute(text(q), params)).all()
+    years = [r[0] for r in rows]
+    return {"years": years, "default": years[0] if years else None}
 
 
 @router.get("/election-history/by-region/{election_id}")

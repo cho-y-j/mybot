@@ -16,6 +16,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
+import { useRouter } from 'next/navigation';
 import type { LatLngExpression } from 'leaflet';
 
 interface Slot {
@@ -58,6 +59,7 @@ interface HeatmapStats {
   election_year_used?: number;
   election_type_used?: string;
   region_sido_used?: string;
+  our_camp_used?: string;
 }
 
 const LeafletMap: any = dynamic(
@@ -108,26 +110,45 @@ interface Props {
 }
 
 export default function HistoryHeatmap({ electionId }: Props) {
+  const router = useRouter();
   const [geojson, setGeojson] = useState<any>(null);
   const [stats, setStats] = useState<HeatmapStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [zoom, setZoom] = useState(9);
   const [selected, setSelected] = useState<{ level: 'sido'|'sigungu'|'dong'; key: string } | null>(null);
+  const [years, setYears] = useState<number[]>([]);
+  const [year, setYear] = useState<number | null>(null);
 
+  // 사용 가능 연도 + GeoJSON 1회 로드
   useEffect(() => {
     if (!electionId) return;
-    setLoading(true);
     const auth = () => ({
       headers: { Authorization: `Bearer ${(sessionStorage.getItem('access_token') || localStorage.getItem('access_token'))}` },
     });
     Promise.all([
       fetch(`/api/candidate-schedules/${electionId}/geojson?days=60&precision=5`, auth()).then(r => r.json()),
-      fetch(`/api/history/heatmap-stats?election_id=${electionId}`, auth()).then(r => r.json()),
-    ]).then(([g, s]) => {
+      fetch(`/api/history/available-years?election_id=${electionId}`, auth()).then(r => r.json()),
+    ]).then(([g, y]) => {
       setGeojson(g);
-      setStats(s);
-    }).catch(() => {}).finally(() => setLoading(false));
+      const yrs = y?.years || [];
+      setYears(yrs);
+      if (yrs.length > 0 && year === null) setYear(yrs[0]);
+    }).catch(() => {});
   }, [electionId]);
+
+  // 연도 변경 시 stats fetch
+  useEffect(() => {
+    if (!electionId || year === null) return;
+    setLoading(true);
+    const auth = () => ({
+      headers: { Authorization: `Bearer ${(sessionStorage.getItem('access_token') || localStorage.getItem('access_token'))}` },
+    });
+    fetch(`/api/history/heatmap-stats?election_id=${electionId}&election_year=${year}`, auth())
+      .then(r => r.json())
+      .then(setStats)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [electionId, year]);
 
   // 빠른 lookup 맵
   const sidoMap = useMemo(() => {
@@ -214,22 +235,27 @@ export default function HistoryHeatmap({ electionId }: Props) {
     };
   };
 
+  // 클릭 팝업 — [일정 추가] 버튼은 popupopen 후 querySelector로 핸들러 부여
   const onEachFeature = (feature: any, layer: any) => {
     const p = feature.properties;
+
     layer.on({
       click: () => {
         let stat: RegionStats | undefined;
         let level: 'sido'|'sigungu'|'dong' = colorLevel;
-        let key = '', name = '';
+        let key = '', name = '', dongShort = '', sigunguName = '';
         if (level === 'sido') {
           stat = sidoMap.get(p.sido || '');
           key = p.sido || ''; name = p.sidonm || '';
         } else if (level === 'sigungu') {
           stat = sigunguMap.get(p.sggnm || '');
           key = p.sgg || ''; name = `${p.sidonm} ${p.sggnm}`;
+          sigunguName = p.sggnm || '';
         } else {
           stat = dongMap.get(p.adm_cd2 || '');
           key = p.adm_cd2 || ''; name = p.adm_nm || '';
+          dongShort = (p.adm_nm || '').split(' ').pop() || '';
+          sigunguName = p.sggnm || '';
         }
         setSelected({ level, key });
 
@@ -241,8 +267,15 @@ export default function HistoryHeatmap({ electionId }: Props) {
         const popStr = level === 'dong' ? fmt(stat?.population) : '—';
         const votersStr = level === 'dong' ? fmt(stat?.voters_est) : '—';
 
+        // 일정 추가 query (동/시군구 정보)
+        const scheduleQuery = level === 'dong'
+          ? `dong=${encodeURIComponent(dongShort)}&sigungu=${encodeURIComponent(sigunguName)}&from=history`
+          : level === 'sigungu'
+          ? `sigungu=${encodeURIComponent(sigunguName)}&from=history`
+          : `sido=${encodeURIComponent(name)}&from=history`;
+
         layer.bindPopup(`
-          <div style="font-size:12px;line-height:1.6;min-width:200px">
+          <div style="font-size:12px;line-height:1.6;min-width:220px">
             <div style="font-weight:700;font-size:13px;margin-bottom:4px">${name}</div>
             ${level === 'dong' ? `
               <div style="color:#64748b">인구 ${popStr}명 · 선거인 추정 ${votersStr}명</div>
@@ -256,6 +289,15 @@ export default function HistoryHeatmap({ electionId }: Props) {
                 <div style="margin-top:2px">표 차이: <b>${gapStr}</b></div>
               </div>
             ` : '<div style="color:#94a3b8">선거 데이터 없음</div>'}
+            ${level !== 'sido' ? `
+              <div style="margin-top:8px;padding-top:6px;border-top:1px solid #e2e8f0">
+                <a href="/easy/calendar?${scheduleQuery}"
+                   class="hh-add-schedule"
+                   style="display:inline-block;padding:4px 10px;background:#2563eb;color:white;border-radius:6px;font-size:11px;font-weight:600;text-decoration:none">
+                  + 이 지역 일정 추가
+                </a>
+              </div>
+            ` : ''}
           </div>
         `).openPopup();
       },
@@ -339,13 +381,38 @@ export default function HistoryHeatmap({ electionId }: Props) {
       {/* 헤더 */}
       <div className="px-4 py-3 border-b border-[var(--card-border)] flex flex-wrap items-center gap-3 justify-between">
         <div>
-          <h3 className="font-bold text-base">지역별 영향력 지도</h3>
-          <p className="text-[11px] text-[var(--muted)] mt-0.5">
+          <div className="flex items-center gap-3">
+            <h3 className="font-bold text-base">지역별 영향력 지도</h3>
+            {years.length > 1 && (
+              <div className="flex gap-1">
+                {years.map(y => (
+                  <button
+                    key={y}
+                    onClick={() => setYear(y)}
+                    className={`px-2.5 py-1 rounded text-xs font-semibold transition ${
+                      year === y
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-[var(--muted-bg)] text-[var(--muted)] hover:text-[var(--foreground)]'
+                    }`}
+                  >
+                    {y}
+                  </button>
+                ))}
+              </div>
+            )}
+            {loading && <span className="text-[11px] text-[var(--muted)]">갱신중...</span>}
+          </div>
+          <p className="text-[11px] text-[var(--muted)] mt-1">
             줌 인 →
             <span className={`mx-1 px-1.5 rounded ${colorLevel === 'sido' ? 'bg-blue-500/20 text-blue-400 font-semibold' : ''}`}>시·도</span>
             <span className={`mx-1 px-1.5 rounded ${colorLevel === 'sigungu' ? 'bg-blue-500/20 text-blue-400 font-semibold' : ''}`}>시·군·구</span>
             <span className={`mx-1 px-1.5 rounded ${colorLevel === 'dong' ? 'bg-blue-500/20 text-blue-400 font-semibold' : ''}`}>읍·면·동</span>
             (현재: 줌 {zoom})
+            {stats?.our_camp_used && (
+              <span className="ml-2">
+                · 우리 진영: <b className="text-[var(--foreground)]">{stats.our_camp_used === 'progressive' ? '진보' : '보수'}</b>
+              </span>
+            )}
           </p>
         </div>
         <div className="flex items-center gap-3 text-[11px]">
