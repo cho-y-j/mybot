@@ -292,7 +292,9 @@ session.add(YouTubeVideo(..., published_at=pub_at))  # None이면 NULL 저장
 - **Redis 포트**: 6380 (**127.0.0.1 only** — 외부 노출 금지)
 - **Docker 배포**: GitHub Actions → GHCR → Watchtower 자동 배포 (2026-04-12 구축)
   - Dockerfile.api에 Node.js + Claude CLI 포함
-  - 호스트 `~/.claude` → 컨테이너 마운트 (**:rw** — 토큰 갱신 필요)
+  - 호스트 `~/.claude-server` → 컨테이너 마운트 (**:rw** — 토큰 갱신 필요)
+    - **중요 (2026-05-07)**: 호스트 cho 본인의 `~/.claude`와 **반드시 분리**. 같은 디렉토리 공유 시 컨테이너 keepalive(4h)가 OAuth refresh token을 회전시켜 호스트 cho의 Claude Code가 자꾸 로그아웃됨 (rotation 충돌).
+    - `.claude-server/.credentials.json` 만 있으면 됨. settings.json은 선택. projects/sessions/는 컨테이너가 자체 생성.
   - Nginx Proxy Manager: `ai.on1.kr` → `ep_frontend:3000`
   - **포트 바인딩 룰**: `ports: "127.0.0.1:PORT:PORT"` 형식 필수 (2026-04-14 보안 사고)
   - **DB/Redis 호스트명**: `ep_postgres`, `ep_redis` 사용 (서비스명 `postgres`/`redis` 금지 — 같은 네트워크의 mk_postgres와 DNS 충돌, 2026-04-14)

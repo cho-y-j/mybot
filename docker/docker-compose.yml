@@ -54,7 +54,7 @@ services:
       - REDIS_URL=redis://ep_redis:6379
       - CELERY_BROKER_URL=redis://ep_redis:6379/0
     volumes:
-      - /home/cho/.claude:/home/appuser/.claude
+      - /home/cho/.claude-server:/home/appuser/.claude
       - ep_reports_data:/app/data/reports
     ports:
       - "8000:8000"
@@ -79,7 +79,7 @@ services:
       - REDIS_URL=redis://ep_redis:6379
       - CELERY_BROKER_URL=redis://ep_redis:6379/0
     volumes:
-      - /home/cho/.claude:/home/appuser/.claude
+      - /home/cho/.claude-server:/home/appuser/.claude
     command: celery -A app.collectors.tasks:celery_app worker --loglevel=info --concurrency=4
     depends_on:
       postgres:
@@ -102,7 +102,7 @@ services:
       - REDIS_URL=redis://ep_redis:6379
       - CELERY_BROKER_URL=redis://ep_redis:6379/0
     volumes:
-      - /home/cho/.claude:/home/appuser/.claude
+      - /home/cho/.claude-server:/home/appuser/.claude
     command: celery -A app.collectors.tasks:celery_app beat --loglevel=info
     depends_on:
       postgres:
